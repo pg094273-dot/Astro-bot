@@ -1,0 +1,11 @@
+node_modules/
+build/
+dist/
+dev-dist/
+.vite/
+coverage/
+.DS_Store
+*.log
+*.local
+.env*
+!.env.example

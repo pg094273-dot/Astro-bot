@@ -1,0 +1,6 @@
+{
+  "name": "Astro Nova 3D",
+  "description": "Juego de plataformas 3D estilo Astro Bot para navegador con múltiples niveles, física fluida y gráficos WebGL optimizados con Three.js.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
