@@ -120,18 +120,105 @@ export default function App() {
     engineRef.current?.startLevel(idx);
   }, []);
 
-  // Enter / Space shortcut on Title Screen
+  // Keyboard / TV Remote / Gamepad menu navigation when not playing
   useEffect(() => {
-    if (hud.phase !== 'title') return;
+    if (hud.phase === 'playing') return;
+
     const onKey = (e: KeyboardEvent) => {
-      if (e.code === 'Enter' || e.code === 'Space') {
+      const isSelect = e.key === 'Select' || e.code === 'NumpadEnter' || e.keyCode === 23;
+      const isBack =
+        e.code === 'Escape' ||
+        e.key === 'GoBack' ||
+        e.key === 'BrowserBack';
+
+      if (hud.phase === 'title') {
+        const activeTag = (document.activeElement as HTMLElement | null)?.tagName;
+        if (e.code === 'Space' || (activeTag !== 'BUTTON' && (e.code === 'Enter' || isSelect))) {
+          e.preventDefault();
+          handleStartGame(selectedLevel);
+        }
+      } else if (isBack) {
         e.preventDefault();
-        handleStartGame(selectedLevel);
+        if (hud.phase === 'paused') engineRef.current?.setPhase('playing');
+        else engineRef.current?.returnToTitle();
       }
     };
+
     window.addEventListener('keydown', onKey);
-    return () => window.removeEventListener('keydown', onKey);
-  }, [hud.phase, selectedLevel, handleStartGame]);
+
+    // Lightweight Gamepad menu poller when paused/title/gameover/victory
+    let rafId = 0;
+    let prevA = false;
+    let prevB = false;
+    let prevLeft = false;
+    let prevRight = false;
+
+    const pollMenuPad = () => {
+      const pads = navigator.getGamepads?.();
+      if (pads) {
+        for (let i = 0; i < pads.length; i++) {
+          const gp = pads[i];
+          if (!gp?.connected) continue;
+          const aNow = Boolean(gp.buttons[0]?.pressed);
+          const bNow = Boolean(gp.buttons[1]?.pressed);
+          const leftNow = Boolean(gp.buttons[14]?.pressed || (gp.axes[0] ?? 0) < -0.55);
+          const rightNow = Boolean(gp.buttons[15]?.pressed || (gp.axes[0] ?? 0) > 0.55);
+
+          if (hud.phase === 'title') {
+            if (leftNow && !prevLeft) {
+              handleSelectLevel((selectedLevel - 1 + LEVELS.length) % LEVELS.length);
+            } else if (rightNow && !prevRight) {
+              handleSelectLevel((selectedLevel + 1) % LEVELS.length);
+            }
+            if (aNow && !prevA) {
+              handleStartGame(selectedLevel);
+            }
+          } else {
+            if (aNow && !prevA) {
+              const focused = document.activeElement as HTMLElement | null;
+              if (focused?.tagName === 'BUTTON') {
+                focused.click();
+              } else if (hud.phase === 'paused') {
+                engineRef.current?.setPhase('playing');
+              } else if (hud.phase === 'gameover') {
+                setVictoryStats(null);
+                engineRef.current?.restartLevel();
+              } else if (hud.phase === 'victory') {
+                if (hud.levelIndex < LEVELS.length - 1) {
+                  const nextIdx = hud.levelIndex + 1;
+                  setVictoryStats(null);
+                  setSelectedLevel(nextIdx);
+                  engineRef.current?.startLevel(nextIdx);
+                } else {
+                  setVictoryStats(null);
+                  engineRef.current?.returnToTitle();
+                }
+              }
+            } else if (bNow && !prevB) {
+              if (hud.phase === 'paused') engineRef.current?.setPhase('playing');
+              else {
+                setVictoryStats(null);
+                engineRef.current?.returnToTitle();
+              }
+            }
+          }
+
+          prevA = aNow;
+          prevB = bNow;
+          prevLeft = leftNow;
+          prevRight = rightNow;
+          break;
+        }
+      }
+      rafId = window.requestAnimationFrame(pollMenuPad);
+    };
+    rafId = window.requestAnimationFrame(pollMenuPad);
+
+    return () => {
+      window.removeEventListener('keydown', onKey);
+      window.cancelAnimationFrame(rafId);
+    };
+  }, [hud.phase, hud.levelIndex, selectedLevel, handleSelectLevel, handleStartGame]);
 
   const handleToggleMute = useCallback(() => {
     engineRef.current?.setMuted(!hud.muted);

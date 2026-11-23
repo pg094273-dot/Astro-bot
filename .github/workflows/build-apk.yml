@@ -1,0 +1,72 @@
+name: Build Android TV APK
+
+on:
+  push:
+    branches: ['main']
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-apk:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v5
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v5
+        with:
+          node-version: '22'
+
+      - name: Setup Java 21
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '21'
+
+      - name: Install dependencies
+        run: npm install --no-audit --no-fund
+
+      - name: Typecheck & Build Web Bundle for Capacitor
+        env:
+          VITE_BASE_PATH: '/'
+        run: |
+          npm run lint
+          npm run build
+
+      - name: Sync Capacitor Android Project
+        run: npx cap sync android
+
+      - name: Build Debug APK (sideload-ready for Android TV)
+        working-directory: android
+        run: |
+          chmod +x gradlew
+          ./gradlew assembleDebug --no-daemon
+
+      - name: Prepare APK artifact
+        run: |
+          cp android/app/build/outputs/apk/debug/app-debug.apk astro-nova-3d-android-tv.apk
+
+      - name: Upload APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: astro-nova-3d-android-tv-apk
+          path: astro-nova-3d-android-tv.apk
+          retention-days: 90
+
+      - name: Publish Direct Download Release for Android TV
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: android-tv-latest
+          name: Astro Nova 3D — Android TV APK
+          body: |
+            Instalador **APK** listo para **Android TV / Google TV**.
+
+            ### Cómo instalar en tu Android TV:
+            1. Descarga `astro-nova-3d-android-tv.apk` (directamente con la app **Downloader** de Android TV usando la URL del archivo, o desde un PC hacia un pendrive USB).
+            2. Activa **"Instalar aplicaciones desconocidas"** en los Ajustes de tu Android TV.
+            3. Abre el APK e instálalo. Aparecerá en la pantalla principal de Android TV con su banner y soporte para mando Bluetooth o control remoto.
+          files: astro-nova-3d-android-tv.apk
+          make_latest: true

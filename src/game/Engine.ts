@@ -321,6 +321,16 @@ export class GameEngine {
   private touchMoveX = 0;
   private touchMoveZ = 0;
   private touchJumpHeld = false;
+  private gamepadMoveX = 0;
+  private gamepadMoveZ = 0;
+  private gamepadCamX = 0;
+  private gamepadJumpHeld = false;
+  private prevGamepadButtons = {
+    jump: false,
+    spin: false,
+    bow: false,
+    pause: false,
+  };
 
   // Loop state
   private frameId = 0;
@@ -524,19 +534,32 @@ export class GameEngine {
   private handleKeyDown = (e: KeyboardEvent) => {
     soundEngine.unlock();
     const code = e.code;
+    const isFocusedButton = (e.target as HTMLElement | null)?.tagName === 'BUTTON';
+    const isTvSelect =
+      !isFocusedButton &&
+      (e.key === 'Select' || code === 'Enter' || code === 'NumpadEnter' || e.keyCode === 23);
+    const isTvBack =
+      code === 'Escape' ||
+      code === 'KeyP' ||
+      e.key === 'GoBack' ||
+      e.key === 'BrowserBack' ||
+      e.key === 'MediaPlayPause';
+
     if (
       code === 'Space' ||
       code === 'ArrowUp' ||
       code === 'ArrowDown' ||
       code === 'ArrowLeft' ||
-      code === 'ArrowRight'
+      code === 'ArrowRight' ||
+      isTvSelect
     ) {
       e.preventDefault();
     }
 
     if (this.phase === 'playing') {
+      const jumpKey = code === 'Space' || isTvSelect;
       if (!this.keysHeld.has(code)) {
-        if (code === 'Space') {
+        if (jumpKey) {
           if (this.rocketState === 'flying') {
             this.rocketBoostTimer = 0.55;
             soundEngine.playRocketBoost();
@@ -551,18 +574,29 @@ export class GameEngine {
           this.shootArrow();
         }
       }
-      if (code === 'Escape' || code === 'KeyP') {
+      if (isTvBack) {
+        e.preventDefault();
         this.setPhase('paused');
       }
-    } else if (this.phase === 'paused' && (code === 'Escape' || code === 'KeyP')) {
+    } else if (this.phase === 'paused' && isTvBack) {
+      e.preventDefault();
       this.setPhase('playing');
     }
 
     this.keysHeld.add(code);
+    if (isTvSelect) this.keysHeld.add('__TV_JUMP__');
   };
 
   private handleKeyUp = (e: KeyboardEvent) => {
     this.keysHeld.delete(e.code);
+    if (
+      e.key === 'Select' ||
+      e.code === 'Enter' ||
+      e.code === 'NumpadEnter' ||
+      e.keyCode === 23
+    ) {
+      this.keysHeld.delete('__TV_JUMP__');
+    }
   };
 
   private handlePointerDown = (e: PointerEvent) => {
@@ -2774,6 +2808,83 @@ export class GameEngine {
     this.frameId = window.setTimeout(poll, 5);
   }
 
+  private pollGamepad() {
+    this.gamepadMoveX = 0;
+    this.gamepadMoveZ = 0;
+    this.gamepadCamX = 0;
+    this.gamepadJumpHeld = false;
+
+    const pads = navigator.getGamepads?.();
+    if (!pads) return;
+
+    let gp: Gamepad | null = null;
+    for (let i = 0; i < pads.length; i++) {
+      if (pads[i]?.connected) {
+        gp = pads[i];
+        break;
+      }
+    }
+    if (!gp) {
+      this.prevGamepadButtons = { jump: false, spin: false, bow: false, pause: false };
+      return;
+    }
+
+    const deadzone = 0.2;
+    const ax0 = Math.abs(gp.axes[0] ?? 0) > deadzone ? gp.axes[0] : 0;
+    const ax1 = Math.abs(gp.axes[1] ?? 0) > deadzone ? gp.axes[1] : 0;
+    const ax2 = Math.abs(gp.axes[2] ?? 0) > deadzone ? gp.axes[2] : 0;
+
+    let gx = ax0;
+    let gz = ax1;
+    if (gp.buttons[14]?.pressed) gx -= 1; // D-pad Left
+    if (gp.buttons[15]?.pressed) gx += 1; // D-pad Right
+    if (gp.buttons[12]?.pressed) gz -= 1; // D-pad Up
+    if (gp.buttons[13]?.pressed) gz += 1; // D-pad Down
+
+    this.gamepadMoveX = THREE.MathUtils.clamp(gx, -1, 1);
+    this.gamepadMoveZ = THREE.MathUtils.clamp(gz, -1, 1);
+    this.gamepadCamX = ax2;
+
+    const jumpNow = Boolean(gp.buttons[0]?.pressed);
+    const spinNow = Boolean(gp.buttons[2]?.pressed || gp.buttons[4]?.pressed);
+    const bowNow = Boolean(gp.buttons[1]?.pressed || gp.buttons[5]?.pressed || gp.buttons[7]?.pressed);
+    const pauseNow = Boolean(gp.buttons[9]?.pressed);
+
+    if (jumpNow || spinNow || bowNow || pauseNow) {
+      soundEngine.unlock();
+    }
+
+    if (pauseNow && !this.prevGamepadButtons.pause) {
+      if (this.phase === 'playing') this.setPhase('paused');
+      else if (this.phase === 'paused') this.setPhase('playing');
+    }
+
+    if (this.phase === 'playing') {
+      this.gamepadJumpHeld = jumpNow;
+      if (jumpNow && !this.prevGamepadButtons.jump) {
+        if (this.rocketState === 'flying') {
+          this.rocketBoostTimer = 0.55;
+          soundEngine.playRocketBoost();
+        } else {
+          this.jumpBufferTimer = 0.14;
+        }
+      }
+      if (spinNow && !this.prevGamepadButtons.spin) {
+        this.triggerSpin();
+      }
+      if (bowNow && !this.prevGamepadButtons.bow) {
+        this.shootArrow();
+      }
+    }
+
+    this.prevGamepadButtons = {
+      jump: jumpNow,
+      spin: spinNow,
+      bow: bowNow,
+      pause: pauseNow,
+    };
+  }
+
   private tick = () => {
     if (this.disposed) return;
     const now = performance.now();
@@ -2781,6 +2892,7 @@ export class GameEngine {
     this.lastTimestamp = now;
     const dt = Math.min(Math.max(rawDt, 0.001), 0.05);
 
+    this.pollGamepad();
     this.totalTime += dt;
     if (this.shakeIntensity > 0) this.shakeIntensity = Math.max(0, this.shakeIntensity - dt * 1.8);
 
@@ -3056,6 +3168,7 @@ export class GameEngine {
     if (this.perspectiveMode === '3D') {
       if (this.keysHeld.has('KeyQ')) this.camYaw += dt * 2.1;
       if (this.keysHeld.has('KeyE')) this.camYaw -= dt * 2.1;
+      if (Math.abs(this.gamepadCamX) > 0.05) this.camYaw -= this.gamepadCamX * dt * 2.4;
     } else if (this.active2DZone) {
       const targetYaw = this.active2DZone.moveAxis === 'x' ? 0 : Math.PI / 2;
       let diff = targetYaw - this.camYaw;
@@ -3065,8 +3178,8 @@ export class GameEngine {
       this.camPitch = THREE.MathUtils.damp(this.camPitch, 0.14, 8, dt);
     }
 
-    let inX = this.touchMoveX;
-    let inZ = this.touchMoveZ;
+    let inX = this.touchMoveX + this.gamepadMoveX;
+    let inZ = this.touchMoveZ + this.gamepadMoveZ;
     if (this.keysHeld.has('KeyA') || this.keysHeld.has('ArrowLeft')) inX -= 1;
     if (this.keysHeld.has('KeyD') || this.keysHeld.has('ArrowRight')) inX += 1;
     if (this.keysHeld.has('KeyW') || this.keysHeld.has('ArrowUp')) inZ -= 1;
@@ -3245,7 +3358,11 @@ export class GameEngine {
         this.spawnBurst(this.playerPos.x, this.playerPos.y + 0.1, this.playerPos.z, 0xe0f2fe, 8, 2.6);
       }
 
-      const jumpHeld = this.keysHeld.has('Space') || this.touchJumpHeld;
+      const jumpHeld =
+        this.keysHeld.has('Space') ||
+        this.keysHeld.has('__TV_JUMP__') ||
+        this.touchJumpHeld ||
+        this.gamepadJumpHeld;
       if (!this.grounded && jumpHeld && this.playerVel.y < 1.8 && this.hoverFuel > 0) {
         this.isHovering = true;
         this.hoverFuel = Math.max(0, this.hoverFuel - dt * 1.08);
@@ -3750,12 +3867,14 @@ export class GameEngine {
   private stepRocketFlight(dt: number) {
     if (!this.rocketRig) return;
 
-    let steerX = this.touchMoveX;
-    let steerY = -this.touchMoveZ;
+    let steerX = this.touchMoveX + this.gamepadMoveX;
+    let steerY = -this.touchMoveZ - this.gamepadMoveZ;
     if (this.keysHeld.has('KeyA') || this.keysHeld.has('ArrowLeft')) steerX -= 1;
     if (this.keysHeld.has('KeyD') || this.keysHeld.has('ArrowRight')) steerX += 1;
     if (this.keysHeld.has('KeyW') || this.keysHeld.has('ArrowUp')) steerY += 1;
     if (this.keysHeld.has('KeyS') || this.keysHeld.has('ArrowDown')) steerY -= 1;
+    steerX = THREE.MathUtils.clamp(steerX, -1, 1);
+    steerY = THREE.MathUtils.clamp(steerY, -1, 1);
 
     this.rocketVelX = THREE.MathUtils.damp(this.rocketVelX, steerX * 10.5, 9, dt);
     this.rocketVelY = THREE.MathUtils.damp(this.rocketVelY, steerY * 8.5, 9, dt);

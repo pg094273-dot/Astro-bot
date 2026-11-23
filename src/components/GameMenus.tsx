@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useEffect, useRef } from 'react';
 import { LEVELS } from '../game/levels';
 import { HudSnapshot, LevelProgress } from '../game/types';
 import { PWAInstallButton } from './PWAInstallButton';
@@ -41,6 +41,17 @@ export const GameMenus: React.FC<GameMenusProps> = ({
   onNextLevel,
   onReturnTitle,
 }) => {
+  const primaryBtnRef = useRef<HTMLButtonElement | null>(null);
+
+  useEffect(() => {
+    if (hud.phase !== 'playing') {
+      const id = window.setTimeout(() => {
+        primaryBtnRef.current?.focus();
+      }, 40);
+      return () => window.clearTimeout(id);
+    }
+  }, [hud.phase]);
+
   if (hud.phase === 'playing') return null;
 
   // 1. TITLE SCREEN (Stages live 3D rotating showcase behind calm left-aligned lockup)
@@ -51,49 +62,49 @@ export const GameMenus: React.FC<GameMenusProps> = ({
         {/* Top-left bespoke SVG title lockup + Install CTA */}
         <div className="flex flex-wrap items-start justify-between gap-4">
           <div className="max-w-xl">
-          <svg
-            viewBox="0 0 420 96"
-            className="h-16 w-auto sm:h-24 drop-shadow-[0_6px_24px_rgba(2,132,199,0.45)]"
-            aria-label="Astro Nova 3D"
-          >
-            <defs>
-              <linearGradient id="astroTitleGrad" x1="0%" y1="0%" x2="100%" y2="100%">
-                <stop offset="0%" stopColor="#ffffff" />
-                <stop offset="55%" stopColor="#e0f2fe" />
-                <stop offset="100%" stopColor="#38bdf8" />
-              </linearGradient>
-            </defs>
-            {/* Visor emblem mark */}
-            <rect x="4" y="14" width="66" height="54" rx="22" fill="#f8fafc" />
-            <rect x="13" y="25" width="48" height="32" rx="14" fill="#091124" />
-            <ellipse cx="28" cy="41" rx="5.5" ry="7.5" fill="#38bdf8" />
-            <ellipse cx="46" cy="41" rx="5.5" ry="7.5" fill="#38bdf8" />
-            <path d="M37 14 L37 4" stroke="#38bdf8" strokeWidth="4" strokeLinecap="round" />
-            <circle cx="37" cy="4" r="4" fill="#38bdf8" />
-            {/* Wordmark */}
-            <text
-              x="86"
-              y="56"
-              fill="url(#astroTitleGrad)"
-              fontFamily="Outfit, sans-serif"
-              fontWeight="800"
-              fontSize="44"
-              letterSpacing="-1"
+            <svg
+              viewBox="0 0 420 96"
+              className="h-16 w-auto sm:h-24 drop-shadow-[0_6px_24px_rgba(2,132,199,0.45)]"
+              aria-label="Astro Nova 3D"
             >
-              ASTRO NOVA
-            </text>
-            <text
-              x="88"
-              y="80"
-              fill="#bae6fd"
-              fontFamily="Plus Jakarta Sans, sans-serif"
-              fontWeight="600"
-              fontSize="14"
-              letterSpacing="2"
-            >
-              PLATAFORMAS ORBITALES 3D
-            </text>
-          </svg>
+              <defs>
+                <linearGradient id="astroTitleGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+                  <stop offset="0%" stopColor="#ffffff" />
+                  <stop offset="55%" stopColor="#e0f2fe" />
+                  <stop offset="100%" stopColor="#38bdf8" />
+                </linearGradient>
+              </defs>
+              {/* Visor emblem mark */}
+              <rect x="4" y="14" width="66" height="54" rx="22" fill="#f8fafc" />
+              <rect x="13" y="25" width="48" height="32" rx="14" fill="#091124" />
+              <ellipse cx="28" cy="41" rx="5.5" ry="7.5" fill="#38bdf8" />
+              <ellipse cx="46" cy="41" rx="5.5" ry="7.5" fill="#38bdf8" />
+              <path d="M37 14 L37 4" stroke="#38bdf8" strokeWidth="4" strokeLinecap="round" />
+              <circle cx="37" cy="4" r="4" fill="#38bdf8" />
+              {/* Wordmark */}
+              <text
+                x="86"
+                y="56"
+                fill="url(#astroTitleGrad)"
+                fontFamily="Outfit, sans-serif"
+                fontWeight="800"
+                fontSize="44"
+                letterSpacing="-1"
+              >
+                ASTRO NOVA
+              </text>
+              <text
+                x="88"
+                y="80"
+                fill="#bae6fd"
+                fontFamily="Plus Jakarta Sans, sans-serif"
+                fontWeight="600"
+                fontSize="14"
+                letterSpacing="2"
+              >
+                PLATAFORMAS ORBITALES 3D
+              </text>
+            </svg>
           </div>
           <PWAInstallButton />
         </div>
@@ -109,7 +120,10 @@ export const GameMenus: React.FC<GameMenusProps> = ({
                   key={lvl.id}
                   type="button"
                   onClick={() => onSelectLevel(lvl.index)}
-                  className={`flex flex-col items-start gap-1 rounded-xl border p-3.5 text-left transition-colors ${
+                  onFocus={() => {
+                    if (lvl.index !== selectedLevel) onSelectLevel(lvl.index);
+                  }}
+                  className={`flex flex-col items-start gap-1 rounded-xl border p-3.5 text-left transition-all focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-sky-300 ${
                     isSelected
                       ? 'border-sky-400 bg-sky-950/75 text-white'
                       : 'border-white/10 bg-slate-900/65 text-slate-300 hover:border-white/25 hover:bg-slate-800/75'
@@ -136,12 +150,13 @@ export const GameMenus: React.FC<GameMenusProps> = ({
 
           <div className="flex flex-col items-center justify-between gap-3 border-t border-white/10 pt-3 sm:flex-row">
             <p className="text-xs text-slate-300">
-              WASD Mover · Espacio Saltar / Planear con Láser · F / Clic Der. Girar · Q/E Cámara · Esc Pausa
+              Teclado / Mando / Control TV: Flechas o Stick Mover · Espacio / A / OK Saltar · F / X Girar · Esc / Start Pausa
             </p>
             <button
+              ref={primaryBtnRef}
               type="button"
               onClick={() => onStartGame(activeLevel.index)}
-              className="w-full shrink-0 rounded-xl bg-sky-500 px-8 py-3 font-display text-base font-bold text-slate-950 shadow-lg transition-transform hover:bg-sky-400 active:scale-[0.98] sm:w-auto"
+              className="w-full shrink-0 rounded-xl bg-sky-500 px-8 py-3 font-display text-base font-bold text-slate-950 shadow-lg transition-transform hover:bg-sky-400 focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-white active:scale-[0.98] sm:w-auto"
             >
               Jugar Nivel {activeLevel.index + 1}
             </button>
@@ -160,23 +175,24 @@ export const GameMenus: React.FC<GameMenusProps> = ({
           <p className="text-sm text-slate-300">{hud.levelName}</p>
           <div className="flex flex-col gap-2.5 pt-2">
             <button
+              ref={primaryBtnRef}
               type="button"
               onClick={onResume}
-              className="rounded-xl bg-sky-500 px-5 py-2.5 font-display text-sm font-bold text-slate-950 transition-colors hover:bg-sky-400"
+              className="rounded-xl bg-sky-500 px-5 py-2.5 font-display text-sm font-bold text-slate-950 transition-colors hover:bg-sky-400 focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-white"
             >
               Continuar
             </button>
             <button
               type="button"
               onClick={onRestart}
-              className="rounded-xl border border-white/15 bg-slate-800 px-5 py-2.5 font-display text-sm font-semibold text-white transition-colors hover:bg-slate-700"
+              className="rounded-xl border border-white/15 bg-slate-800 px-5 py-2.5 font-display text-sm font-semibold text-white transition-colors hover:bg-slate-700 focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-sky-300"
             >
               Reiniciar Nivel
             </button>
             <button
               type="button"
               onClick={onReturnTitle}
-              className="rounded-xl border border-white/10 bg-transparent px-5 py-2.5 font-display text-sm font-semibold text-slate-300 transition-colors hover:bg-slate-800 hover:text-white"
+              className="rounded-xl border border-white/10 bg-transparent px-5 py-2.5 font-display text-sm font-semibold text-slate-300 transition-colors hover:bg-slate-800 hover:text-white focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-sky-300"
             >
               Volver al Menú
             </button>
@@ -200,16 +216,17 @@ export const GameMenus: React.FC<GameMenusProps> = ({
           </p>
           <div className="flex flex-col gap-2.5 pt-2">
             <button
+              ref={primaryBtnRef}
               type="button"
               onClick={onRestart}
-              className="rounded-xl bg-sky-500 px-5 py-2.5 font-display text-sm font-bold text-slate-950 transition-colors hover:bg-sky-400"
+              className="rounded-xl bg-sky-500 px-5 py-2.5 font-display text-sm font-bold text-slate-950 transition-colors hover:bg-sky-400 focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-white"
             >
               Reintentar Nivel
             </button>
             <button
               type="button"
               onClick={onReturnTitle}
-              className="rounded-xl border border-white/10 bg-slate-800 px-5 py-2.5 font-display text-sm font-semibold text-slate-200 transition-colors hover:bg-slate-700"
+              className="rounded-xl border border-white/10 bg-slate-800 px-5 py-2.5 font-display text-sm font-semibold text-slate-200 transition-colors hover:bg-slate-700 focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-sky-300"
             >
               Elegir Nivel
             </button>
@@ -255,25 +272,27 @@ export const GameMenus: React.FC<GameMenusProps> = ({
         <div className="flex flex-col gap-2.5">
           {hasNext && (
             <button
+              ref={primaryBtnRef}
               type="button"
               onClick={onNextLevel}
-              className="rounded-xl bg-sky-500 px-6 py-3 font-display text-base font-bold text-slate-950 transition-colors hover:bg-sky-400"
+              className="rounded-xl bg-sky-500 px-6 py-3 font-display text-base font-bold text-slate-950 transition-colors hover:bg-sky-400 focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-white"
             >
               Siguiente Nivel
             </button>
           )}
           <div className="grid grid-cols-2 gap-2.5">
             <button
+              ref={hasNext ? undefined : primaryBtnRef}
               type="button"
               onClick={onRestart}
-              className="rounded-xl border border-white/15 bg-slate-800 px-4 py-2.5 font-display text-sm font-semibold text-white transition-colors hover:bg-slate-700"
+              className="rounded-xl border border-white/15 bg-slate-800 px-4 py-2.5 font-display text-sm font-semibold text-white transition-colors hover:bg-slate-700 focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-sky-300"
             >
               Repetir
             </button>
             <button
               type="button"
               onClick={onReturnTitle}
-              className="rounded-xl border border-white/10 bg-transparent px-4 py-2.5 font-display text-sm font-semibold text-slate-300 transition-colors hover:bg-slate-800 hover:text-white"
+              className="rounded-xl border border-white/10 bg-transparent px-4 py-2.5 font-display text-sm font-semibold text-slate-300 transition-colors hover:bg-slate-800 hover:text-white focus-visible:outline-none focus-visible:ring-3 focus-visible:ring-sky-300"
             >
               Menú Principal
             </button>

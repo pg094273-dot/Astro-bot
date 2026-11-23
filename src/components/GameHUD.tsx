@@ -41,12 +41,12 @@ export const GameHUD: React.FC<GameHUDProps> = ({
 
   const hintText =
     hud.perspectiveMode === 'COHETE'
-      ? 'WASD Maniobrar Cohete · Espacio Turbo · Esc Pausa'
+      ? 'WASD / Mando Maniobrar Cohete · Espacio / A / OK Turbo · Esc / Start Pausa'
       : hud.isClimbing
-        ? 'W/S Trepar · A/D Moverse lateralmente · Espacio Saltar de la pared'
+        ? 'W/S / Stick Trepar · A/D Lateral · Espacio / A / OK Saltar del muro'
         : hud.hasBow
-          ? 'WASD Mover · Espacio Saltar/Planear · F Girar · G / Clic Izq. Disparar Arco · Q/E Cámara'
-          : 'WASD Mover · Espacio Saltar / Mantener Planear · F / Clic Der. Girar · Arrastrar / Q·E Cámara';
+          ? 'WASD / Mando Mover · Espacio / A Saltar · F / X Girar · G / B / RT Arco · Q/E Cámara'
+          : 'WASD / Mando Mover · Espacio / A Saltar/Planear · F / X Girar · Q/E / Stick Der. Cámara';
 
   return (
     <div className="pointer-events-none fixed inset-0 z-10 flex flex-col justify-between p-4 pt-[max(1rem,env(safe-area-inset-top))] pb-[max(1rem,env(safe-area-inset-bottom))] pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] sm:p-6">

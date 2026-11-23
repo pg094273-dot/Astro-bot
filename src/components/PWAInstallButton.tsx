@@ -5,8 +5,11 @@ import { useOnlineStatus, usePWAInstall } from '../hooks/usePWAInstall';
 export const PWAInstallButton: React.FC = () => {
   const { isInstallable, isInstalled, isIOS, install } = usePWAInstall();
   const [showIOSGuide, setShowIOSGuide] = useState(false);
+  const isNativeAndroid = Boolean(
+    (window as unknown as { Capacitor?: { isNativePlatform?: () => boolean } }).Capacitor?.isNativePlatform?.()
+  );
 
-  if (isInstalled) {
+  if (isInstalled || isNativeAndroid) {
     return null;
   }
 
@@ -15,7 +18,7 @@ export const PWAInstallButton: React.FC = () => {
       <button
         type="button"
         onClick={install}
-        className="flex items-center justify-center gap-2 rounded-xl border border-sky-400/40 bg-sky-950/85 px-4 py-2.5 font-display text-xs font-bold text-sky-200 transition-colors hover:bg-sky-900 hover:text-white"
+        className="flex items-center justify-center gap-2 rounded-xl border border-sky-400/40 bg-sky-950/85 px-4 py-2.5 font-display text-xs font-bold text-sky-200 transition-colors hover:bg-sky-900 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-sky-300"
       >
         <Download className="h-4 w-4" />
         Instalar App
