@@ -111,7 +111,7 @@ export const GameMenus: React.FC<GameMenusProps> = ({
 
         {/* Bottom Dock: Level Selector Cards + Primary Start CTA + Single Control Hint Line */}
         <div className="mx-auto flex w-full max-w-5xl flex-col gap-4 rounded-2xl border border-white/15 bg-[#070d1d]/88 p-5 text-white shadow-2xl">
-          <div className="grid max-h-[42vh] grid-cols-1 gap-2.5 overflow-y-auto pr-1 sm:max-h-none sm:grid-cols-2 sm:overflow-visible lg:grid-cols-3">
+          <div className="grid max-h-[42vh] grid-cols-1 gap-2.5 overflow-y-auto pr-1 sm:max-h-none sm:grid-cols-2 sm:overflow-visible lg:grid-cols-4">
             {LEVELS.map((lvl) => {
               const isSelected = lvl.index === selectedLevel;
               const stats = progress[lvl.index];
@@ -134,7 +134,7 @@ export const GameMenus: React.FC<GameMenusProps> = ({
                 >
                   <div className="flex w-full items-center justify-between gap-2">
                     <span className="font-display text-sm font-bold text-white">
-                      0{lvl.index + 1}. {lvl.name}
+                      {String(lvl.index + 1).padStart(2, '0')}. {lvl.name}
                     </span>
                     {stats?.completed && (
                       <span className="text-xs font-semibold text-emerald-400">Completado</span>

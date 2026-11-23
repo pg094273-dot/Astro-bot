@@ -42,11 +42,15 @@ export const GameHUD: React.FC<GameHUDProps> = ({
   const hintText =
     hud.perspectiveMode === 'COHETE'
       ? 'Cruceta / WASD Maniobrar · OK / A / Espacio Turbo · Volver / Esc Pausa'
-      : hud.isClimbing
-        ? 'Cruceta / Stick Trepar y Lateral · OK / A / Espacio Saltar del muro'
-        : hud.hasBow
-          ? 'Cruceta / Mando Mover · OK / A Saltar · 2×OK / X / B Girar y Arco · Volver Pausa'
-          : 'Cruceta / Mando Mover · OK / A Saltar/Planear · 2×OK / X Girar · Volver Pausa';
+      : hud.perspectiveMode === 'ALA DELTA'
+        ? 'Cruceta / WASD Planear · OK / A / Espacio Corriente térmica · Volver Pausa'
+        : hud.perspectiveMode === 'BARCO'
+          ? 'Cruceta / WASD Timón · OK / A / Espacio Saltar ola · Volver Pausa'
+          : hud.isClimbing
+            ? 'Cruceta / Stick Trepar y Lateral · OK / A / Espacio Saltar del muro'
+            : hud.hasBow
+              ? 'Cruceta / Mando Mover · OK / A Saltar · 2×OK / X / B Girar y Arco · Volver Pausa'
+              : 'Cruceta / Mando Mover · OK / A Saltar/Planear · 2×OK / X Girar · Volver Pausa';
 
   return (
     <div className="pointer-events-none fixed inset-0 z-10 flex flex-col justify-between p-4 pt-[max(1rem,env(safe-area-inset-top))] pb-[max(1rem,env(safe-area-inset-bottom))] pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] sm:p-6">
@@ -106,14 +110,24 @@ export const GameHUD: React.FC<GameHUDProps> = ({
             </span>
           </div>
 
-          {/* Hover Laser Fuel Bar */}
+          {/* Hover Laser / Bot Rocket Fuel Bar */}
           <div className="flex items-center gap-2">
-            <span className="text-[11px] font-medium text-sky-300">
-              {hud.perspectiveMode === 'COHETE' ? 'Propulsor' : 'Láser'}
+            <span className={`text-[11px] font-medium ${hud.botRocketActive ? 'text-amber-300' : 'text-sky-300'}`}>
+              {hud.botRocketActive
+                ? 'Cohete Bot'
+                : hud.perspectiveMode === 'COHETE'
+                  ? 'Propulsor'
+                  : hud.perspectiveMode === 'ALA DELTA'
+                    ? 'Térmica'
+                    : hud.perspectiveMode === 'BARCO'
+                      ? 'Olas'
+                      : 'Láser'}
             </span>
             <div className="h-1.5 w-32 overflow-hidden rounded-full bg-slate-800">
               <div
-                className="h-full origin-left bg-sky-400 transition-transform duration-75"
+                className={`h-full origin-left transition-transform duration-75 ${
+                  hud.botRocketActive ? 'bg-gradient-to-r from-amber-400 to-orange-500' : 'bg-sky-400'
+                }`}
                 style={{ transform: `scaleX(${Math.max(0, Math.min(1, hud.hoverFuel))})` }}
               />
             </div>
@@ -136,6 +150,21 @@ export const GameHUD: React.FC<GameHUDProps> = ({
                 {hud.botsRescued}/{hud.totalBots}
               </span>
             </div>
+
+            {hud.botRocketCharges > 0 && (
+              <>
+                <span className="text-white/25" aria-hidden="true">·</span>
+                <div className="flex items-center gap-1" title="Bots Cohete de rescate al caer">
+                  <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                    <path d="M12 2c3.5 3.5 5 8 5 12l-5-2.5L7 14c0-4 1.5-8.5 5-12z" fill="#fb923c" />
+                    <path d="M10 15.5l2 5.5 2-5.5" fill="#38bdf8" />
+                  </svg>
+                  <span className="font-mono-num text-xs font-bold text-amber-300">
+                    ×{hud.botRocketCharges}
+                  </span>
+                </div>
+              </>
+            )}
 
             <span className="text-white/25" aria-hidden="true">·</span>
 
@@ -288,7 +317,11 @@ export const GameHUD: React.FC<GameHUDProps> = ({
               onPointerCancel={() => onTouchJump(false, false)}
               className="flex h-16 w-16 items-center justify-center rounded-full border border-sky-300/60 bg-sky-600/95 font-display text-xs font-bold text-white shadow-lg active:bg-sky-400"
             >
-              {hud.perspectiveMode === 'COHETE' ? 'Turbo' : 'Saltar'}
+              {hud.perspectiveMode === 'COHETE'
+                ? 'Turbo'
+                : hud.perspectiveMode === 'ALA DELTA'
+                  ? 'Térmica'
+                  : 'Saltar'}
             </button>
           </div>
         </div>

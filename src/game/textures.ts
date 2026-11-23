@@ -47,6 +47,14 @@ export interface ProceduralTextures {
   skyIce: THREE.CanvasTexture;
   skyVolcanic: THREE.CanvasTexture;
   skyNebula: THREE.CanvasTexture;
+  parisStone: THREE.CanvasTexture;
+  parisRoof: THREE.CanvasTexture;
+  seineWaterSurface: THREE.CanvasTexture;
+  skyParis: THREE.CanvasTexture;
+  riverTimber: THREE.CanvasTexture;
+  rapidsWaterSurface: THREE.CanvasTexture;
+  calmLakeSurface: THREE.CanvasTexture;
+  skyRapids: THREE.CanvasTexture;
 }
 
 function makeCanvas(w: number, h: number): [HTMLCanvasElement, CanvasRenderingContext2D] {
@@ -1377,6 +1385,283 @@ export function createProceduralTextures(maxAnisotropy: number): ProceduralTextu
     }
   });
 
+  // PARIS LIMESTONE PAVING (Champs-Élysées plaza & Seine quays)
+  const parisStone = (() => {
+    const [canvas, ctx] = makeCanvas(512, 512);
+    ctx.fillStyle = '#d6ccba';
+    ctx.fillRect(0, 0, 512, 512);
+    const cols = 8;
+    const rows = 16;
+    const cw = 512 / cols;
+    const rh = 512 / rows;
+    for (let r = 0; r < rows; r++) {
+      const offset = (r % 2) * (cw * 0.5);
+      for (let c = -1; c <= cols; c++) {
+        const x = c * cw + offset;
+        const y = r * rh;
+        const tone = 198 + (((r * 13 + c * 29) % 24) - 12);
+        ctx.fillStyle = `rgb(${tone}, ${tone - 9}, ${tone - 22})`;
+        ctx.fillRect(x + 2, y + 2, cw - 4, rh - 4);
+        ctx.fillStyle = 'rgba(255,250,240,0.22)';
+        ctx.fillRect(x + 2, y + 2, cw - 4, 4);
+      }
+    }
+    return finalizeColorTexture(canvas, maxAnisotropy, 2, 2);
+  })();
+
+  // PARIS ZINC SLATE MANSARD ROOF
+  const parisRoof = (() => {
+    const [canvas, ctx] = makeCanvas(256, 256);
+    ctx.fillStyle = '#334155';
+    ctx.fillRect(0, 0, 256, 256);
+    for (let x = 0; x < 256; x += 24) {
+      ctx.fillStyle = x % 48 === 0 ? '#475569' : '#3b4a60';
+      ctx.fillRect(x + 1, 0, 21, 256);
+      ctx.fillStyle = '#1e293b';
+      ctx.fillRect(x, 0, 2, 256);
+    }
+    for (let y = 0; y < 256; y += 32) {
+      ctx.fillStyle = 'rgba(15, 23, 42, 0.35)';
+      ctx.fillRect(0, y, 256, 2);
+    }
+    return finalizeColorTexture(canvas, maxAnisotropy, 2, 2);
+  })();
+
+  // PARIS PASTEL LAVENDER REFLECTING ESPLANADE / SEINE SURFACE
+  const seineWaterSurface = (() => {
+    const [canvas, ctx] = makeCanvas(512, 512);
+    const g = ctx.createLinearGradient(0, 0, 512, 512);
+    g.addColorStop(0, '#969ec7');
+    g.addColorStop(0.5, '#a8b0d8');
+    g.addColorStop(1, '#8f97c2');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, 512, 512);
+    for (let i = 0; i < 140; i++) {
+      const rx = (i * 79) % 512;
+      const ry = (i * 137) % 512;
+      ctx.fillStyle = i % 3 === 0 ? 'rgba(226, 232, 255, 0.26)' : 'rgba(122, 130, 178, 0.22)';
+      ctx.fillRect(rx, ry, 34 + (i % 28), 3);
+    }
+    return finalizeColorTexture(canvas, maxAnisotropy, 16, 16);
+  })();
+
+  // PARIS PANORAMA SKY (Bright pastel blue sky, sweeping layered white clouds, wind streaks & lavender city skyline)
+  const skyParis = makePanoramicSky((ctx, w, h) => {
+    const g = ctx.createLinearGradient(0, 0, 0, h);
+    g.addColorStop(0, '#5dbdf7');
+    g.addColorStop(0.32, '#86d2fb');
+    g.addColorStop(0.58, '#bde6fe');
+    g.addColorStop(0.7, '#d6f1ff');
+    g.addColorStop(0.76, '#b0b8e2');
+    g.addColorStop(1, '#959dc6');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, w, h);
+
+    // Sweeping stylized daytime clouds + crisp wind-streak curves (matching illustration)
+    const drawStylizedCloud = (cx: number, cy: number, sc: number, flip = 1) => {
+      ctx.save();
+      ctx.translate(cx, cy);
+      ctx.scale(flip * sc, sc);
+
+      // Pale sky-blue base shadow ribbon
+      ctx.fillStyle = 'rgba(155, 214, 248, 0.55)';
+      ctx.beginPath();
+      ctx.ellipse(0, 12, 165, 24, 0, 0, Math.PI * 2);
+      ctx.fill();
+
+      // Main crisp white cloud puffs with flat airy bottom sweep
+      ctx.fillStyle = 'rgba(248, 252, 255, 0.96)';
+      const puffs: [number, number, number, number][] = [
+        [-95, 6, 58, 28],
+        [-35, -14, 68, 44],
+        [40, -6, 56, 36],
+        [105, 8, 52, 24],
+        [0, 10, 145, 22],
+      ];
+      for (const [ox, oy, rx, ry] of puffs) {
+        ctx.beginPath();
+        ctx.ellipse(ox, oy, rx, ry, 0, 0, Math.PI * 2);
+        ctx.fill();
+      }
+
+      // Thin windswept ribbon arcs across sky
+      ctx.strokeStyle = 'rgba(255, 255, 255, 0.72)';
+      ctx.lineWidth = 3;
+      ctx.beginPath();
+      ctx.moveTo(-210, 26);
+      ctx.quadraticCurveTo(-40, 34, 180, 18);
+      ctx.stroke();
+
+      ctx.restore();
+    };
+
+    for (let i = 0; i < 8; i++) {
+      const cx = (i * 256 + 120) % w;
+      const cy = 220 + (i % 3) * 72;
+      const sc = 0.85 + (i % 3) * 0.24;
+      drawStylizedCloud(cx, cy, sc, i % 2 === 0 ? 1 : -1);
+    }
+
+    // Far pale lavender-periwinkle Paris city skyline silhouette
+    ctx.fillStyle = '#aeb6e3';
+    for (let x = 0; x < w; x += 52) {
+      const bh = 68 + ((x * 19 + 31) % 105);
+      const bw = 44 + ((x * 7) % 16);
+      ctx.fillRect(x, 705 - bh, bw, bh + 80);
+      if ((x / 52) % 4 === 0) {
+        ctx.fillRect(x + bw * 0.35, 705 - bh - 28, bw * 0.3, 28);
+      }
+    }
+
+    // Mid-depth dusty blue-lavender skyline layer
+    ctx.fillStyle = '#97a1d8';
+    for (let x = 18; x < w; x += 68) {
+      const bh = 48 + ((x * 23 + 17) % 88);
+      const bw = 54 + ((x * 11) % 18);
+      ctx.fillRect(x, 712 - bh, bw, bh + 85);
+      if ((x / 68) % 3 === 1) {
+        // Sloped skyscraper / mansard top accent
+        ctx.beginPath();
+        ctx.moveTo(x, 712 - bh);
+        ctx.lineTo(x + bw, 712 - bh - 20);
+        ctx.lineTo(x + bw, 712 - bh);
+        ctx.closePath();
+        ctx.fill();
+      }
+    }
+
+    // Foreground soft lilac-blue skyline silhouettes & rooftops
+    ctx.fillStyle = '#8590cb';
+    for (let x = 0; x < w; x += 84) {
+      const bh = 32 + ((x * 31) % 62);
+      ctx.fillRect(x, 718 - bh, 72, bh + 95);
+    }
+
+    // Distant lush olive treetop band along base of skyline
+    ctx.fillStyle = '#5f8a2c';
+    ctx.fillRect(0, 710, w, 14);
+  });
+
+  // RIVER TIMBER DOCK PLANKS
+  const riverTimber = (() => {
+    const [canvas, ctx] = makeCanvas(512, 512);
+    ctx.fillStyle = '#784826';
+    ctx.fillRect(0, 0, 512, 512);
+    for (let y = 0; y < 512; y += 64) {
+      const shade = ((y * 17) % 24) - 12;
+      ctx.fillStyle = `rgb(${128 + shade}, ${78 + Math.floor(shade * 0.7)}, ${42 + Math.floor(shade * 0.4)})`;
+      ctx.fillRect(0, y + 2, 512, 60);
+      ctx.fillStyle = 'rgba(40, 20, 8, 0.35)';
+      ctx.fillRect(0, y, 512, 3);
+      for (let k = 0; k < 20; k++) {
+        ctx.fillStyle = 'rgba(55, 30, 12, 0.2)';
+        ctx.fillRect((k * 53 + y) % 480, y + 10 + (k % 5) * 9, 44, 2);
+      }
+      // Bronze nail heads
+      ctx.fillStyle = '#3b2313';
+      ctx.fillRect(24, y + 16, 6, 6);
+      ctx.fillRect(24, y + 42, 6, 6);
+      ctx.fillRect(482, y + 16, 6, 6);
+      ctx.fillRect(482, y + 42, 6, 6);
+    }
+    return finalizeColorTexture(canvas, maxAnisotropy, 2, 2);
+  })();
+
+  // RUSHING RAPIDS WHITE-WATER FOAM SURFACE
+  const rapidsWaterSurface = (() => {
+    const [canvas, ctx] = makeCanvas(512, 512);
+    const g = ctx.createLinearGradient(0, 0, 512, 0);
+    g.addColorStop(0, '#0c4a6e');
+    g.addColorStop(0.2, '#0284c7');
+    g.addColorStop(0.5, '#0ea5e9');
+    g.addColorStop(0.8, '#0284c7');
+    g.addColorStop(1, '#0c4a6e');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, 512, 512);
+
+    // Churning directional whitewater streaks along Y (-Z downstream)
+    for (let i = 0; i < 260; i++) {
+      const sx = (i * 67) % 512;
+      const sy = (i * 113) % 512;
+      const len = 34 + (i % 5) * 18;
+      ctx.fillStyle = i % 3 === 0 ? 'rgba(240, 249, 255, 0.72)' : 'rgba(125, 211, 252, 0.45)';
+      ctx.fillRect(sx, sy, 3 + (i % 4), len);
+    }
+    return finalizeColorTexture(canvas, maxAnisotropy, 2, 22);
+  })();
+
+  // CALM LAKE SERENE TURQUOISE SURFACE
+  const calmLakeSurface = (() => {
+    const [canvas, ctx] = makeCanvas(512, 512);
+    const g = ctx.createLinearGradient(0, 0, 512, 512);
+    g.addColorStop(0, '#0f766e');
+    g.addColorStop(0.5, '#14b8a6');
+    g.addColorStop(1, '#0d9488');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, 512, 512);
+    for (let i = 0; i < 120; i++) {
+      const rx = (i * 97) % 512;
+      const ry = (i * 151) % 512;
+      ctx.fillStyle = 'rgba(204, 251, 241, 0.22)';
+      ctx.fillRect(rx, ry, 36 + (i % 20), 2);
+    }
+    return finalizeColorTexture(canvas, maxAnisotropy, 6, 6);
+  })();
+
+  // RAPIDS JUNGLE CANYON SKY (Matched to Selva Esmeralda bright azure sky, distant blue peak & rainforest ridges)
+  const skyRapids = makePanoramicSky((ctx, w, h) => {
+    const g = ctx.createLinearGradient(0, 0, 0, h);
+    g.addColorStop(0, '#1e66b0');
+    g.addColorStop(0.32, '#5aa9e6');
+    g.addColorStop(0.58, '#bde2f7');
+    g.addColorStop(0.75, '#dcf0e8');
+    g.addColorStop(1, '#1a4224');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, w, h);
+
+    // Volumetric sunlit jungle clouds
+    for (let i = 0; i < 16; i++) {
+      const cx = (i * 157 + 60) % w;
+      const cy = 235 + (i % 4) * 50;
+      const sc = 0.85 + (i % 3) * 0.32;
+      paintCloudBank(ctx, cx, cy + 8, sc, 'rgba(148, 178, 212, 0.38)');
+      paintCloudBank(ctx, cx, cy, sc, 'rgba(255, 255, 255, 0.74)');
+    }
+
+    // Far mist-shrouded mountain silhouettes
+    ctx.fillStyle = '#538bb5';
+    ctx.beginPath();
+    ctx.moveTo(0, h);
+    for (let x = 0; x <= w; x += 20) {
+      const ridge = Math.sin(x * 0.0065) * 68 + Math.cos(x * 0.019) * 32 + Math.sin(x * 0.048) * 14;
+      ctx.lineTo(x, 585 + ridge);
+    }
+    ctx.lineTo(w, h);
+    ctx.closePath();
+    ctx.fill();
+
+    // Lush emerald rainforest horizon ridges
+    ctx.fillStyle = '#2d6a4f';
+    ctx.beginPath();
+    ctx.moveTo(0, h);
+    for (let x = 0; x <= w; x += 18) {
+      ctx.lineTo(x, 640 + Math.sin(x * 0.011 + 1.1) * 34 + Math.cos(x * 0.032) * 16);
+    }
+    ctx.lineTo(w, h);
+    ctx.closePath();
+    ctx.fill();
+
+    ctx.fillStyle = '#1b4d27';
+    ctx.beginPath();
+    ctx.moveTo(0, h);
+    for (let x = 0; x <= w; x += 14) {
+      ctx.lineTo(x, 695 + Math.cos(x * 0.025) * 24 + Math.sin(x * 0.075) * 12);
+    }
+    ctx.lineTo(w, h);
+    ctx.closePath();
+    ctx.fill();
+  });
+
   return {
     techGrid,
     jungleGrass,
@@ -1424,6 +1709,14 @@ export function createProceduralTextures(maxAnisotropy: number): ProceduralTextu
     skyIce,
     skyVolcanic,
     skyNebula,
+    parisStone,
+    parisRoof,
+    seineWaterSurface,
+    skyParis,
+    riverTimber,
+    rapidsWaterSurface,
+    calmLakeSurface,
+    skyRapids,
   };
 }
 

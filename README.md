@@ -3,13 +3,15 @@
 Juego de plataformas 3D/2D estilo **Astro Bot** para **Android TV**, navegador y dispositivos móviles, construido con **Three.js**, **WebGL**, **React**, **TypeScript**, **Tailwind CSS** y **Capacitor**.
 
 ## Características
-- **6 Niveles completos con gráficos PBR realistas y jefe final**:
+- **8 Niveles completos con gráficos PBR realistas, vehículos y jefe final**:
   1. **Selva Esmeralda** — Ruinas flotantes, cascadas y **Arco Estelar**.
   2. **Dunas del Desierto** — Cañón arenoso con transición al **Cohete Astro** manejable.
   3. **Glaciar Aurora** — Plataformas de hielo deslizante, acantilados 2D y dianas estelares.
   4. **Templo del Mono** — Pirámide azteca con **Traje de Mono** para trepar muros.
   5. **Cañón Volcánico** — Ríos de lava, plataformas inestables y minas ígneas.
   6. **Ciudadela Nebulosa** — Batalla contra el **Jefe Final Megabot** en un planeta alienígena.
+  7. **Cielos de París** — Salto en **Ala Delta** desde la **Torre Eiffel**, recogiendo monedas y atravesando aros sobre el Sena hasta el **Arco del Triunfo**.
+  8. **Rápidos del Río Bravo** — Descenso en **Barco** esquivando rocas y cocodrilos hasta alcanzar el **Lago Tranquilo**.
 - **Compatible con Android TV**: Launcher Leanback con banner propio (`320×180`), navegación con **control remoto (D-pad)** y soporte nativo para **mando Bluetooth / USB** (Gamepad API).
 - **Banda sonora y efectos procedurales (Web Audio API)** e **instalable como PWA** en iPhone/iPad.
 

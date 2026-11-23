@@ -20,6 +20,7 @@ export interface AstroBotRig {
   bowMesh: THREE.Group;
   monkeyParts: THREE.Object3D[];
   monkeyTail: THREE.Group;
+  botRocketRig: THREE.Group;
 }
 
 export function createAstroBot(): AstroBotRig {
@@ -400,6 +401,34 @@ export function createAstroBot(): AstroBotRig {
   bodyGroup.add(monkeyTail);
   monkeyParts.push(monkeyTail);
 
+  // Emergency Mini-Bot Rocket Rescue Booster beneath boots (visible when saving player from fall)
+  const botRocketRig = new THREE.Group();
+  botRocketRig.position.set(0, -0.32, 0);
+  botRocketRig.visible = false;
+
+  const rescueHead = new THREE.Mesh(new THREE.SphereGeometry(0.24, 14, 12), ceramicWhite);
+  rescueHead.position.y = 0.22;
+  const rescueVisor = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.14, 0.14), visorGlass);
+  rescueVisor.position.set(0, 0.22, 0.19);
+  const rescueEyeGeo = new THREE.SphereGeometry(0.036, 8, 8);
+  const rescueEyeL = new THREE.Mesh(rescueEyeGeo, cyanGlow);
+  rescueEyeL.position.set(-0.07, 0.23, 0.26);
+  const rescueEyeR = new THREE.Mesh(rescueEyeGeo, cyanGlow);
+  rescueEyeR.position.set(0.07, 0.23, 0.26);
+
+  const rescueCore = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.24, 0.34, 14), psBlueMetal);
+  rescueCore.position.y = -0.02;
+  const rescueFlameMat = new THREE.MeshBasicMaterial({ color: 0xf97316, transparent: true, opacity: 0.9 });
+  const rescueInnerMat = new THREE.MeshBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.92 });
+  const rFlameOuter = new THREE.Mesh(new THREE.ConeGeometry(0.24, 0.95, 12), rescueFlameMat);
+  rFlameOuter.rotation.x = Math.PI;
+  rFlameOuter.position.y = -0.62;
+  const rFlameInner = new THREE.Mesh(new THREE.ConeGeometry(0.14, 0.65, 10), rescueInnerMat);
+  rFlameInner.rotation.x = Math.PI;
+  rFlameInner.position.y = -0.5;
+  botRocketRig.add(rescueHead, rescueVisor, rescueEyeL, rescueEyeR, rescueCore, rFlameOuter, rFlameInner);
+  root.add(botRocketRig);
+
   return {
     root,
     bodyGroup,
@@ -419,6 +448,7 @@ export function createAstroBot(): AstroBotRig {
     bowMesh,
     monkeyParts,
     monkeyTail,
+    botRocketRig,
   };
 }
 
@@ -1029,7 +1059,7 @@ export function createRocketPadMesh(): THREE.Group {
 export function createBoostRingMesh(): THREE.Group {
   const g = new THREE.Group();
   const outer = new THREE.Mesh(
-    new THREE.TorusGeometry(2.6, 0.18, 12, 32),
+    new THREE.TorusGeometry(2.95, 0.2, 12, 34),
     new THREE.MeshStandardMaterial({
       color: 0xfacc15,
       emissive: 0xf59e0b,
@@ -1039,8 +1069,8 @@ export function createBoostRingMesh(): THREE.Group {
     })
   );
   const inner = new THREE.Mesh(
-    new THREE.TorusGeometry(2.2, 0.08, 8, 28),
-    new THREE.MeshBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.8 })
+    new THREE.TorusGeometry(2.5, 0.09, 8, 30),
+    new THREE.MeshBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.82 })
   );
   g.add(outer, inner);
   return g;
@@ -1465,5 +1495,597 @@ export function createBossMesh(): BossRig {
     shockwaveRing,
     shockwaveMat,
   };
+}
+
+export interface HangGliderRig {
+  root: THREE.Group;
+  wingGroup: THREE.Group;
+  trailL: THREE.Mesh;
+  trailR: THREE.Mesh;
+}
+
+export function createHangGliderRig(): HangGliderRig {
+  const root = new THREE.Group();
+  const wingGroup = new THREE.Group();
+  root.add(wingGroup);
+
+  const sailMainMat = new THREE.MeshPhysicalMaterial({
+    color: 0x0284c7,
+    roughness: 0.28,
+    metalness: 0.1,
+    clearcoat: 0.65,
+    side: THREE.DoubleSide,
+  });
+  const sailAccentMat = new THREE.MeshStandardMaterial({
+    color: 0xfacc15,
+    emissive: 0xca8a04,
+    emissiveIntensity: 0.35,
+    roughness: 0.3,
+    side: THREE.DoubleSide,
+  });
+  const aluMat = new THREE.MeshStandardMaterial({
+    color: 0xe2e8f0,
+    metalness: 0.85,
+    roughness: 0.22,
+  });
+  const trailMat = new THREE.MeshBasicMaterial({
+    color: 0xbae6fd,
+    transparent: true,
+    opacity: 0.55,
+  });
+
+  // Swept delta sailcloth wing (nose at -Z, wingspan along X)
+  const wingShape = new THREE.Shape();
+  wingShape.moveTo(0, 1.55); // nose along +Y in 2D shape -> becomes -Z after rotateX(-PI/2)
+  wingShape.lineTo(2.75, -0.95);
+  wingShape.lineTo(1.5, -0.78);
+  wingShape.lineTo(0, -1.05);
+  wingShape.lineTo(-1.5, -0.78);
+  wingShape.lineTo(-2.75, -0.95);
+  wingShape.closePath();
+
+  const wingGeo = new THREE.ExtrudeGeometry(wingShape, {
+    depth: 0.05,
+    bevelEnabled: true,
+    bevelThickness: 0.02,
+    bevelSize: 0.02,
+    bevelSegments: 2,
+  });
+  wingGeo.rotateX(-Math.PI / 2);
+  const wingMesh = new THREE.Mesh(wingGeo, sailMainMat);
+  wingMesh.position.y = 1.68;
+  wingMesh.castShadow = true;
+  wingGroup.add(wingMesh);
+
+  // Golden aerodynamic leading-edge stripe
+  const stripeShape = new THREE.Shape();
+  stripeShape.moveTo(0, 1.55);
+  stripeShape.lineTo(2.75, -0.95);
+  stripeShape.lineTo(2.42, -0.92);
+  stripeShape.lineTo(0, 1.2);
+  stripeShape.lineTo(-2.42, -0.92);
+  stripeShape.lineTo(-2.75, -0.95);
+  stripeShape.closePath();
+
+  const stripeGeo = new THREE.ExtrudeGeometry(stripeShape, { depth: 0.06 });
+  stripeGeo.rotateX(-Math.PI / 2);
+  const stripeMesh = new THREE.Mesh(stripeGeo, sailAccentMat);
+  stripeMesh.position.y = 1.69;
+  wingGroup.add(stripeMesh);
+
+  // Center aluminum keel & A-frame control trapeze
+  const keel = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 2.5, 8), aluMat);
+  keel.rotation.x = Math.PI / 2;
+  keel.position.set(0, 1.64, -0.25);
+  wingGroup.add(keel);
+
+  const strutL = new THREE.Mesh(new THREE.CylinderGeometry(0.028, 0.028, 1.35, 8), aluMat);
+  strutL.position.set(-0.42, 1.05, -0.35);
+  strutL.rotation.z = -0.36;
+  const strutR = strutL.clone();
+  strutR.position.x = 0.42;
+  strutR.rotation.z = 0.36;
+  const controlBar = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 1.25, 8), aluMat);
+  controlBar.rotation.z = Math.PI / 2;
+  controlBar.position.set(0, 0.48, -0.35);
+  wingGroup.add(strutL, strutR, controlBar);
+
+  // Wingtip slipstream trails
+  const trailGeo = new THREE.ConeGeometry(0.08, 1.4, 8);
+  trailGeo.rotateX(-Math.PI / 2);
+  const trailL = new THREE.Mesh(trailGeo, trailMat);
+  trailL.position.set(-2.65, 1.68, 1.55);
+  const trailR = trailL.clone();
+  trailR.position.x = 2.65;
+  wingGroup.add(trailL, trailR);
+
+  return { root, wingGroup, trailL, trailR };
+}
+
+export interface RiverBoatRig {
+  root: THREE.Group;
+  hullGroup: THREE.Group;
+  propeller: THREE.Group;
+  wakeL: THREE.Mesh;
+  wakeR: THREE.Mesh;
+}
+
+export function createRiverBoatRig(woodTex?: THREE.Texture): RiverBoatRig {
+  const root = new THREE.Group();
+  const hullGroup = new THREE.Group();
+  root.add(hullGroup);
+
+  const hullOrangeMat = new THREE.MeshPhysicalMaterial({
+    color: 0xf97316,
+    roughness: 0.25,
+    metalness: 0.12,
+    clearcoat: 0.7,
+  });
+  const deckMat = new THREE.MeshStandardMaterial({
+    map: woodTex,
+    color: woodTex ? 0xffffff : 0x92400e,
+    roughness: 0.72,
+    metalness: 0.05,
+  });
+  const trimMat = new THREE.MeshStandardMaterial({
+    color: 0x0f172a,
+    roughness: 0.45,
+    metalness: 0.65,
+  });
+  const goldMat = new THREE.MeshStandardMaterial({
+    color: 0xfacc15,
+    emissive: 0xca8a04,
+    emissiveIntensity: 0.35,
+    metalness: 0.7,
+    roughness: 0.25,
+  });
+
+  // Main wooden boat deck oriented with bow at -Z
+  const deck = new THREE.Mesh(new THREE.BoxGeometry(1.55, 0.26, 2.7), deckMat);
+  deck.position.y = 0.28;
+  deck.castShadow = true;
+  deck.receiveShadow = true;
+  hullGroup.add(deck);
+
+  // Pointed expedition bow
+  const bowGeo = new THREE.ConeGeometry(0.88, 1.15, 4);
+  bowGeo.rotateY(Math.PI / 4);
+  bowGeo.rotateX(-Math.PI / 2);
+  const bow = new THREE.Mesh(bowGeo, hullOrangeMat);
+  bow.scale.set(1.05, 0.42, 1.0);
+  bow.position.set(0, 0.32, -1.75);
+  bow.castShadow = true;
+  hullGroup.add(bow);
+
+  // Twin inflatable expedition pontoons
+  const pontoonGeo = new THREE.CapsuleGeometry(0.28, 2.5, 6, 12);
+  pontoonGeo.rotateX(Math.PI / 2);
+  const ponL = new THREE.Mesh(pontoonGeo, hullOrangeMat);
+  ponL.position.set(-0.92, 0.3, 0);
+  ponL.castShadow = true;
+  const ponR = ponL.clone();
+  ponR.position.x = 0.92;
+  hullGroup.add(ponL, ponR);
+
+  // Protective bow bumper & windshield bar
+  const rail = new THREE.Mesh(new THREE.TorusGeometry(0.56, 0.05, 8, 16, Math.PI), goldMat);
+  rail.rotation.x = Math.PI / 2;
+  rail.rotation.z = Math.PI;
+  rail.position.set(0, 0.56, -1.05);
+  hullGroup.add(rail);
+
+  const helm = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.45, 0.32), trimMat);
+  helm.position.set(0, 0.58, -0.58);
+  hullGroup.add(helm);
+
+  // Rear outboard motor + spinning brass propeller
+  const motorHead = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.42, 0.45), trimMat);
+  motorHead.position.set(0, 0.56, 1.48);
+  const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 0.52, 8), trimMat);
+  shaft.position.set(0, 0.25, 1.56);
+  hullGroup.add(motorHead, shaft);
+
+  const propeller = new THREE.Group();
+  propeller.position.set(0, 0.04, 1.64);
+  const hub = new THREE.Mesh(new THREE.SphereGeometry(0.08, 8, 8), goldMat);
+  const bladeA = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.08, 0.04), goldMat);
+  const bladeB = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.42, 0.04), goldMat);
+  propeller.add(hub, bladeA, bladeB);
+  hullGroup.add(propeller);
+
+  // Stern whitewater wake spray ribbons
+  const wakeMat = new THREE.MeshBasicMaterial({
+    color: 0xe0f2fe,
+    transparent: true,
+    opacity: 0.65,
+    side: THREE.DoubleSide,
+  });
+  const wakeGeo = new THREE.PlaneGeometry(0.45, 1.9);
+  wakeGeo.rotateX(-Math.PI / 2);
+  const wakeL = new THREE.Mesh(wakeGeo, wakeMat);
+  wakeL.position.set(-0.62, 0.06, 2.25);
+  wakeL.rotation.y = 0.22;
+  const wakeR = new THREE.Mesh(wakeGeo, wakeMat);
+  wakeR.position.set(0.62, 0.06, 2.25);
+  wakeR.rotation.y = -0.22;
+  hullGroup.add(wakeL, wakeR);
+
+  return { root, hullGroup, propeller, wakeL, wakeR };
+}
+
+export interface CrocodileRig {
+  group: THREE.Group;
+  jawUpper: THREE.Group;
+  tailGroup: THREE.Group;
+}
+
+export function createCrocodileMesh(): CrocodileRig {
+  const group = new THREE.Group();
+
+  const scaleMat = new THREE.MeshStandardMaterial({
+    color: 0x2f5d24,
+    roughness: 0.52,
+    metalness: 0.14,
+  });
+  const darkScuteMat = new THREE.MeshStandardMaterial({
+    color: 0x1b3b15,
+    roughness: 0.62,
+  });
+  const bellyMat = new THREE.MeshStandardMaterial({
+    color: 0xa3be69,
+    roughness: 0.58,
+  });
+  const mouthInnerMat = new THREE.MeshStandardMaterial({
+    color: 0x881337,
+    roughness: 0.45,
+  });
+  const eyeMat = new THREE.MeshStandardMaterial({
+    color: 0xfacc15,
+    emissive: 0xeab308,
+    emissiveIntensity: 1.35,
+  });
+  const pupilMat = new THREE.MeshBasicMaterial({ color: 0x090d07 });
+  const toothMat = new THREE.MeshStandardMaterial({ color: 0xfefce8, roughness: 0.18 });
+
+  // Sculpted tapered reptile torso (snout faces +Z)
+  const torso = new THREE.Mesh(new THREE.CapsuleGeometry(0.46, 1.55, 8, 14), scaleMat);
+  torso.rotation.x = Math.PI / 2;
+  torso.scale.set(1.22, 1.0, 0.62);
+  torso.position.y = 0.22;
+  torso.castShadow = true;
+  group.add(torso);
+
+  const belly = new THREE.Mesh(new THREE.CapsuleGeometry(0.41, 1.45, 6, 12), bellyMat);
+  belly.rotation.x = Math.PI / 2;
+  belly.scale.set(1.16, 1.0, 0.45);
+  belly.position.set(0, 0.11, 0);
+  group.add(belly);
+
+  // Double dorsal osteoderm scale rows along armored spine
+  for (let i = 0; i < 6; i++) {
+    const scuteL = new THREE.Mesh(new THREE.ConeGeometry(0.095, 0.22, 5), darkScuteMat);
+    scuteL.position.set(-0.18, 0.48, -0.78 + i * 0.32);
+    const scuteR = scuteL.clone();
+    scuteR.position.x = 0.18;
+    group.add(scuteL, scuteR);
+  }
+
+  // Four sturdy paddling webbed limbs
+  const legGeo = new THREE.CapsuleGeometry(0.12, 0.28, 5, 8);
+  const footGeo = new THREE.BoxGeometry(0.28, 0.07, 0.34);
+  for (const sx of [-1, 1]) {
+    for (const sz of [-0.55, 0.58]) {
+      const leg = new THREE.Mesh(legGeo, scaleMat);
+      leg.position.set(sx * 0.58, 0.14, sz);
+      leg.rotation.z = sx * 0.65;
+      const foot = new THREE.Mesh(footGeo, darkScuteMat);
+      foot.position.set(sx * 0.72, 0.04, sz + 0.08);
+      group.add(leg, foot);
+    }
+  }
+
+  // Lower jaw + fleshy palate + lower fangs
+  const jawLower = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.13, 1.25), bellyMat);
+  jawLower.position.set(0, 0.14, 1.48);
+  const jawLowerTip = new THREE.Mesh(new THREE.SphereGeometry(0.26, 10, 8), scaleMat);
+  jawLowerTip.scale.set(1.12, 0.42, 1.2);
+  jawLowerTip.position.set(0, 0.14, 2.08);
+  const tongue = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.06, 1.05), mouthInnerMat);
+  tongue.position.set(0, 0.2, 1.48);
+  group.add(jawLower, jawLowerTip, tongue);
+
+  for (let t = 0; t < 4; t++) {
+    const lfL = new THREE.Mesh(new THREE.ConeGeometry(0.038, 0.11, 5), toothMat);
+    lfL.position.set(-0.24, 0.23, 1.15 + t * 0.26);
+    const lfR = lfL.clone();
+    lfR.position.x = 0.24;
+    group.add(lfL, lfR);
+  }
+
+  // Hinged Upper Jaw with brow ridges, slit eyes, nostrils, palate & fangs
+  const jawUpper = new THREE.Group();
+  jawUpper.position.set(0, 0.27, 0.92);
+
+  const cranium = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.22, 0.55), scaleMat);
+  cranium.position.set(0, 0.07, 0.12);
+  const snoutBridge = new THREE.Mesh(new THREE.BoxGeometry(0.56, 0.16, 0.92), scaleMat);
+  snoutBridge.position.set(0, 0.04, 0.68);
+  const snoutTip = new THREE.Mesh(new THREE.SphereGeometry(0.27, 10, 8), scaleMat);
+  snoutTip.scale.set(1.06, 0.45, 1.2);
+  snoutTip.position.set(0, 0.03, 1.15);
+  const palate = new THREE.Mesh(new THREE.BoxGeometry(0.48, 0.05, 0.96), mouthInnerMat);
+  palate.position.set(0, -0.04, 0.66);
+  jawUpper.add(cranium, snoutBridge, snoutTip, palate);
+
+  // Nostril bumps near tip
+  for (const sx of [-0.11, 0.11]) {
+    const nost = new THREE.Mesh(new THREE.SphereGeometry(0.055, 8, 8), darkScuteMat);
+    nost.position.set(sx, 0.11, 1.12);
+    jawUpper.add(nost);
+  }
+
+  // Raised armored brow ridges + amber predator eyes + vertical pupils
+  for (const sx of [-1, 1]) {
+    const brow = new THREE.Mesh(new THREE.SphereGeometry(0.11, 8, 8), darkScuteMat);
+    brow.scale.set(0.9, 0.7, 1.3);
+    brow.position.set(sx * 0.25, 0.2, 0.18);
+    const eye = new THREE.Mesh(new THREE.SphereGeometry(0.085, 10, 10), eyeMat);
+    eye.position.set(sx * 0.24, 0.18, 0.2);
+    const pupil = new THREE.Mesh(new THREE.BoxGeometry(0.025, 0.11, 0.04), pupilMat);
+    pupil.position.set(sx * 0.24, 0.18, 0.27);
+    jawUpper.add(brow, eye, pupil);
+  }
+
+  for (let t = 0; t < 5; t++) {
+    const fL = new THREE.Mesh(new THREE.ConeGeometry(0.042, 0.13, 5), toothMat);
+    fL.rotation.x = Math.PI;
+    fL.position.set(-0.24, -0.08, 0.34 + t * 0.21);
+    const fR = fL.clone();
+    fR.position.x = 0.24;
+    jawUpper.add(fL, fR);
+  }
+  group.add(jawUpper);
+
+  // Articulated 3-segment sinuous armored tail
+  const tailGroup = new THREE.Group();
+  tailGroup.position.set(0, 0.2, -0.95);
+  const tailSeg1 = new THREE.Mesh(new THREE.CapsuleGeometry(0.28, 0.72, 6, 10), scaleMat);
+  tailSeg1.rotation.x = Math.PI / 2;
+  tailSeg1.scale.set(1.1, 1.0, 0.7);
+  tailSeg1.position.z = -0.45;
+  const tailSeg2 = new THREE.Mesh(new THREE.ConeGeometry(0.24, 1.2, 7), darkScuteMat);
+  tailSeg2.rotation.x = -Math.PI / 2;
+  tailSeg2.position.z = -1.35;
+  const crest1 = new THREE.Mesh(new THREE.ConeGeometry(0.08, 0.2, 4), darkScuteMat);
+  crest1.position.set(0, 0.26, -0.5);
+  const crest2 = crest1.clone();
+  crest2.position.set(0, 0.22, -0.9);
+  tailGroup.add(tailSeg1, tailSeg2, crest1, crest2);
+  group.add(tailGroup);
+
+  // Water ripple & splash halo around crocodile
+  const ring = new THREE.Mesh(
+    new THREE.RingGeometry(1.18, 1.62, 24),
+    new THREE.MeshBasicMaterial({ color: 0xe0f2fe, transparent: true, opacity: 0.48, side: THREE.DoubleSide })
+  );
+  ring.rotation.x = -Math.PI / 2;
+  ring.position.y = 0.04;
+  group.add(ring);
+
+  return { group, jawUpper, tailGroup };
+}
+
+export function createEiffelTowerMesh(stoneTex?: THREE.Texture): THREE.Group {
+  const g = new THREE.Group();
+
+  const ironMat = new THREE.MeshStandardMaterial({
+    color: 0xd96b4b,
+    roughness: 0.42,
+    metalness: 0.35,
+  });
+  const warmIronMat = new THREE.MeshStandardMaterial({
+    color: 0xf2996d,
+    roughness: 0.38,
+    metalness: 0.28,
+  });
+  const burgundyMat = new THREE.MeshStandardMaterial({
+    color: 0x993338,
+    roughness: 0.4,
+    metalness: 0.3,
+  });
+  const goldLightMat = new THREE.MeshStandardMaterial({
+    color: 0xfee09b,
+    emissive: 0xf59e0b,
+    emissiveIntensity: 0.85,
+    roughness: 0.25,
+  });
+  const pierMat = new THREE.MeshStandardMaterial({
+    map: stoneTex,
+    color: 0xebb18d,
+    roughness: 0.82,
+  });
+
+  // Base footprint at y = 0, summit platform support at y = 37.3 (fits start platform at world y=32 when placed at y=-6)
+  const legCorners: [number, number][] = [
+    [-1, -1],
+    [1, -1],
+    [-1, 1],
+    [1, 1],
+  ];
+
+  for (const [sx, sz] of legCorners) {
+    // Sunlit terracotta masonry pier
+    const pier = new THREE.Mesh(new THREE.BoxGeometry(3.9, 2.2, 3.9), pierMat);
+    pier.position.set(sx * 9.5, 1.1, sz * 9.5);
+    g.add(pier);
+
+    // Sweeping parabolic warm coral-terracotta leg struts
+    const legCurve = new THREE.CatmullRomCurve3([
+      new THREE.Vector3(sx * 9.5, 1.5, sz * 9.5),
+      new THREE.Vector3(sx * 7.2, 10.5, sz * 7.2),
+      new THREE.Vector3(sx * 4.6, 20.5, sz * 4.6),
+      new THREE.Vector3(sx * 2.2, 30.5, sz * 2.2),
+      new THREE.Vector3(sx * 1.35, 37.5, sz * 1.35),
+    ]);
+    const legMesh = new THREE.Mesh(new THREE.TubeGeometry(legCurve, 18, 0.72, 6, false), warmIronMat);
+    legMesh.castShadow = true;
+    g.add(legMesh);
+
+    const innerCurve = new THREE.CatmullRomCurve3([
+      new THREE.Vector3(sx * 7.8, 1.5, sz * 7.8),
+      new THREE.Vector3(sx * 5.6, 10.5, sz * 5.6),
+      new THREE.Vector3(sx * 3.4, 20.5, sz * 3.4),
+      new THREE.Vector3(sx * 1.5, 30.5, sz * 1.5),
+    ]);
+    const innerMesh = new THREE.Mesh(new THREE.TubeGeometry(innerCurve, 14, 0.34, 5, false), ironMat);
+    g.add(innerMesh);
+  }
+
+  // Decorative lower perimeter arches between the 4 legs (matching the sweeping rose-coral base arch)
+  const archSpan = 15.2;
+  const archPositions: [number, number, number][] = [
+    [0, 2.2, 7.9],
+    [0, 2.2, -7.9],
+    [7.9, 2.2, 0],
+    [-7.9, 2.2, 0],
+  ];
+  archPositions.forEach(([ax, ay, az], idx) => {
+    const arch = new THREE.Mesh(new THREE.TorusGeometry(archSpan * 0.44, 0.48, 8, 26, Math.PI), warmIronMat);
+    arch.position.set(ax, ay, az);
+    if (idx >= 2) arch.rotation.y = Math.PI / 2;
+    g.add(arch);
+  });
+
+  // 1st & 2nd Observation Decks with warm coral & burgundy trim
+  const deck1 = new THREE.Mesh(new THREE.BoxGeometry(15.6, 1.5, 15.6), warmIronMat);
+  deck1.position.y = 11.2;
+  const deck1Trim = new THREE.Mesh(new THREE.BoxGeometry(16.0, 0.42, 16.0), burgundyMat);
+  deck1Trim.position.y = 12.1;
+
+  const deck2 = new THREE.Mesh(new THREE.BoxGeometry(10.6, 1.35, 10.6), warmIronMat);
+  deck2.position.y = 21.5;
+  const deck2Trim = new THREE.Mesh(new THREE.BoxGeometry(11.0, 0.38, 11.0), burgundyMat);
+  deck2Trim.position.y = 22.3;
+
+  // Open Eiffel Summit Balcony (local y = 37.8 -> world y = 32.0 when placed at y = -6)
+  const summitFloor = new THREE.Mesh(new THREE.BoxGeometry(5.2, 0.42, 5.4), warmIronMat);
+  summitFloor.position.set(0, 37.78, 0);
+  summitFloor.receiveShadow = true;
+
+  // Open Perimeter Iron Balustrade Railings around summit so player sees full Eiffel top
+  const railH = 0.65;
+  for (const sx of [-2.45, 2.45]) {
+    const sideRail = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.14, 5.4), burgundyMat);
+    sideRail.position.set(sx, 38.0 + railH, 0);
+    g.add(sideRail);
+    for (const pz of [-2.4, -0.8, 0.8, 2.4]) {
+      const post = new THREE.Mesh(new THREE.BoxGeometry(0.14, railH, 0.14), ironMat);
+      post.position.set(sx, 38.0 + railH * 0.5, pz);
+      g.add(post);
+    }
+  }
+  const backRail = new THREE.Mesh(new THREE.BoxGeometry(5.1, 0.16, 0.16), burgundyMat);
+  backRail.position.set(0, 38.0 + railH, 2.55);
+  g.add(backRail);
+
+  // Sleek Front Open-Iron Glider Launch Catwalk projecting toward -Z
+  for (const sx of [-1.2, 1.2]) {
+    const beam = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.32, 5.4), ironMat);
+    beam.position.set(sx, 37.82, -4.4);
+    g.add(beam);
+  }
+  for (let z = -2.6; z >= -6.8; z -= 0.7) {
+    const rung = new THREE.Mesh(new THREE.BoxGeometry(2.8, 0.18, 0.24), warmIronMat);
+    rung.position.set(0, 37.9, z);
+    g.add(rung);
+  }
+
+  // Iconic Tapered Eiffel Pinnacle Crown + Burgundy Spire rising cleanly behind spawn (+Z)
+  const spireBase = new THREE.Mesh(new THREE.CylinderGeometry(0.65, 1.35, 3.6, 4), warmIronMat);
+  spireBase.rotation.y = Math.PI / 4;
+  spireBase.position.set(0, 39.8, 2.35);
+  const spireCrown = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.68, 0.65, 8), goldLightMat);
+  spireCrown.position.set(0, 41.8, 2.35);
+  const spireNeedle = new THREE.Mesh(new THREE.ConeGeometry(0.26, 3.8, 8), burgundyMat);
+  spireNeedle.position.set(0, 43.9, 2.35);
+  g.add(deck1, deck1Trim, deck2, deck2Trim, summitFloor, spireBase, spireCrown, spireNeedle);
+
+  // Cross-bracing lattice horizontal & diagonal rings along shaft
+  for (let h = 14.5; h <= 35.5; h += 3.5) {
+    const w = THREE.MathUtils.lerp(12.2, 4.4, (h - 12) / 24);
+    const brace = new THREE.Mesh(new THREE.BoxGeometry(w, 0.34, w), ironMat);
+    brace.position.y = h;
+    g.add(brace);
+  }
+
+  return g;
+}
+
+export function createArcDeTriompheMesh(stoneTex?: THREE.Texture): THREE.Group {
+  const g = new THREE.Group();
+  const stoneMat = new THREE.MeshStandardMaterial({
+    map: stoneTex,
+    color: 0xe8dfd1,
+    roughness: 0.78,
+    metalness: 0.04,
+  });
+  const corniceMat = new THREE.MeshStandardMaterial({
+    color: 0xd4c6b0,
+    roughness: 0.72,
+  });
+  const reliefMat = new THREE.MeshStandardMaterial({
+    color: 0xc2b29a,
+    roughness: 0.68,
+  });
+  const flameMat = new THREE.MeshStandardMaterial({
+    color: 0xfacc15,
+    emissive: 0xf97316,
+    emissiveIntensity: 2.2,
+  });
+
+  // Twin monumental stone piers framing the Goal Portal
+  const pierGeo = new THREE.BoxGeometry(3.8, 9.6, 5.2);
+  const pierL = new THREE.Mesh(pierGeo, stoneMat);
+  pierL.position.set(-4.6, 4.8, 0);
+  pierL.castShadow = true;
+  pierL.receiveShadow = true;
+  const pierR = pierL.clone();
+  pierR.position.x = 4.6;
+  g.add(pierL, pierR);
+
+  // Decorative relief plaques on front piers
+  const plaqueGeo = new THREE.BoxGeometry(2.2, 3.8, 0.25);
+  const plaqueL = new THREE.Mesh(plaqueGeo, reliefMat);
+  plaqueL.position.set(-4.6, 3.4, 2.65);
+  const plaqueR = plaqueL.clone();
+  plaqueR.position.x = 4.6;
+  g.add(plaqueL, plaqueR);
+
+  // Central rounded arch vault
+  const archSpan = new THREE.Mesh(new THREE.TorusGeometry(2.7, 0.9, 10, 24, Math.PI), corniceMat);
+  archSpan.position.set(0, 6.2, 0);
+  archSpan.scale.set(1, 1, 2.8);
+  g.add(archSpan);
+
+  // Upper entablature & attic frieze crowning the arch
+  const frieze = new THREE.Mesh(new THREE.BoxGeometry(13.6, 3.4, 5.5), stoneMat);
+  frieze.position.set(0, 10.9, 0);
+  frieze.castShadow = true;
+  const cornice = new THREE.Mesh(new THREE.BoxGeometry(14.4, 0.7, 6.1), corniceMat);
+  cornice.position.set(0, 9.3, 0);
+  const topCap = new THREE.Mesh(new THREE.BoxGeometry(14.2, 0.65, 5.9), corniceMat);
+  topCap.position.set(0, 12.8, 0);
+  g.add(frieze, cornice, topCap);
+
+  // Golden Eternal Flame torches flanking the arch
+  for (const sx of [-4.6, 4.6]) {
+    const brazier = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.32, 0.45, 12), corniceMat);
+    brazier.position.set(sx, 0.25, 3.2);
+    const flame = new THREE.Mesh(new THREE.ConeGeometry(0.28, 0.7, 8), flameMat);
+    flame.position.set(sx, 0.72, 3.2);
+    g.add(brazier, flame);
+  }
+
+  return g;
 }
 

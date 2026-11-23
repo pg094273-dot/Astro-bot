@@ -1,6 +1,6 @@
 export type GamePhase = 'title' | 'playing' | 'paused' | 'victory' | 'gameover';
 
-export type BiomeKind = 'jungle' | 'temple' | 'desert' | 'ice' | 'volcanic' | 'nebula';
+export type BiomeKind = 'jungle' | 'temple' | 'desert' | 'ice' | 'volcanic' | 'nebula' | 'paris' | 'rapids';
 
 export type PlatformKind = 'solid' | 'moving' | 'crumble' | 'glass' | 'conveyor' | 'ice';
 
@@ -9,13 +9,15 @@ export interface PlatformDef {
   pos: [number, number, number];
   size: [number, number, number];
   kind: PlatformKind;
-  style?: 'jungle' | 'temple' | 'desert' | 'ice' | 'tech' | 'gold' | 'crystal' | 'volcanic' | 'nebula';
+  style?: 'jungle' | 'temple' | 'desert' | 'ice' | 'tech' | 'gold' | 'crystal' | 'volcanic' | 'nebula' | 'paris' | 'river';
   moveOffset?: [number, number, number];
   moveSpeed?: number;
   movePhase?: number;
   conveyorDir?: [number, number];
   /** If set, platform starts inactive (wireframe outline) until the matching archery target is hit */
   linkedTargetId?: string;
+  /** If true, collider is active without rendering a solid block mesh */
+  invisible?: boolean;
 }
 
 export interface ClimbWallDef {
@@ -102,6 +104,49 @@ export interface RocketSectionDef {
   mines: [number, number, number][];
 }
 
+export interface GliderSectionDef {
+  launchpadPos: [number, number, number];
+  landingPos: [number, number, number];
+  cruiseSpeed: number;
+  rings: [number, number, number][];
+}
+
+export interface RiverRockDef {
+  pos: [number, number, number];
+  radius?: number;
+}
+
+export interface CrocodileDef {
+  pos: [number, number, number];
+  patrolX: number;
+  speed: number;
+  phase?: number;
+  behavior?: 'patrol' | 'ambush';
+}
+
+export function getRiverCenterX(z: number): number {
+  if (z >= -10 || z <= -274) return 0;
+  const t = (-z - 10) / 264;
+  const envelope = Math.sin(Math.PI * t);
+  return (Math.sin(t * Math.PI * 3.5) * 14.5 + Math.sin(t * Math.PI * 1.5) * 5.0) * envelope;
+}
+
+export function getRiverSlopeAngle(z: number): number {
+  const xAhead = getRiverCenterX(z - 1.5);
+  const xBehind = getRiverCenterX(z + 1.5);
+  return Math.atan2(xAhead - xBehind, 3.0);
+}
+
+export interface BoatSectionDef {
+  dockPos: [number, number, number];
+  lakePos: [number, number, number];
+  calmLakeZ: number;
+  cruiseSpeed: number;
+  riverHalfWidth: number;
+  rocks: RiverRockDef[];
+  crocodiles: CrocodileDef[];
+}
+
 export interface LevelTheme {
   biome: BiomeKind;
   skyTop: string;
@@ -143,6 +188,8 @@ export interface LevelDef {
   checkpoints: CheckpointDef[];
   zones2D: CameraZone2DDef[];
   rocketSection?: RocketSectionDef;
+  gliderSection?: GliderSectionDef;
+  boatSection?: BoatSectionDef;
 }
 
 export interface HudSnapshot {
@@ -150,7 +197,7 @@ export interface HudSnapshot {
   levelIndex: number;
   levelName: string;
   biome: BiomeKind;
-  perspectiveMode: '3D' | '2D' | 'COHETE';
+  perspectiveMode: '3D' | '2D' | 'COHETE' | 'ALA DELTA' | 'BARCO';
   hasBow: boolean;
   hasMonkeySuit: boolean;
   isClimbing: boolean;
@@ -162,6 +209,8 @@ export interface HudSnapshot {
   botsRescued: number;
   totalBots: number;
   hoverFuel: number; // 0..1
+  botRocketCharges: number;
+  botRocketActive: boolean;
   elapsedTime: number;
   checkpointActive: boolean;
   bannerText: string | null;

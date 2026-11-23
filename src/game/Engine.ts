@@ -15,14 +15,22 @@ import {
   createClimbWallMesh,
   createCoinMesh,
   createCrateMesh,
+  createCrocodileMesh,
+  createEiffelTowerMesh,
+  createArcDeTriompheMesh,
   createEnemyMesh,
   createGoalPortalMesh,
+  createHangGliderRig,
   createJumpPadMesh,
   createMineMesh,
   createMiniBotMesh,
   createMonkeySuitPickupMesh,
+  createRiverBoatRig,
   createRocketPadMesh,
   createRocketVehicle,
+  CrocodileRig,
+  HangGliderRig,
+  RiverBoatRig,
   RocketVehicleRig,
 } from './models';
 import {
@@ -35,6 +43,8 @@ import {
   ClimbWallDef,
   EnemyKind,
   GamePhase,
+  getRiverCenterX,
+  getRiverSlopeAngle,
   HudSnapshot,
   LevelDef,
   PlatformDef,
@@ -180,6 +190,23 @@ interface MineRuntime {
   exploded: boolean;
 }
 
+interface RiverRockRuntime {
+  pos: THREE.Vector3;
+  radius: number;
+}
+
+interface CrocodileRuntime {
+  rig: CrocodileRig;
+  baseX: number;
+  pos: THREE.Vector3;
+  patrolX: number;
+  speed: number;
+  phase: number;
+  behavior: 'patrol' | 'ambush';
+  emergeProgress: number;
+  emergedSplash: boolean;
+}
+
 interface Particle {
   active: boolean;
   pos: THREE.Vector3;
@@ -264,9 +291,39 @@ export class GameEngine {
   private rocketLandingPos = new THREE.Vector3();
   private rocketCruiseSpeed = 9.2;
 
+  // Hang Glider (Level 7 - Paris) entities
+  private gliderRig: HangGliderRig | null = null;
+  private gliderState: 'parked' | 'flying' | 'landed' = 'parked';
+  private gliderPos = new THREE.Vector3();
+  private gliderVelX = 0;
+  private gliderVelY = 0;
+  private gliderAltOffset = 0;
+  private gliderBoostTimer = 0;
+  private gliderLaunchpadPos = new THREE.Vector3();
+  private gliderLandingPos = new THREE.Vector3();
+  private gliderCruiseSpeed = 6.5;
+
+  // River Boat Rapids (Level 8 - Río Bravo) entities
+  private boatRig: RiverBoatRig | null = null;
+  private boatState: 'parked' | 'sailing' | 'docked' = 'parked';
+  private boatPos = new THREE.Vector3();
+  private boatVelX = 0;
+  private boatVelZ = 0;
+  private boatJumpY = 0;
+  private boatVelY = 0;
+  private boatJumpCooldown = 0;
+  private boatDockPos = new THREE.Vector3();
+  private boatLakePos = new THREE.Vector3();
+  private boatCalmLakeZ = -274;
+  private boatCruiseSpeed = 9.8;
+  private boatHalfWidth = 7.8;
+  private boatCalmEntered = false;
+  private riverRocks: RiverRockRuntime[] = [];
+  private crocodiles: CrocodileRuntime[] = [];
+
   // 2D/3D Camera Zone state
   private active2DZone: CameraZone2DDef | null = null;
-  private perspectiveMode: '3D' | '2D' | 'COHETE' = '3D';
+  private perspectiveMode: '3D' | '2D' | 'COHETE' | 'ALA DELTA' | 'BARCO' = '3D';
 
   // Player state
   private playerPos = new THREE.Vector3(0, 1.5, 0);
@@ -279,6 +336,8 @@ export class GameEngine {
   private jumpBufferTimer = 0;
   private hoverFuel = 1;
   private isHovering = false;
+  private botRocketCharges = 0;
+  private botRocketTimer = 0;
   private spinTimer = 0;
   private spinCooldown = 0;
   private hasBow = false;
@@ -598,16 +657,42 @@ export class GameEngine {
           if (this.rocketState === 'flying') {
             this.rocketBoostTimer = 0.55;
             soundEngine.playRocketBoost();
+          } else if (this.gliderState === 'flying') {
+            if (this.gliderBoostTimer <= 0.1) {
+              this.gliderBoostTimer = 0.7;
+              this.gliderVelY = Math.max(this.gliderVelY + 4.2, 5.2);
+              soundEngine.playWindWhoosh();
+              this.spawnBurst(this.gliderPos.x, this.gliderPos.y, this.gliderPos.z, 0xbae6fd, 14, 4.5);
+            }
+          } else if (this.boatState === 'sailing') {
+            if (this.boatJumpY <= 0.05 && this.boatJumpCooldown <= 0) {
+              this.boatVelY = 10.6;
+              this.boatJumpCooldown = 0.72;
+              soundEngine.playSplash();
+              this.spawnBurst(this.boatPos.x, 0.2, this.boatPos.z, 0xe0f2fe, 14, 4.8);
+            }
           } else {
             const now = performance.now();
             const isDoubleTapOk = isTvSelect && now - this.lastTvSelectTime < 340;
             const isMidAirOk = isTvSelect && !this.grounded && this.coyoteTimer <= 0 && !this.isClimbing;
             if (isTvSelect) this.lastTvSelectTime = now;
 
-            this.jumpBufferTimer = 0.14;
-            if (isDoubleTapOk || isMidAirOk) {
-              this.triggerSpin();
-              if (this.hasBow) this.shootArrow();
+            if (
+              !this.grounded &&
+              !this.isClimbing &&
+              this.coyoteTimer <= 0 &&
+              this.botRocketCharges > 0 &&
+              this.botRocketTimer <= 0 &&
+              this.playerVel.y < -2.2 &&
+              this.hoverFuel <= 0.12
+            ) {
+              this.activateBotRocketRescue();
+            } else {
+              this.jumpBufferTimer = 0.14;
+              if (isDoubleTapOk || isMidAirOk) {
+                this.triggerSpin();
+                if (this.hasBow) this.shootArrow();
+              }
             }
           }
         }
@@ -726,14 +811,63 @@ export class GameEngine {
       if (this.rocketState === 'flying') {
         this.rocketBoostTimer = 0.55;
         soundEngine.playRocketBoost();
+      } else if (this.gliderState === 'flying') {
+        if (this.gliderBoostTimer <= 0.1) {
+          this.gliderBoostTimer = 0.7;
+          this.gliderVelY = Math.max(this.gliderVelY + 4.2, 5.2);
+          soundEngine.playWindWhoosh();
+          this.spawnBurst(this.gliderPos.x, this.gliderPos.y, this.gliderPos.z, 0xbae6fd, 14, 4.5);
+        }
+      } else if (this.boatState === 'sailing') {
+        if (this.boatJumpY <= 0.05 && this.boatJumpCooldown <= 0) {
+          this.boatVelY = 10.6;
+          this.boatJumpCooldown = 0.72;
+          soundEngine.playSplash();
+          this.spawnBurst(this.boatPos.x, 0.2, this.boatPos.z, 0xe0f2fe, 14, 4.8);
+        }
       } else {
-        this.jumpBufferTimer = 0.14;
+        if (
+          !this.grounded &&
+          !this.isClimbing &&
+          this.coyoteTimer <= 0 &&
+          this.botRocketCharges > 0 &&
+          this.botRocketTimer <= 0 &&
+          this.playerVel.y < -2.2 &&
+          this.hoverFuel <= 0.12
+        ) {
+          this.activateBotRocketRescue();
+        } else {
+          this.jumpBufferTimer = 0.14;
+        }
       }
     }
   }
 
+  private activateBotRocketRescue() {
+    if (this.botRocketCharges <= 0 || this.botRocketTimer > 0) return;
+    this.botRocketCharges -= 1;
+    this.botRocketTimer = 2.4;
+    this.isHovering = false;
+    soundEngine.stopHover();
+    this.hoverFuel = 1;
+    this.playerVel.y = Math.max(this.playerVel.y, 12.2);
+    this.playerSquash.set(0.8, 1.28, 0.8);
+    soundEngine.playRocketBoost();
+    this.spawnBurst(this.playerPos.x, this.playerPos.y, this.playerPos.z, 0xf97316, 20, 5.5);
+    this.spawnBurst(this.playerPos.x, this.playerPos.y, this.playerPos.z, 0x38bdf8, 12, 4.5);
+    this.showBanner('¡Bot Propulsor al rescate! Dirige a Nova Bot a salvo', 2.6);
+    this.pushHud(true);
+  }
+
   public triggerSpin() {
-    if (this.phase !== 'playing' || this.rocketState === 'flying') return;
+    if (
+      this.phase !== 'playing' ||
+      this.rocketState === 'flying' ||
+      this.gliderState === 'flying' ||
+      this.boatState === 'sailing'
+    ) {
+      return;
+    }
     if (this.spinCooldown <= 0 && this.spinTimer <= 0) {
       this.spinTimer = 0.34;
       this.spinCooldown = 0.45;
@@ -743,7 +877,16 @@ export class GameEngine {
   }
 
   public shootArrow() {
-    if (this.phase !== 'playing' || !this.hasBow || this.rocketState === 'flying' || this.bowCooldown > 0) return;
+    if (
+      this.phase !== 'playing' ||
+      !this.hasBow ||
+      this.rocketState === 'flying' ||
+      this.gliderState === 'flying' ||
+      this.boatState === 'sailing' ||
+      this.bowCooldown > 0
+    ) {
+      return;
+    }
     this.bowCooldown = 0.28;
     soundEngine.playBowShoot();
 
@@ -841,10 +984,14 @@ export class GameEngine {
     this.bossRuntime = null;
     this.boostRings = [];
     this.mines = [];
+    this.riverRocks = [];
+    this.crocodiles = [];
     this.goalPortal = null;
     this.hazardSeaMesh = null;
     this.hazardSeaTex = null;
     this.rocketRig = null;
+    this.gliderRig = null;
+    this.boatRig = null;
   }
 
   private addHorizonMountainRing(
@@ -2074,7 +2221,7 @@ export class GameEngine {
       vRocksInst.instanceMatrix.needsUpdate = true;
       vRocksInst.computeBoundingSphere();
       this.levelGroup.add(vRocksInst);
-    } else {
+    } else if (biome === 'nebula') {
       // NEBULA CITADEL: Sharp Indigo-Violet Crystal Mountains + Luminous Ringed Cyan Planet + Violet Rocks & Golden Pools
       this.addHorizonMountainRing(16, -75, level.theme.hazardFloorY - 2, 112, 205, 54, 0x261a66, 0x6759e8, 9.9, 0.68);
 
@@ -2198,6 +2345,506 @@ export class GameEngine {
       moon.position.set(-72, 12, 32);
       planetGroup.add(moon);
       this.levelGroup.add(planetGroup);
+    } else if (biome === 'paris') {
+      // Iconic Coral-Terracotta Eiffel Tower standing beneath the summit launch deck
+      const eiffel = createEiffelTowerMesh(this.textures.parisStone);
+      eiffel.position.set(0, level.theme.hazardFloorY, 0);
+      this.levelGroup.add(eiffel);
+
+      // Grand Arc de Triomphe framing the goal portal at Champs-Élysées Plaza
+      const arc = createArcDeTriompheMesh(this.textures.parisStone);
+      arc.position.set(0, 4.5, -367);
+      this.levelGroup.add(arc);
+
+      // Champ de Mars Central Olive-Emerald Lawn Avenue (stretching from Eiffel Tower to Arc plaza)
+      const lawnDarkMat = new THREE.MeshStandardMaterial({
+        map: this.textures.jungleGrass,
+        color: 0x62962e,
+        roughness: 0.88,
+      });
+      const lawnCenterMat = new THREE.MeshStandardMaterial({
+        color: 0x72ab38,
+        roughness: 0.85,
+      });
+      const centralLawn = new THREE.Mesh(new THREE.BoxGeometry(19.5, 0.45, 405), lawnDarkMat);
+      centralLawn.position.set(0, level.theme.hazardFloorY + 0.24, -182);
+      centralLawn.receiveShadow = true;
+      const centralStripe = new THREE.Mesh(new THREE.PlaneGeometry(8.2, 400), lawnCenterMat);
+      centralStripe.rotation.x = -Math.PI / 2;
+      centralStripe.position.set(0, level.theme.hazardFloorY + 0.48, -182);
+      this.levelGroup.add(centralLawn, centralStripe);
+
+      // Flanking Warm Ochre-Tan Gravel Promenades + Curb Borders
+      const ochrePathMat = new THREE.MeshStandardMaterial({
+        color: 0xc98b53,
+        roughness: 0.9,
+      });
+      const curbMat = new THREE.MeshStandardMaterial({
+        color: 0xa46d3d,
+        roughness: 0.88,
+      });
+      for (const sx of [-1, 1]) {
+        const path = new THREE.Mesh(new THREE.BoxGeometry(6.8, 0.38, 405), ochrePathMat);
+        path.position.set(sx * 13.1, level.theme.hazardFloorY + 0.2, -182);
+        path.receiveShadow = true;
+
+        const outerCurb = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.46, 405), curbMat);
+        outerCurb.position.set(sx * 16.8, level.theme.hazardFloorY + 0.24, -182);
+        this.levelGroup.add(path, outerCurb);
+      }
+
+      // Twin Rows of Tall Sculpted Olive-Green Cypress & Park Trees along the Promenade
+      const treeCount = 60;
+      const trunkGeo = new THREE.CylinderGeometry(0.32, 0.44, 2.2, 7);
+      const trunkMat = new THREE.MeshStandardMaterial({ color: 0x854d2b, roughness: 0.9 });
+      const foliageGeo = this.createDisplacedRockGeometry(2.1, 3.7);
+      const foliageMat = new THREE.MeshStandardMaterial({ color: 0x5c8c26, roughness: 0.85 });
+
+      const tTrunks = new THREE.InstancedMesh(trunkGeo, trunkMat, treeCount);
+      const tFoliage = new THREE.InstancedMesh(foliageGeo, foliageMat, treeCount);
+      for (let i = 0; i < treeCount; i++) {
+        const side = i % 2 === 0 ? -1 : 1;
+        const row = Math.floor(i / 2);
+        const tz = 12 - row * 13.0;
+        const innerRow = row % 2 === 0;
+        const tx = side * (innerRow ? 10.6 : 15.4);
+        const hScale = 1.85 + (row % 3) * 0.35;
+
+        dummy.position.set(tx, level.theme.hazardFloorY + 1.3, tz);
+        dummy.rotation.set(0, 0, 0);
+        dummy.scale.set(1, 1, 1);
+        dummy.updateMatrix();
+        tTrunks.setMatrixAt(i, dummy.matrix);
+
+        dummy.position.set(tx, level.theme.hazardFloorY + 4.8 + hScale * 0.9, tz);
+        dummy.rotation.set(0, i * 0.9, 0);
+        dummy.scale.set(0.92, hScale, 0.92);
+        dummy.updateMatrix();
+        tFoliage.setMatrixAt(i, dummy.matrix);
+
+        _color.setHex(i % 3 === 0 ? 0x629629 : i % 3 === 1 ? 0x538221 : 0x71a634);
+        tFoliage.setColorAt(i, _color);
+      }
+      tTrunks.instanceMatrix.needsUpdate = true;
+      tFoliage.instanceMatrix.needsUpdate = true;
+      if (tFoliage.instanceColor) tFoliage.instanceColor.needsUpdate = true;
+      tTrunks.computeBoundingSphere();
+      tFoliage.computeBoundingSphere();
+      this.levelGroup.add(tTrunks, tFoliage);
+
+      // Soft Pastel Lavender-Periwinkle Paris Skyline Silhouettes framing both horizons
+      const skylineMat = new THREE.MeshStandardMaterial({
+        color: 0x9aa4da,
+        roughness: 0.92,
+        metalness: 0.02,
+      });
+      const skyRoofMat = new THREE.MeshStandardMaterial({
+        color: 0x8691ce,
+        roughness: 0.9,
+      });
+      const bGeo = new THREE.BoxGeometry(10, 14, 13);
+      const rGeo = new THREE.ConeGeometry(7.2, 3.6, 4);
+      rGeo.rotateY(Math.PI / 4);
+      const bCount = 50;
+      const bInst = new THREE.InstancedMesh(bGeo, skylineMat, bCount);
+      const rInst = new THREE.InstancedMesh(rGeo, skyRoofMat, bCount);
+      for (let i = 0; i < bCount; i++) {
+        const side = i % 2 === 0 ? -1 : 1;
+        const row = Math.floor(i / 2);
+        const bz = 16 - row * 16.5;
+        const layerOffset = (row % 3) * 9.5;
+        const bx = side * (32 + layerOffset);
+        const scH = 0.95 + ((i * 7) % 6) * 0.28;
+
+        dummy.position.set(bx, level.theme.hazardFloorY + 7 * scH - 0.5, bz);
+        dummy.rotation.set(0, 0, 0);
+        dummy.scale.set(1 + (row % 2) * 0.25, scH, 1);
+        dummy.updateMatrix();
+        bInst.setMatrixAt(i, dummy.matrix);
+        _color.setHex(row % 3 === 0 ? 0xa3ade2 : row % 3 === 1 ? 0x949fd7 : 0xb2bbe8);
+        bInst.setColorAt(i, _color);
+
+        dummy.position.set(bx, level.theme.hazardFloorY + 14 * scH + 1.0, bz);
+        dummy.scale.set(1 + (row % 2) * 0.25, row % 2 === 0 ? 0.8 : 0.05, 1);
+        dummy.updateMatrix();
+        rInst.setMatrixAt(i, dummy.matrix);
+      }
+      bInst.instanceMatrix.needsUpdate = true;
+      if (bInst.instanceColor) bInst.instanceColor.needsUpdate = true;
+      bInst.computeBoundingSphere();
+      rInst.instanceMatrix.needsUpdate = true;
+      rInst.computeBoundingSphere();
+      this.levelGroup.add(bInst, rInst);
+
+      // Stylized Bright White Billowing Sky Clouds flanking the flight corridor
+      const cloudGeo = new THREE.SphereGeometry(2.8, 14, 12);
+      const cloudMat = new THREE.MeshStandardMaterial({
+        color: 0xffffff,
+        emissive: 0xe6f4ff,
+        emissiveIntensity: 0.28,
+        roughness: 0.95,
+      });
+      const cloudCount = 36;
+      const cloudInst = new THREE.InstancedMesh(cloudGeo, cloudMat, cloudCount);
+      for (let i = 0; i < cloudCount; i++) {
+        const side = i % 2 === 0 ? -1 : 1;
+        dummy.position.set(
+          side * (16 + (i % 4) * 7.5),
+          15 + (i % 5) * 4.2,
+          -16 - i * 10.0
+        );
+        dummy.rotation.set(0, i * 0.6, 0);
+        dummy.scale.set(2.2 + (i % 3) * 0.6, 0.58, 1.35);
+        dummy.updateMatrix();
+        cloudInst.setMatrixAt(i, dummy.matrix);
+      }
+      cloudInst.instanceMatrix.needsUpdate = true;
+      cloudInst.computeBoundingSphere();
+      this.levelGroup.add(cloudInst);
+    } else if (biome === 'rapids') {
+      // Mist-shrouded Blue Mountain Peak & Lush Rainforest Slopes (Selva Esmeralda aesthetic)
+      this.addHorizonMountainRing(0, -145, level.theme.hazardFloorY - 2, 142, 230, 64, 0x355f7d, 0x9cc0d9, 3.1, 0.88);
+      this.addHorizonMountainRing(0, -145, level.theme.hazardFloorY - 1, 96, 150, 32, 0x1b4332, 0x3f7a38, 1.9, 0.9);
+
+      // Winding S-Curve Rapids Channel Ribbon (z = 14 down to z = -278)
+      const curveSegments = 120;
+      const waterHalfW = 9.6;
+      const riverPositions: number[] = [];
+      const riverUvs: number[] = [];
+      const riverIndices: number[] = [];
+
+      const bankPositionsL: number[] = [];
+      const bankPositionsR: number[] = [];
+      const bankUvs: number[] = [];
+
+      for (let i = 0; i <= curveSegments; i++) {
+        const frac = i / curveSegments;
+        const z = 14 - frac * 292;
+        const cx = getRiverCenterX(z);
+        const vCoord = frac * 22;
+
+        // Water ribbon vertices
+        riverPositions.push(cx - waterHalfW, 0.0, z, cx + waterHalfW, 0.0, z);
+        riverUvs.push(0, vCoord, 1, vCoord);
+
+        // Left & Right mossy lush riverbanks sloping gently upward
+        bankPositionsL.push(cx - 27.5, 2.5, z, cx - 9.2, -0.18, z);
+        bankPositionsR.push(cx + 9.2, -0.18, z, cx + 27.5, 2.5, z);
+        bankUvs.push(0, vCoord * 1.4, 1, vCoord * 1.4);
+
+        if (i < curveSegments) {
+          const r = i * 2;
+          riverIndices.push(r, r + 2, r + 1, r + 1, r + 2, r + 3);
+        }
+      }
+
+      const riverGeo = new THREE.BufferGeometry();
+      riverGeo.setAttribute('position', new THREE.Float32BufferAttribute(riverPositions, 3));
+      riverGeo.setAttribute('uv', new THREE.Float32BufferAttribute(riverUvs, 2));
+      riverGeo.setIndex(riverIndices);
+      riverGeo.computeVertexNormals();
+
+      const rapidsMat = new THREE.MeshStandardMaterial({
+        map: this.textures.rapidsWaterSurface,
+        bumpMap: this.textures.waterBump,
+        bumpScale: 0.14,
+        roughness: 0.14,
+        metalness: 0.22,
+      });
+      const rapidsMesh = new THREE.Mesh(riverGeo, rapidsMat);
+      this.levelGroup.add(rapidsMesh);
+
+      const bankMat = new THREE.MeshStandardMaterial({
+        map: this.textures.jungleGrass,
+        bumpMap: this.textures.grassBump,
+        bumpScale: 0.1,
+        roughness: 0.86,
+      });
+      for (const posArr of [bankPositionsL, bankPositionsR]) {
+        const bGeo = new THREE.BufferGeometry();
+        bGeo.setAttribute('position', new THREE.Float32BufferAttribute(posArr, 3));
+        bGeo.setAttribute('uv', new THREE.Float32BufferAttribute(bankUvs, 2));
+        bGeo.setIndex(riverIndices);
+        bGeo.computeVertexNormals();
+        const bMesh = new THREE.Mesh(bGeo, bankMat);
+        bMesh.receiveShadow = true;
+        this.levelGroup.add(bMesh);
+      }
+
+      // Serene Turquoise Calm Lake at the end of the river (z = -270 to -390)
+      const lakeMat = new THREE.MeshStandardMaterial({
+        map: this.textures.calmLakeSurface,
+        bumpMap: this.textures.waterBump,
+        bumpScale: 0.06,
+        roughness: 0.08,
+        metalness: 0.28,
+        envMapIntensity: 1.4,
+      });
+      const calmLakePlane = new THREE.Mesh(new THREE.PlaneGeometry(220, 120), lakeMat);
+      calmLakePlane.rotation.x = -Math.PI / 2;
+      calmLakePlane.position.set(0, -0.02, -330);
+      this.levelGroup.add(calmLakePlane);
+
+      // Dense Selva Esmeralda Background Forest flanking the winding riverbanks
+      const bgTreeCount = 68;
+      const trunkGeo = new THREE.CylinderGeometry(0.38, 0.98, 10.5, 9);
+      const trunkMat = new THREE.MeshStandardMaterial({
+        map: this.textures.barkTexture,
+        bumpMap: this.textures.barkBump,
+        bumpScale: 0.16,
+        roughness: 0.9,
+      });
+      const rootGeo = new THREE.ConeGeometry(1.38, 3.0, 7);
+      const canopyLowGeo = this.createDisplacedRockGeometry(3.1, 1.1);
+      const canopyTopGeo = this.createDisplacedRockGeometry(2.4, 2.7);
+      const canopyMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.82, metalness: 0.02 });
+
+      const bgTrunks = new THREE.InstancedMesh(trunkGeo, trunkMat, bgTreeCount);
+      const bgRoots = new THREE.InstancedMesh(rootGeo, trunkMat, bgTreeCount);
+      const bgCanopiesLow = new THREE.InstancedMesh(canopyLowGeo, canopyMat, bgTreeCount);
+      const bgCanopiesTop = new THREE.InstancedMesh(canopyTopGeo, canopyMat, bgTreeCount);
+
+      for (let i = 0; i < bgTreeCount; i++) {
+        const side = i % 2 === 0 ? -1 : 1;
+        const row = Math.floor(i / 2);
+        const tz = 10 - row * 10.2;
+        const isLake = tz < -274;
+        const riverCx = getRiverCenterX(tz);
+        const tx = isLake
+          ? side * (17 + (row % 5) * 5.8)
+          : riverCx + side * (17.5 + (row % 4) * 3.4);
+        const ty = isLake ? -0.3 : 1.1 + (row % 3) * 0.45;
+        const scale = 0.85 + (i % 4) * 0.22;
+
+        dummy.position.set(tx, ty + 5.0 * scale, tz);
+        dummy.rotation.set((i % 3 - 1) * 0.04, i * 0.9, (i % 3 - 1) * 0.05);
+        dummy.scale.set(scale, scale, scale);
+        dummy.updateMatrix();
+        bgTrunks.setMatrixAt(i, dummy.matrix);
+
+        dummy.position.set(tx, ty + 1.2 * scale, tz);
+        dummy.rotation.set(0, i * 0.7, 0);
+        dummy.scale.set(scale * 1.12, scale, scale * 1.12);
+        dummy.updateMatrix();
+        bgRoots.setMatrixAt(i, dummy.matrix);
+
+        dummy.position.set(tx, ty + 9.8 * scale, tz);
+        dummy.rotation.set(0, i * 0.5, 0);
+        dummy.scale.set(scale * 1.26, scale * 0.78, scale * 1.26);
+        dummy.updateMatrix();
+        bgCanopiesLow.setMatrixAt(i, dummy.matrix);
+        _color.setHex(i % 3 === 0 ? 0x26581c : i % 3 === 1 ? 0x316b22 : 0x1e4a16);
+        bgCanopiesLow.setColorAt(i, _color);
+
+        dummy.position.set(tx + (i % 2 === 0 ? 0.4 : -0.4), ty + 11.9 * scale, tz - 0.3);
+        dummy.rotation.set(0, i * 0.8, 0);
+        dummy.scale.set(scale * 1.14, scale * 0.74, scale * 1.14);
+        dummy.updateMatrix();
+        bgCanopiesTop.setMatrixAt(i, dummy.matrix);
+        _color.setHex(i % 3 === 0 ? 0x52992c : i % 3 === 1 ? 0x6ab53a : 0x3f8224);
+        bgCanopiesTop.setColorAt(i, _color);
+      }
+      for (const im of [bgTrunks, bgRoots, bgCanopiesLow, bgCanopiesTop]) {
+        im.instanceMatrix.needsUpdate = true;
+        if (im.instanceColor) im.instanceColor.needsUpdate = true;
+        im.computeBoundingSphere();
+      }
+      this.levelGroup.add(bgTrunks, bgRoots, bgCanopiesLow, bgCanopiesTop);
+
+      // Hero Twisted Mahogany Jungle Trees (matching Selva Esmeralda image: red-brown bark, buttress roots, broad lime foliage & hanging lianas)
+      const heroBarkMat = new THREE.MeshStandardMaterial({
+        map: this.textures.barkTexture,
+        bumpMap: this.textures.barkBump,
+        bumpScale: 0.18,
+        roughness: 0.88,
+      });
+      const leafSunMat = new THREE.MeshStandardMaterial({ color: 0x57a62e, roughness: 0.78 });
+      const leafMidMat = new THREE.MeshStandardMaterial({ color: 0x387822, roughness: 0.82 });
+      const leafDeepMat = new THREE.MeshStandardMaterial({ color: 0x224d16, roughness: 0.85 });
+      const lianaMat = new THREE.MeshStandardMaterial({ color: 0x4b8728, roughness: 0.76 });
+      const foliageClusterGeo = this.createDisplacedRockGeometry(2.25, 3.7);
+
+      const heroBankZ = [-18, -38, -58, -78, -98, -118, -138, -158, -178, -198, -218, -238, -258, -288, -312];
+      const bankRockSpots: [number, number, number, number][] = [];
+      const heroCrownCoords: THREE.Vector3[] = [];
+
+      for (let idx = 0; idx < heroBankZ.length; idx++) {
+        const hz = heroBankZ[idx];
+        const side = idx % 2 === 0 ? -1 : 1;
+        const isLake = hz < -274;
+        const cx = getRiverCenterX(hz);
+        const hx = isLake ? side * 14.5 : cx + side * 12.6;
+        const hy = isLake ? 0.1 : 0.45;
+        const sc = 0.95 + (idx % 3) * 0.14;
+
+        const tg = new THREE.Group();
+        tg.position.set(hx, hy, hz);
+        tg.rotation.y = idx * 0.85;
+
+        const trunkCurve = new THREE.CatmullRomCurve3([
+          new THREE.Vector3(0, -0.4, 0),
+          new THREE.Vector3(0.4 * sc, 2.8 * sc, -0.2 * sc),
+          new THREE.Vector3(-0.3 * sc, 6.0 * sc, 0.25 * sc),
+          new THREE.Vector3(0.15 * sc, 9.0 * sc, 0),
+        ]);
+        tg.add(new THREE.Mesh(new THREE.TubeGeometry(trunkCurve, 12, 0.85 * sc, 8, false), heroBarkMat));
+
+        for (let r = 0; r < 4; r++) {
+          const ang = (r / 4) * Math.PI * 2 + 0.35;
+          const rootCurve = new THREE.CatmullRomCurve3([
+            new THREE.Vector3(Math.cos(ang) * 0.45 * sc, 2.0 * sc, Math.sin(ang) * 0.45 * sc),
+            new THREE.Vector3(Math.cos(ang) * 1.5 * sc, 0.65 * sc, Math.sin(ang) * 1.5 * sc),
+            new THREE.Vector3(Math.cos(ang) * 2.5 * sc, 0.0, Math.sin(ang) * 2.5 * sc),
+          ]);
+          tg.add(new THREE.Mesh(new THREE.TubeGeometry(rootCurve, 7, 0.3 * sc, 6, false), heroBarkMat));
+        }
+
+        for (let b = 0; b < 3; b++) {
+          const bAng = (b / 3) * Math.PI * 2 + idx * 0.5;
+          const bx = Math.cos(bAng) * 2.9 * sc;
+          const bz = Math.sin(bAng) * 2.9 * sc;
+          const branchCurve = new THREE.CatmullRomCurve3([
+            new THREE.Vector3(0, 7.8 * sc, 0),
+            new THREE.Vector3(bx * 0.55, 9.0 * sc, bz * 0.55),
+            new THREE.Vector3(bx, 10.2 * sc, bz),
+          ]);
+          tg.add(new THREE.Mesh(new THREE.TubeGeometry(branchCurve, 6, 0.34 * sc, 6, false), heroBarkMat));
+
+          for (let c = 0; c < 3; c++) {
+            const cAng = bAng + (c - 1) * 0.65;
+            const lobe = new THREE.Mesh(
+              foliageClusterGeo,
+              c === 0 ? leafSunMat : c === 1 ? leafMidMat : leafDeepMat
+            );
+            lobe.scale.set(sc * (0.98 - c * 0.1), sc * 0.68, sc * (0.98 - c * 0.1));
+            lobe.position.set(bx + Math.cos(cAng) * 1.05 * sc, (10.8 - c * 0.65) * sc, bz + Math.sin(cAng) * 1.05 * sc);
+            lobe.rotation.y = cAng;
+            tg.add(lobe);
+          }
+
+          const tendrilCurve = new THREE.CatmullRomCurve3([
+            new THREE.Vector3(bx * 1.05, 9.8 * sc, bz * 1.05),
+            new THREE.Vector3(bx * 1.08, 7.4 * sc, bz * 1.08),
+            new THREE.Vector3(bx * 1.04, 5.2 * sc, bz * 1.04),
+          ]);
+          tg.add(new THREE.Mesh(new THREE.TubeGeometry(tendrilCurve, 5, 0.055 * sc, 4, false), lianaMat));
+        }
+
+        const topCrown = new THREE.Mesh(foliageClusterGeo, leafSunMat);
+        topCrown.scale.set(1.34 * sc, 0.74 * sc, 1.34 * sc);
+        topCrown.position.set(0, 12.2 * sc, 0);
+        tg.add(topCrown);
+
+        this.levelGroup.add(tg);
+        heroCrownCoords.push(new THREE.Vector3(hx, hy + 10.2 * sc, hz));
+        if (!isLake) {
+          bankRockSpots.push([cx + side * 10.4, 0.05, hz + 2.4, 0.85]);
+          bankRockSpots.push([cx - side * 10.6, 0.05, hz - 3.2, 0.72]);
+        }
+      }
+
+      // Overhead Draped Jungle Lianas arcing gracefully across river bends
+      for (let i = 0; i < heroCrownCoords.length - 2; i += 2) {
+        const pA = heroCrownCoords[i];
+        const pB = heroCrownCoords[i + 1];
+        const mid = pA.clone().lerp(pB, 0.5);
+        mid.y -= 3.2;
+        const vineCurve = new THREE.CatmullRomCurve3([pA, mid, pB]);
+        this.levelGroup.add(new THREE.Mesh(new THREE.TubeGeometry(vineCurve, 14, 0.1, 5, false), lianaMat));
+      }
+
+      // Mossy Pale Boulders & Multi-Blade Tropical Ferns along riverbanks
+      const rockGeo = this.createDisplacedRockGeometry(0.95, 7.3);
+      const bankRockMat = new THREE.MeshStandardMaterial({
+        color: 0x94a3b8,
+        bumpMap: this.textures.stoneBump,
+        bumpScale: 0.14,
+        roughness: 0.88,
+      });
+      const mossCapGeo = this.createDisplacedRockGeometry(0.75, 4.9);
+      const mossCapMat = new THREE.MeshStandardMaterial({
+        map: this.textures.jungleGrass,
+        bumpMap: this.textures.grassBump,
+        bumpScale: 0.08,
+        roughness: 0.85,
+      });
+      const rocksInst = new THREE.InstancedMesh(rockGeo, bankRockMat, bankRockSpots.length);
+      const mossInst = new THREE.InstancedMesh(mossCapGeo, mossCapMat, bankRockSpots.length);
+      for (let i = 0; i < bankRockSpots.length; i++) {
+        const [rx, ry, rz, rs] = bankRockSpots[i];
+        dummy.position.set(rx, ry + 0.3 * rs, rz);
+        dummy.rotation.set((i % 3) * 0.25, i * 1.1, (i % 2) * 0.2);
+        dummy.scale.set(rs * 1.25, rs * 0.82, rs);
+        dummy.updateMatrix();
+        rocksInst.setMatrixAt(i, dummy.matrix);
+
+        dummy.position.set(rx, ry + 0.72 * rs, rz);
+        dummy.rotation.set(0, i * 1.1, 0);
+        dummy.scale.set(rs * 1.05, rs * 0.34, rs * 0.88);
+        dummy.updateMatrix();
+        mossInst.setMatrixAt(i, dummy.matrix);
+      }
+      rocksInst.instanceMatrix.needsUpdate = true;
+      mossInst.instanceMatrix.needsUpdate = true;
+      rocksInst.computeBoundingSphere();
+      mossInst.computeBoundingSphere();
+      this.levelGroup.add(rocksInst, mossInst);
+
+      const leafBladeGeo = new THREE.ConeGeometry(0.32, 1.55, 5);
+      const totalLeaves = bankRockSpots.length * 6;
+      const leavesInst = new THREE.InstancedMesh(leafBladeGeo, leafSunMat, totalLeaves);
+      let lIdx = 0;
+      for (let i = 0; i < bankRockSpots.length; i++) {
+        const [rx, ry, rz, rs] = bankRockSpots[i];
+        const px = rx + (i % 2 === 0 ? 0.9 : -0.9) * rs;
+        const pz = rz + 0.4 * rs;
+        for (let f = 0; f < 6; f++) {
+          const ang = (f / 6) * Math.PI * 2 + i * 0.5;
+          dummy.position.set(px + Math.cos(ang) * 0.42 * rs, ry + 0.55 * rs, pz + Math.sin(ang) * 0.42 * rs);
+          dummy.rotation.set(0, -ang, -0.78);
+          dummy.scale.set(rs, rs * (0.85 + (f % 2) * 0.24), rs * 0.22);
+          dummy.updateMatrix();
+          leavesInst.setMatrixAt(lIdx, dummy.matrix);
+          _color.setHex(f % 2 === 0 ? 0x57a62e : 0x357020);
+          leavesInst.setColorAt(lIdx, _color);
+          lIdx++;
+        }
+      }
+      leavesInst.instanceMatrix.needsUpdate = true;
+      if (leavesInst.instanceColor) leavesInst.instanceColor.needsUpdate = true;
+      leavesInst.computeBoundingSphere();
+      this.levelGroup.add(leavesInst);
+
+      // Tranquil Lake Floating Lily Pads & Lotus Flowers (z = -278 to -340)
+      const padGeo = new THREE.CylinderGeometry(1.15, 1.15, 0.08, 12);
+      const padMat = new THREE.MeshStandardMaterial({ color: 0x22c55e, roughness: 0.72 });
+      const flowerGeo = new THREE.ConeGeometry(0.32, 0.38, 6);
+      const flowerMat = new THREE.MeshStandardMaterial({ color: 0xf472b6, emissive: 0xdb2777, emissiveIntensity: 0.35 });
+      const padCount = 26;
+      const padInst = new THREE.InstancedMesh(padGeo, padMat, padCount);
+      const flwInst = new THREE.InstancedMesh(flowerGeo, flowerMat, padCount);
+      for (let i = 0; i < padCount; i++) {
+        const side = i % 2 === 0 ? -1 : 1;
+        const px = side * (9.5 + ((i * 7) % 24));
+        const pz = -278 - ((i * 11) % 62);
+        const sc = 0.75 + (i % 3) * 0.3;
+        dummy.position.set(px, 0.05, pz);
+        dummy.rotation.set(0, i * 0.9, 0);
+        dummy.scale.set(sc, 1, sc);
+        dummy.updateMatrix();
+        padInst.setMatrixAt(i, dummy.matrix);
+
+        dummy.position.set(px, 0.22, pz);
+        dummy.rotation.set(Math.PI, i, 0);
+        dummy.scale.set(sc, sc, sc);
+        dummy.updateMatrix();
+        flwInst.setMatrixAt(i, dummy.matrix);
+      }
+      padInst.instanceMatrix.needsUpdate = true;
+      flwInst.instanceMatrix.needsUpdate = true;
+      padInst.computeBoundingSphere();
+      flwInst.computeBoundingSphere();
+      this.levelGroup.add(padInst, flwInst);
     }
   }
 
@@ -2227,7 +2874,11 @@ export class GameEngine {
               ? this.textures.skyIce
               : theme.biome === 'volcanic'
                 ? this.textures.skyVolcanic
-                : this.textures.skyNebula;
+                : theme.biome === 'paris'
+                  ? this.textures.skyParis
+                  : theme.biome === 'rapids'
+                    ? this.textures.skyRapids
+                    : this.textures.skyNebula;
     skyMat.needsUpdate = true;
 
     const seaGeo = new THREE.PlaneGeometry(520, 520);
@@ -2242,7 +2893,11 @@ export class GameEngine {
               ? this.textures.iceSeaSurface
               : theme.biome === 'volcanic'
                 ? this.textures.lavaSurface
-                : this.textures.nebulaSeaSurface;
+                : theme.biome === 'paris'
+                  ? this.textures.seineWaterSurface
+                  : theme.biome === 'rapids'
+                    ? this.textures.calmLakeSurface
+                    : this.textures.nebulaSeaSurface;
     this.hazardSeaTex = seaTex;
     const seaMat = new THREE.MeshStandardMaterial({
       map: seaTex,
@@ -2306,8 +2961,14 @@ export class GameEngine {
       const geo = new THREE.BoxGeometry(pDef.size[0], pDef.size[1], pDef.size[2]);
       const mesh = new THREE.Mesh(geo, mat);
       mesh.position.set(pDef.pos[0], pDef.pos[1], pDef.pos[2]);
-      mesh.castShadow = !this.isSoftwareGl && !startsInactive;
-      mesh.receiveShadow = true;
+      if (pDef.invisible) {
+        mesh.visible = false;
+        mesh.castShadow = false;
+        mesh.receiveShadow = false;
+      } else {
+        mesh.castShadow = !this.isSoftwareGl && !startsInactive;
+        mesh.receiveShadow = true;
+      }
 
       if (pDef.kind === 'crumble' || pDef.kind === 'conveyor' || pDef.kind === 'moving' || pDef.kind === 'ice') {
         const trimColor =
@@ -2465,6 +3126,106 @@ export class GameEngine {
           baseY: mPos[1],
           phase: i * 1.3,
           exploded: false,
+        });
+      }
+    }
+
+    // Hang Glider (Level 7 - Paris Sky)
+    this.gliderState = 'parked';
+    this.gliderBoostTimer = 0;
+    if (level.gliderSection) {
+      const gs = level.gliderSection;
+      this.gliderLaunchpadPos.set(...gs.launchpadPos);
+      this.gliderLandingPos.set(...gs.landingPos);
+      this.gliderCruiseSpeed = gs.cruiseSpeed;
+
+      const pad = createRocketPadMesh();
+      pad.position.copy(this.gliderLaunchpadPos);
+      this.levelGroup.add(pad);
+
+      this.gliderRig = createHangGliderRig();
+      this.gliderPos.copy(this.gliderLaunchpadPos);
+      this.gliderPos.y += 0.25;
+      this.gliderRig.root.position.copy(this.gliderPos);
+      this.gliderRig.trailL.visible = false;
+      this.gliderRig.trailR.visible = false;
+      this.levelGroup.add(this.gliderRig.root);
+
+      for (const rPos of gs.rings) {
+        const rg = createBoostRingMesh();
+        rg.position.set(...rPos);
+        this.levelGroup.add(rg);
+        this.boostRings.push({ group: rg, pos: new THREE.Vector3(...rPos), passed: false });
+      }
+    }
+
+    // River Boat Rapids (Level 8 - Río Bravo)
+    this.boatState = 'parked';
+    this.boatJumpY = 0;
+    this.boatVelY = 0;
+    this.boatJumpCooldown = 0;
+    this.boatCalmEntered = false;
+    if (level.boatSection) {
+      const bs = level.boatSection;
+      this.boatDockPos.set(...bs.dockPos);
+      this.boatLakePos.set(...bs.lakePos);
+      this.boatCalmLakeZ = bs.calmLakeZ;
+      this.boatCruiseSpeed = bs.cruiseSpeed;
+      this.boatHalfWidth = bs.riverHalfWidth;
+
+      this.boatRig = createRiverBoatRig(this.textures.riverTimber);
+      this.boatPos.copy(this.boatDockPos);
+      this.boatRig.root.position.copy(this.boatPos);
+      this.boatRig.wakeL.visible = false;
+      this.boatRig.wakeR.visible = false;
+      this.levelGroup.add(this.boatRig.root);
+
+      const rockMat = new THREE.MeshStandardMaterial({
+        map: this.textures.desertSide,
+        bumpMap: this.textures.stoneBump,
+        bumpScale: 0.2,
+        color: 0x78716c,
+        roughness: 0.85,
+      });
+      const foamMat = new THREE.MeshBasicMaterial({
+        color: 0xf0f9ff,
+        transparent: true,
+        opacity: 0.68,
+        side: THREE.DoubleSide,
+      });
+
+      bs.rocks.forEach((rk, idx) => {
+        const rad = rk.radius ?? 1.5;
+        const rGeo = this.createDisplacedRockGeometry(rad, idx + 1.4);
+        const rMesh = new THREE.Mesh(rGeo, rockMat);
+        rMesh.position.set(rk.pos[0], rk.pos[1] + 0.35, rk.pos[2]);
+        rMesh.scale.set(1.05, 0.85, 1.05);
+        rMesh.castShadow = true;
+        this.levelGroup.add(rMesh);
+
+        const foam = new THREE.Mesh(new THREE.RingGeometry(rad * 0.85, rad * 1.32, 18), foamMat);
+        foam.rotation.x = -Math.PI / 2;
+        foam.position.set(rk.pos[0], 0.05, rk.pos[2]);
+        this.levelGroup.add(foam);
+
+        this.riverRocks.push({ pos: new THREE.Vector3(...rk.pos), radius: rad });
+      });
+
+      for (const cr of bs.crocodiles) {
+        const rig = createCrocodileMesh();
+        const behavior = cr.behavior ?? 'patrol';
+        rig.group.position.set(cr.pos[0], behavior === 'ambush' ? -1.25 : cr.pos[1], cr.pos[2]);
+        this.levelGroup.add(rig.group);
+        this.crocodiles.push({
+          rig,
+          baseX: cr.pos[0],
+          pos: new THREE.Vector3(...cr.pos),
+          patrolX: cr.patrolX,
+          speed: cr.speed,
+          phase: cr.phase ?? 0,
+          behavior,
+          emergeProgress: behavior === 'ambush' ? 0 : 1,
+          emergedSplash: false,
         });
       }
     }
@@ -2648,6 +3409,10 @@ export class GameEngine {
     this.standingPlatform = null;
     this.hoverFuel = 1;
     this.isHovering = false;
+    this.botRocketCharges = 0;
+    this.botRocketTimer = 0;
+    this.gliderAltOffset = 0;
+    this.playerRig.botRocketRig.visible = false;
     this.spinTimer = 0;
     this.invulnTimer = 0;
     this.health = this.maxHealth;
@@ -2800,6 +3565,24 @@ export class GameEngine {
       });
       return [sideMat, sideMat, topMat, sideMat, sideMat, sideMat];
     }
+    if (style === 'paris') {
+      return new THREE.MeshStandardMaterial({
+        map: this.textures.parisStone,
+        bumpMap: this.textures.stoneBump,
+        bumpScale: 0.09,
+        roughness: 0.78,
+        metalness: 0.05,
+      });
+    }
+    if (style === 'river') {
+      return new THREE.MeshStandardMaterial({
+        map: this.textures.riverTimber,
+        bumpMap: this.textures.barkBump,
+        bumpScale: 0.08,
+        roughness: 0.8,
+        metalness: 0.04,
+      });
+    }
     if (style === 'crystal') return new THREE.MeshStandardMaterial({ map: this.textures.crystalCircuit, roughness: 0.28, metalness: 0.52 });
     if (style === 'gold') return new THREE.MeshStandardMaterial({ map: this.textures.goldTrim, roughness: 0.22, metalness: 0.85 });
     return new THREE.MeshStandardMaterial({ map: this.textures.techGrid, roughness: 0.34, metalness: 0.25 });
@@ -2914,8 +3697,34 @@ export class GameEngine {
         if (this.rocketState === 'flying') {
           this.rocketBoostTimer = 0.55;
           soundEngine.playRocketBoost();
+        } else if (this.gliderState === 'flying') {
+          if (this.gliderBoostTimer <= 0.1) {
+            this.gliderBoostTimer = 0.7;
+            this.gliderVelY = Math.max(this.gliderVelY + 4.2, 5.2);
+            soundEngine.playWindWhoosh();
+            this.spawnBurst(this.gliderPos.x, this.gliderPos.y, this.gliderPos.z, 0xbae6fd, 14, 4.5);
+          }
+        } else if (this.boatState === 'sailing') {
+          if (this.boatJumpY <= 0.05 && this.boatJumpCooldown <= 0) {
+            this.boatVelY = 10.6;
+            this.boatJumpCooldown = 0.72;
+            soundEngine.playSplash();
+            this.spawnBurst(this.boatPos.x, 0.2, this.boatPos.z, 0xe0f2fe, 14, 4.8);
+          }
         } else {
-          this.jumpBufferTimer = 0.14;
+          if (
+            !this.grounded &&
+            !this.isClimbing &&
+            this.coyoteTimer <= 0 &&
+            this.botRocketCharges > 0 &&
+            this.botRocketTimer <= 0 &&
+            this.playerVel.y < -2.2 &&
+            this.hoverFuel <= 0.12
+          ) {
+            this.activateBotRocketRescue();
+          } else {
+            this.jumpBufferTimer = 0.14;
+          }
         }
       }
       if (spinNow && !this.prevGamepadButtons.spin) {
@@ -2962,7 +3771,7 @@ export class GameEngine {
     }
     if (this.hazardSeaTex) {
       const biome = this.currentLevel.theme.biome;
-      if (biome === 'jungle' || biome === 'ice' || biome === 'volcanic') {
+      if (biome === 'jungle' || biome === 'ice' || biome === 'volcanic' || biome === 'paris' || biome === 'rapids') {
         const spd = biome === 'volcanic' ? 0.028 : 0.015;
         this.hazardSeaTex.offset.x = (this.totalTime * spd) % 1;
         this.hazardSeaTex.offset.y = (this.totalTime * spd * 0.7) % 1;
@@ -2975,6 +3784,9 @@ export class GameEngine {
     }
     if (this.currentLevel.theme.biome === 'jungle') {
       this.textures.waterfallSurface.offset.y = (this.totalTime * 0.75) % 1;
+    }
+    if (this.currentLevel.theme.biome === 'rapids') {
+      this.textures.rapidsWaterSurface.offset.y = (this.totalTime * 1.45) % 1;
     }
 
     this.renderer.render(this.scene, this.camera);
@@ -3103,6 +3915,40 @@ export class GameEngine {
       }
     }
 
+    // Animate river crocodiles: ambush crocs erupt from underwater with wide-open jaws; patrol crocs swim across
+    const boatZ = this.boatState === 'sailing' ? this.boatPos.z : this.playerPos.z;
+    for (const croc of this.crocodiles) {
+      const arg = this.totalTime * croc.speed + croc.phase;
+      croc.pos.x = croc.baseX + Math.sin(arg) * croc.patrolX;
+      if (croc.behavior === 'ambush') {
+        const distAhead = boatZ - croc.pos.z;
+        const triggered = this.boatState === 'sailing' && distAhead < 34 && distAhead > -14;
+        if (triggered && croc.emergeProgress < 1) {
+          croc.emergeProgress = Math.min(1, croc.emergeProgress + dt * 2.5);
+          if (!croc.emergedSplash && croc.emergeProgress > 0.25) {
+            croc.emergedSplash = true;
+            soundEngine.playSplash();
+            this.spawnBurst(croc.pos.x, 0.25, croc.pos.z, 0xe0f2fe, 14, 5.2);
+          }
+        } else if (!triggered) {
+          croc.emergeProgress = Math.max(0, croc.emergeProgress - dt * 1.4);
+          if (croc.emergeProgress <= 0.05) croc.emergedSplash = false;
+        }
+        const targetY = THREE.MathUtils.lerp(-1.25, 0.08, croc.emergeProgress);
+        const bob = croc.emergeProgress * Math.sin(this.totalTime * 5.2 + croc.phase) * 0.04;
+        croc.rig.group.position.set(croc.pos.x, targetY + bob, croc.pos.z);
+        croc.rig.group.rotation.y = Math.sin(arg) * 0.28;
+        croc.rig.jawUpper.rotation.x =
+          -0.12 - croc.emergeProgress * (0.58 + Math.abs(Math.sin(this.totalTime * 6.0 + croc.phase)) * 0.22);
+        croc.rig.tailGroup.rotation.y = Math.sin(this.totalTime * 7.5 + croc.phase) * 0.35;
+      } else {
+        croc.rig.group.position.set(croc.pos.x, 0.04 + Math.sin(this.totalTime * 4 + croc.phase) * 0.04, croc.pos.z);
+        croc.rig.group.rotation.y = Math.cos(arg) >= 0 ? Math.PI / 2 : -Math.PI / 2;
+        croc.rig.jawUpper.rotation.x = -0.14 - Math.abs(Math.sin(this.totalTime * 4.5 + croc.phase)) * 0.38;
+        croc.rig.tailGroup.rotation.y = Math.sin(this.totalTime * 6.5 + croc.phase) * 0.32;
+      }
+    }
+
     if (this.phase !== 'playing') {
       this.animatePlayerVisuals(dt, 0);
       return;
@@ -3129,6 +3975,18 @@ export class GameEngine {
       return;
     }
 
+    // HANG GLIDER MODE (Level 7 - Cielos de París)
+    if (this.gliderState === 'flying' && this.gliderRig) {
+      this.stepGliderFlight(dt);
+      return;
+    }
+
+    // RIVER BOAT RAPIDS MODE (Level 8 - Rápidos del Río Bravo)
+    if (this.boatState === 'sailing' && this.boatRig) {
+      this.stepBoatRapids(dt);
+      return;
+    }
+
     // Check if player boards parked Rocket
     if (this.rocketRig && this.rocketState === 'parked') {
       const dx = this.playerPos.x - this.rocketPos.x;
@@ -3145,6 +4003,49 @@ export class GameEngine {
         soundEngine.playRocketBoost();
         soundEngine.setMusicContext(this.currentLevel.theme.biome, true, this.phase);
         this.showBanner('¡Cohete Astro! WASD Maniobrar · Espacio Turbo', 3.2);
+        this.pushHud(true);
+        return;
+      }
+    }
+
+    // Check if player boards Hang Glider atop Eiffel Tower
+    if (this.gliderRig && this.gliderState === 'parked') {
+      const dx = this.playerPos.x - this.gliderPos.x;
+      const dy = this.playerPos.y - this.gliderPos.y;
+      const dz = this.playerPos.z - this.gliderPos.z;
+      if (dx * dx + dz * dz < 4.2 && Math.abs(dy) < 2.5) {
+        this.gliderState = 'flying';
+        this.perspectiveMode = 'ALA DELTA';
+        this.gliderVelX = 0;
+        this.gliderVelY = 0.4;
+        this.gliderAltOffset = 0;
+        this.gliderBoostTimer = 0.25;
+        this.active2DZone = null;
+        soundEngine.stopHover();
+        soundEngine.playWindWhoosh();
+        this.showBanner('¡Ala Delta desplegada! Cruceta/WASD Planear · OK/Espacio Corriente térmica', 3.6);
+        this.pushHud(true);
+        return;
+      }
+    }
+
+    // Check if player boards River Boat at upstream dock
+    if (this.boatRig && this.boatState === 'parked') {
+      const dx = this.playerPos.x - this.boatPos.x;
+      const dy = this.playerPos.y - this.boatPos.y;
+      const dz = this.playerPos.z - this.boatPos.z;
+      if (dx * dx + dz * dz < 5.6 && Math.abs(dy) < 2.6) {
+        this.boatState = 'sailing';
+        this.perspectiveMode = 'BARCO';
+        this.boatVelX = 0;
+        this.boatVelZ = this.boatCruiseSpeed;
+        this.boatJumpY = 0;
+        this.boatVelY = 0;
+        this.boatJumpCooldown = 0;
+        this.active2DZone = null;
+        soundEngine.stopHover();
+        soundEngine.playSplash();
+        this.showBanner('¡Al agua! Esquiva rocas y cocodrilos · OK/Espacio Saltar ola', 3.6);
         this.pushHud(true);
         return;
       }
@@ -3257,12 +4158,12 @@ export class GameEngine {
     const worldDirX = inX * cosY + inZ * sinY;
     const worldDirZ = -inX * sinY + inZ * cosY;
 
-    const moveSpeed = 9.2;
+    const moveSpeed = this.botRocketTimer > 0 ? 12.4 : 9.2;
     const targetVx = worldDirX * moveSpeed;
     const targetVz = worldDirZ * moveSpeed;
 
     let onIce = this.grounded && this.standingPlatform?.def.kind === 'ice';
-    const accel = onIce ? 2.6 : this.grounded ? 16 : 9;
+    const accel = onIce ? 2.6 : this.botRocketTimer > 0 ? 13 : this.grounded ? 16 : 9;
     this.playerVel.x = THREE.MathUtils.damp(this.playerVel.x, targetVx, accel, dt);
     this.playerVel.z = THREE.MathUtils.damp(this.playerVel.z, targetVz, accel, dt);
 
@@ -3412,15 +4313,47 @@ export class GameEngine {
         this.keysHeld.has('__TV_JUMP__') ||
         this.touchJumpHeld ||
         this.gamepadJumpHeld;
-      if (!this.grounded && jumpHeld && this.playerVel.y < 1.8 && this.hoverFuel > 0) {
-        this.isHovering = true;
-        this.hoverFuel = Math.max(0, this.hoverFuel - dt * 1.08);
-        this.playerVel.y = THREE.MathUtils.damp(this.playerVel.y, -0.65, 14, dt);
-        soundEngine.startHover();
-      } else {
+      if (this.botRocketTimer > 0) {
+        this.botRocketTimer = Math.max(0, this.botRocketTimer - dt);
         if (this.isHovering) soundEngine.stopHover();
         this.isHovering = false;
-        this.playerVel.y -= 31.0 * dt;
+        this.hoverFuel = THREE.MathUtils.clamp(this.botRocketTimer / 2.4, 0, 1);
+        const targetVy = this.botRocketTimer > 1.35 ? 10.6 : jumpHeld ? 2.8 : -1.5;
+        this.playerVel.y = THREE.MathUtils.damp(this.playerVel.y, targetVy, 7.5, dt);
+        if (Math.random() < 0.75) {
+          this.spawnBurst(
+            this.playerPos.x,
+            this.playerPos.y - 0.35,
+            this.playerPos.z,
+            Math.random() < 0.6 ? 0xf97316 : 0x38bdf8,
+            1,
+            1.8
+          );
+        }
+        if (this.botRocketTimer <= 0) {
+          this.pushHud(true);
+        }
+      } else {
+        if (!this.grounded && jumpHeld && this.playerVel.y < 1.8 && this.hoverFuel > 0) {
+          this.isHovering = true;
+          this.hoverFuel = Math.max(0, this.hoverFuel - dt * 1.08);
+          this.playerVel.y = THREE.MathUtils.damp(this.playerVel.y, -0.65, 14, dt);
+          soundEngine.startHover();
+        } else {
+          if (this.isHovering) soundEngine.stopHover();
+          this.isHovering = false;
+          this.playerVel.y -= 31.0 * dt;
+        }
+
+        // Auto-deploy a rescued Mini-Bot as an emergency rocket booster when falling near the hazard floor
+        if (
+          !this.grounded &&
+          this.botRocketCharges > 0 &&
+          this.playerVel.y < -1.0 &&
+          this.playerPos.y <= this.currentLevel.theme.hazardFloorY + 4.8
+        ) {
+          this.activateBotRocketRescue();
+        }
       }
 
       const prevY = this.playerPos.y;
@@ -3590,6 +4523,11 @@ export class GameEngine {
       if (!this.isClimbing) {
         this.grounded = landedPlatform !== null || landedOnClimbWall || bestGroundShadowY >= this.playerPos.y - 0.05;
         this.standingPlatform = landedPlatform;
+        if (this.grounded && this.botRocketTimer > 0) {
+          this.botRocketTimer = 0;
+          this.hoverFuel = 1;
+          this.pushHud(true);
+        }
         onIce = this.grounded && this.standingPlatform?.def.kind === 'ice';
 
         if (landedPlatform && landedPlatform.def.kind === 'crumble' && landedPlatform.crumbleState === 'idle') {
@@ -3656,9 +4594,10 @@ export class GameEngine {
         mb.visorGlow.color.setHex(0x38bdf8);
         mb.visorGlow.emissive.setHex(0x0ea5e9);
         this.botsRescued++;
+        this.botRocketCharges++;
         soundEngine.playBotRescue();
         this.spawnBurst(mb.homePos.x, mb.homePos.y + 0.7, mb.homePos.z, 0x38bdf8, 22, 6.0);
-        this.showBanner(`¡${mb.name} rescatado!`);
+        this.showBanner(`¡${mb.name} rescatado! (+1 Cohete Bot al caer)`);
         this.pushHud(true);
       }
     }
@@ -4009,6 +4948,230 @@ export class GameEngine {
     }
   }
 
+  private stepGliderFlight(dt: number) {
+    if (!this.gliderRig) return;
+
+    let steerX = this.touchMoveX + this.gamepadMoveX;
+    let pitchIn = -this.touchMoveZ - this.gamepadMoveZ;
+    if (this.keysHeld.has('KeyA') || this.keysHeld.has('ArrowLeft')) steerX -= 1;
+    if (this.keysHeld.has('KeyD') || this.keysHeld.has('ArrowRight')) steerX += 1;
+    if (this.keysHeld.has('KeyW') || this.keysHeld.has('ArrowUp')) pitchIn += 1;
+    if (this.keysHeld.has('KeyS') || this.keysHeld.has('ArrowDown')) pitchIn -= 1;
+    steerX = THREE.MathUtils.clamp(steerX, -1, 1);
+    pitchIn = THREE.MathUtils.clamp(pitchIn, -1, 1);
+
+    this.gliderVelX = THREE.MathUtils.damp(this.gliderVelX, steerX * 9.8, 9.5, dt);
+
+    // Ideal gentle glide slope between Eiffel Tower (y=32) and Champs-Élysées Plaza (y=6.8), with persistent altitude control
+    const spanZ = Math.max(1, this.gliderLaunchpadPos.z - this.gliderLandingPos.z);
+    const progress = THREE.MathUtils.clamp((this.gliderLaunchpadPos.z - this.gliderPos.z) / spanZ, 0, 1);
+    this.gliderAltOffset = THREE.MathUtils.clamp(this.gliderAltOffset + pitchIn * 5.6 * dt, -4.5, 6.0);
+    const glideTargetY = THREE.MathUtils.lerp(31.8, 6.8, progress) + this.gliderAltOffset;
+
+    const boosting = this.gliderBoostTimer > 0;
+    if (boosting) this.gliderBoostTimer = Math.max(0, this.gliderBoostTimer - dt);
+    this.hoverFuel = boosting ? 1 : THREE.MathUtils.clamp(1 - this.gliderBoostTimer, 0, 1);
+
+    const targetVy = (glideTargetY - this.gliderPos.y) * 2.4;
+    this.gliderVelY = THREE.MathUtils.damp(this.gliderVelY, boosting ? Math.max(targetVy, 3.8) : targetVy, 6.2, dt);
+
+    const forwardSpeed = this.gliderCruiseSpeed * (boosting ? 1.18 : 1.0);
+    this.gliderPos.x = THREE.MathUtils.clamp(this.gliderPos.x + this.gliderVelX * dt, -16.5, 16.5);
+    this.gliderPos.y = THREE.MathUtils.clamp(this.gliderPos.y + this.gliderVelY * dt, 2.2, 36.5);
+    this.gliderPos.z -= forwardSpeed * dt;
+
+    this.gliderRig.root.position.copy(this.gliderPos);
+    this.gliderRig.wingGroup.rotation.z = THREE.MathUtils.damp(
+      this.gliderRig.wingGroup.rotation.z,
+      -this.gliderVelX * 0.042,
+      8,
+      dt
+    );
+    this.gliderRig.wingGroup.rotation.x = THREE.MathUtils.damp(
+      this.gliderRig.wingGroup.rotation.x,
+      this.gliderVelY * 0.032 - 0.04,
+      8,
+      dt
+    );
+    this.gliderRig.trailL.visible = true;
+    this.gliderRig.trailR.visible = true;
+
+    // Nova Bot hangs horizontally in harness beneath the glider trapeze
+    this.playerPos.set(this.gliderPos.x, this.gliderPos.y + 0.15, this.gliderPos.z);
+    this.playerRig.root.position.copy(this.playerPos);
+    this.playerRig.bodyGroup.rotation.y = Math.PI;
+    this.playerRig.bodyGroup.scale.setScalar(0.92);
+    this.playerRig.hoverBeam.visible = false;
+    this.contactShadowMesh.visible = false;
+
+    this.collectNearbyCoins(this.gliderPos.x, this.gliderPos.y + 0.6, this.gliderPos.z, 12.5);
+
+    for (const rg of this.boostRings) {
+      if (rg.passed) continue;
+      if (this.gliderPos.distanceToSquared(rg.pos) < 16.5) {
+        rg.passed = true;
+        this.gliderBoostTimer = 0.55;
+        this.gliderVelY = Math.max(this.gliderVelY, 2.8);
+        this.coinsCollected += 2;
+        soundEngine.playWindWhoosh();
+        soundEngine.playCoin();
+        this.spawnBurst(rg.pos.x, rg.pos.y, rg.pos.z, 0xfacc15, 22, 6.5);
+        this.pushHud(true);
+      }
+    }
+
+    if (this.gliderPos.z <= this.gliderLandingPos.z + 2.0) {
+      this.gliderState = 'landed';
+      this.perspectiveMode = '3D';
+      this.gliderRig.trailL.visible = false;
+      this.gliderRig.trailR.visible = false;
+      this.gliderRig.root.position.set(this.gliderLandingPos.x - 4.0, this.gliderLandingPos.y + 0.25, this.gliderLandingPos.z + 2.0);
+      this.gliderRig.wingGroup.rotation.set(0, 0.3, 0);
+
+      this.playerRig.bodyGroup.scale.setScalar(1);
+      this.playerPos.set(this.gliderLandingPos.x, this.gliderLandingPos.y + 1.0, this.gliderLandingPos.z);
+      this.playerVel.set(0, 4.2, -3.0);
+      this.spawnPos.copy(this.playerPos);
+      this.checkpointActive = true;
+      soundEngine.playCheckpoint();
+      this.showBanner('¡Aterrizaje junto al Arco del Triunfo!', 3.2);
+      this.pushHud(true);
+    }
+  }
+
+  private stepBoatRapids(dt: number) {
+    if (!this.boatRig) return;
+
+    let steerX = this.touchMoveX + this.gamepadMoveX;
+    let throttle = -this.touchMoveZ - this.gamepadMoveZ;
+    if (this.keysHeld.has('KeyA') || this.keysHeld.has('ArrowLeft')) steerX -= 1;
+    if (this.keysHeld.has('KeyD') || this.keysHeld.has('ArrowRight')) steerX += 1;
+    if (this.keysHeld.has('KeyW') || this.keysHeld.has('ArrowUp')) throttle += 1;
+    if (this.keysHeld.has('KeyS') || this.keysHeld.has('ArrowDown')) throttle -= 1;
+    steerX = THREE.MathUtils.clamp(steerX, -1, 1);
+    throttle = THREE.MathUtils.clamp(throttle, -1, 1);
+
+    this.boatJumpCooldown = Math.max(0, this.boatJumpCooldown - dt);
+    this.hoverFuel = this.boatJumpCooldown > 0 ? THREE.MathUtils.clamp(1 - this.boatJumpCooldown / 0.72, 0, 1) : 1;
+
+    const inCalmLake = this.boatPos.z <= this.boatCalmLakeZ;
+    if (inCalmLake && !this.boatCalmEntered) {
+      this.boatCalmEntered = true;
+      this.showBanner('¡Aguas tranquilas! Has llegado al lago del final', 3.4);
+      soundEngine.playModeSwitch();
+    }
+
+    const baseFwd = inCalmLake ? 7.6 : this.boatCruiseSpeed + throttle * 3.4;
+    this.boatVelZ = THREE.MathUtils.damp(this.boatVelZ, baseFwd, 5.5, dt);
+    this.boatVelX = THREE.MathUtils.damp(this.boatVelX, steerX * 9.8, 8.5, dt);
+
+    // Wave hop physics
+    if (this.boatJumpY > 0 || this.boatVelY > 0) {
+      this.boatVelY -= 26.0 * dt;
+      this.boatJumpY += this.boatVelY * dt;
+      if (this.boatJumpY <= 0) {
+        this.boatJumpY = 0;
+        this.boatVelY = 0;
+        soundEngine.playSplash();
+        this.spawnBurst(this.boatPos.x, 0.15, this.boatPos.z, 0xe0f2fe, 10, 3.6);
+      }
+    }
+
+    const riverCx = getRiverCenterX(this.boatPos.z);
+    const riverAngle = getRiverSlopeAngle(this.boatPos.z);
+    const xAhead = getRiverCenterX(this.boatPos.z - 1.5);
+    const xBehind = getRiverCenterX(this.boatPos.z + 1.5);
+    const currentDriftVx = ((xAhead - xBehind) / 3.0) * this.boatVelZ * 0.48;
+
+    this.boatPos.x = THREE.MathUtils.clamp(
+      this.boatPos.x + (this.boatVelX + currentDriftVx) * dt,
+      riverCx - this.boatHalfWidth,
+      riverCx + this.boatHalfWidth
+    );
+    this.boatPos.z -= this.boatVelZ * dt;
+    const waveBob = inCalmLake ? Math.sin(this.totalTime * 2.2) * 0.03 : Math.sin(this.totalTime * 11) * 0.12;
+    this.boatPos.y = 0.05 + this.boatJumpY + waveBob;
+
+    this.boatRig.root.position.copy(this.boatPos);
+    this.boatRig.hullGroup.rotation.z = THREE.MathUtils.damp(this.boatRig.hullGroup.rotation.z, -this.boatVelX * 0.032, 9, dt);
+    this.boatRig.hullGroup.rotation.y = THREE.MathUtils.damp(
+      this.boatRig.hullGroup.rotation.y,
+      -riverAngle * 0.85 - this.boatVelX * 0.025,
+      9,
+      dt
+    );
+    this.boatRig.hullGroup.rotation.x = this.boatJumpY > 0.05 ? this.boatVelY * 0.025 : (inCalmLake ? 0 : Math.sin(this.totalTime * 9) * 0.04);
+    this.boatRig.propeller.rotation.z += dt * (inCalmLake ? 8 : 24);
+    this.boatRig.wakeL.visible = this.boatJumpY <= 0.1;
+    this.boatRig.wakeR.visible = this.boatJumpY <= 0.1;
+
+    if (!inCalmLake && this.boatJumpY <= 0.1 && Math.random() < 0.45) {
+      this.spawnBurst(this.boatPos.x, 0.12, this.boatPos.z + 1.8, 0xe0f2fe, 1, 1.8);
+    }
+
+    // Rider sits cleanly at the boat helm
+    this.playerPos.set(this.boatPos.x, this.boatPos.y + 0.45, this.boatPos.z + 0.1);
+    this.playerRig.root.position.copy(this.playerPos);
+    this.playerRig.bodyGroup.rotation.y = Math.PI - riverAngle * 0.85;
+    this.playerRig.bodyGroup.scale.setScalar(0.92);
+    this.playerRig.hoverBeam.visible = false;
+    this.contactShadowMesh.visible = false;
+
+    this.collectNearbyCoins(this.boatPos.x, this.boatPos.y + 0.8, this.boatPos.z, 7.2);
+
+    // Hazard checks: jagged river rocks & patrolling/ambush crocodiles (can jump over hazards!)
+    if (this.boatJumpY < 0.85) {
+      for (const rk of this.riverRocks) {
+        const dx = this.boatPos.x - rk.pos.x;
+        const dz = this.boatPos.z - rk.pos.z;
+        const hitDist = rk.radius + 0.72;
+        if (dx * dx + dz * dz < hitDist * hitDist) {
+          soundEngine.playSplash();
+          this.spawnBurst(this.boatPos.x, 0.35, this.boatPos.z, 0xf0f9ff, 20, 6.2);
+          this.boatVelX = dx >= 0 ? 5.5 : -5.5;
+          this.boatPos.z += 1.2;
+          this.damagePlayer(dx, 1);
+          break;
+        }
+      }
+
+      if (this.phase === 'playing') {
+        for (const croc of this.crocodiles) {
+          if (croc.behavior === 'ambush' && croc.emergeProgress < 0.35) continue;
+          const dx = this.boatPos.x - croc.pos.x;
+          const dz = this.boatPos.z - croc.pos.z;
+          if (Math.abs(dx) < 1.85 && Math.abs(dz) < 1.25) {
+            soundEngine.playSplash();
+            this.spawnBurst(this.boatPos.x, 0.35, this.boatPos.z, 0x84cc16, 18, 6.0);
+            this.boatVelX = dx >= 0 ? 6.0 : -6.0;
+            this.boatPos.z += 1.4;
+            this.damagePlayer(dx, 1);
+            break;
+          }
+        }
+      }
+    }
+
+    // Arrival at calm lake pier
+    if (this.boatPos.z <= this.boatLakePos.z + 1.5) {
+      this.boatState = 'docked';
+      this.perspectiveMode = '3D';
+      this.boatRig.wakeL.visible = false;
+      this.boatRig.wakeR.visible = false;
+      this.boatRig.root.position.set(this.boatLakePos.x - 4.2, 0.05, this.boatLakePos.z + 2.0);
+      this.boatRig.hullGroup.rotation.set(0, 0.25, 0);
+
+      this.playerRig.bodyGroup.scale.setScalar(1);
+      this.playerPos.set(this.boatLakePos.x, 1.3, this.boatLakePos.z - 5.0);
+      this.playerVel.set(0, 3.8, -2.2);
+      this.spawnPos.copy(this.playerPos);
+      this.checkpointActive = true;
+      soundEngine.playCheckpoint();
+      this.showBanner('¡Desembarco en el lago tranquilo! Camina hacia el portal', 3.4);
+      this.pushHud(true);
+    }
+  }
+
   private collectNearbyCoins(px: number, py: number, pz: number, radiusSq: number) {
     for (const c of this.coins) {
       if (c.collected) continue;
@@ -4240,7 +5403,7 @@ export class GameEngine {
     soundEngine.playHurt();
     this.spawnBurst(this.playerPos.x, this.playerPos.y + 0.7, this.playerPos.z, 0xff2a55, 16, 5.0);
 
-    if (this.rocketState !== 'flying') {
+    if (this.rocketState !== 'flying' && this.gliderState !== 'flying' && this.boatState !== 'sailing') {
       const len = Math.hypot(knockX, knockZ) || 1;
       this.playerVel.set((knockX / len) * 6.5, 7.5, (knockZ / len) * 6.5);
       this.grounded = false;
@@ -4306,6 +5469,7 @@ export class GameEngine {
       rig.hoverBeam.visible = false;
       rig.thrusterLeft.visible = false;
       rig.thrusterRight.visible = false;
+      rig.botRocketRig.visible = false;
     } else {
       rig.rightArm.rotation.z = 0;
       if (this.isClimbing) {
@@ -4331,7 +5495,7 @@ export class GameEngine {
           rig.rightArm.rotation.x = -0.65;
           rig.bodyGroup.position.y = 0;
         }
-        rig.capeGroup.rotation.x = 0.25 + runFactor * 0.55 + (this.isHovering ? 0.5 : 0);
+        rig.capeGroup.rotation.x = 0.25 + runFactor * 0.55 + (this.isHovering || this.botRocketTimer > 0 ? 0.5 : 0);
       }
 
       if (this.hasMonkeySuit) {
@@ -4339,10 +5503,17 @@ export class GameEngine {
         rig.monkeyTail.rotation.x = Math.cos(this.totalTime * 4) * 0.14;
       }
 
-      rig.hoverBeam.visible = this.isHovering;
-      rig.thrusterLeft.visible = this.isHovering;
-      rig.thrusterRight.visible = this.isHovering;
-      if (this.isHovering) {
+      const rocketActive = this.botRocketTimer > 0;
+      rig.botRocketRig.visible = rocketActive;
+      if (rocketActive) {
+        const rPulse = 0.92 + Math.sin(this.totalTime * 42) * 0.14;
+        rig.botRocketRig.scale.set(rPulse, 1, rPulse);
+      }
+
+      rig.hoverBeam.visible = this.isHovering && !rocketActive;
+      rig.thrusterLeft.visible = this.isHovering || rocketActive;
+      rig.thrusterRight.visible = this.isHovering || rocketActive;
+      if (this.isHovering || rocketActive) {
         const pulse = 0.9 + Math.sin(this.totalTime * 35) * 0.12;
         rig.hoverBeam.scale.set(pulse, 1, pulse);
         rig.thrusterLeft.scale.setScalar(pulse);
@@ -4415,6 +5586,40 @@ export class GameEngine {
       return;
     }
 
+    if (this.gliderState === 'flying') {
+      _vec3A.set(this.gliderPos.x * 0.72, this.gliderPos.y + 3.8, this.gliderPos.z + 10.6);
+      this.camCurrentPos.lerp(_vec3A, 1 - Math.exp(-8 * dt));
+      _vec3B.set(this.gliderPos.x * 0.88, this.gliderPos.y - 1.2, this.gliderPos.z - 18);
+      this.camLookTarget.lerp(_vec3B, 1 - Math.exp(-9 * dt));
+      this.camera.position.copy(this.camCurrentPos);
+      if (this.shakeIntensity > 0.005) {
+        this.camera.position.x += (Math.random() - 0.5) * this.shakeIntensity;
+        this.camera.position.y += (Math.random() - 0.5) * this.shakeIntensity;
+      }
+      this.camera.lookAt(this.camLookTarget);
+      return;
+    }
+
+    if (this.boatState === 'sailing') {
+      const riverCx = getRiverCenterX(this.boatPos.z);
+      const riverAngle = getRiverSlopeAngle(this.boatPos.z);
+      const camX = THREE.MathUtils.lerp(riverCx, this.boatPos.x, 0.72) - Math.sin(riverAngle) * 7.5;
+      const camZ = this.boatPos.z + Math.cos(riverAngle) * 11.4;
+      _vec3A.set(camX, 5.4 + this.boatJumpY * 0.45, camZ);
+      this.camCurrentPos.lerp(_vec3A, 1 - Math.exp(-8.5 * dt));
+      const lookAheadZ = this.boatPos.z - 14;
+      const lookCx = THREE.MathUtils.lerp(getRiverCenterX(lookAheadZ), this.boatPos.x, 0.45);
+      _vec3B.set(lookCx, 0.9, lookAheadZ);
+      this.camLookTarget.lerp(_vec3B, 1 - Math.exp(-9.5 * dt));
+      this.camera.position.copy(this.camCurrentPos);
+      if (this.shakeIntensity > 0.005) {
+        this.camera.position.x += (Math.random() - 0.5) * this.shakeIntensity;
+        this.camera.position.y += (Math.random() - 0.5) * this.shakeIntensity;
+      }
+      this.camera.lookAt(this.camLookTarget);
+      return;
+    }
+
     const dist = this.active2DZone ? 13.5 : 9.6;
     const horizDist = dist * Math.cos(this.camPitch);
     const heightOffset = dist * Math.sin(this.camPitch) + (this.active2DZone ? 1.8 : 1.2);
@@ -4464,6 +5669,8 @@ export class GameEngine {
       botsRescued: this.botsRescued,
       totalBots: this.currentLevel.miniBots.length,
       hoverFuel: this.hoverFuel,
+      botRocketCharges: this.botRocketCharges,
+      botRocketActive: this.botRocketTimer > 0,
       elapsedTime: this.levelTime,
       checkpointActive: this.checkpointActive,
       bannerText: this.bannerText,

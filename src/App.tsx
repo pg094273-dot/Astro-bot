@@ -30,6 +30,8 @@ const INITIAL_HUD: HudSnapshot = {
   botsRescued: 0,
   totalBots: LEVELS[0].miniBots.length,
   hoverFuel: 1,
+  botRocketCharges: 0,
+  botRocketActive: false,
   elapsedTime: 0,
   checkpointActive: false,
   bannerText: null,

@@ -7,6 +7,8 @@ export type MusicTheme =
   | 'ice'
   | 'volcanic'
   | 'nebula'
+  | 'paris'
+  | 'rapids'
   | 'rocket'
   | 'boss';
 
@@ -20,7 +22,7 @@ interface ThemeArrangement {
   leadFilterHz: number;
   padWave: OscillatorType;
   bassWave: OscillatorType;
-  drumStyle: 'soft' | 'jungle' | 'desert' | 'ice' | 'volcanic' | 'nebula' | 'rocket' | 'boss';
+  drumStyle: 'soft' | 'jungle' | 'desert' | 'ice' | 'volcanic' | 'nebula' | 'paris' | 'rapids' | 'rocket' | 'boss';
 }
 
 function midiToFreq(midi: number): number {
@@ -283,6 +285,70 @@ const ARRANGEMENTS: Record<MusicTheme, ThemeArrangement> = {
     padWave: 'sawtooth',
     bassWave: 'sawtooth',
     drumStyle: 'boss',
+  },
+
+  // "Cielos de París" — Breezy sunlit Parisian sky accordion-synth pop in G major at 120 BPM
+  paris: {
+    bpm: 120,
+    chords: [
+      [67, 71, 74, 78], // Gmaj7
+      [64, 67, 71, 74], // Em7
+      [60, 64, 67, 71], // Cmaj7
+      [62, 66, 69, 72], // D7
+    ],
+    bass: [
+      43, null, null, 43, 50, null, 43, null, 43, null, 47, null, 50, null, 47, null,
+      40, null, null, 40, 47, null, 40, null, 40, null, 43, null, 47, null, 43, null,
+      36, null, null, 36, 43, null, 36, null, 36, null, 40, null, 43, null, 40, null,
+      38, null, null, 38, 45, null, 38, null, 38, null, 42, null, 45, null, 48, null,
+    ],
+    arp: [
+      79, 83, 86, 83, 79, 83, 91, 86, 76, 79, 83, 79, 76, 79, 88, 83,
+      72, 76, 79, 76, 72, 76, 84, 79, 74, 78, 81, 78, 74, 78, 86, 81,
+    ],
+    lead: [
+      79, null, 83, null, 86, null, null, 83, 84, null, 83, null, 79, null, 78, null,
+      76, null, 79, null, 83, null, null, 79, 76, null, null, null, null, null, null, null,
+      72, null, 76, null, 79, null, 83, null, 84, null, 83, null, 79, null, 76, null,
+      78, null, 81, null, 86, null, 84, null, 83, null, 81, null, 79, null, null, null,
+    ],
+    leadWave: 'triangle',
+    leadFilterHz: 3200,
+    padWave: 'sine',
+    bassWave: 'triangle',
+    drumStyle: 'paris',
+  },
+
+  // "Rápidos del Río Bravo" — Energetic canyon whitewater adventure groove in A minor at 132 BPM
+  rapids: {
+    bpm: 132,
+    chords: [
+      [57, 60, 64, 67], // Am7
+      [53, 57, 60, 64], // Fmaj7
+      [55, 59, 62, 67], // G6
+      [52, 55, 59, 64], // Em7
+    ],
+    bass: [
+      33, 33, null, 40, 45, null, 33, null, 33, null, 40, null, 45, null, 40, null,
+      29, 29, null, 36, 41, null, 29, null, 29, null, 36, null, 41, null, 36, null,
+      31, 31, null, 38, 43, null, 31, null, 31, null, 38, null, 43, null, 38, null,
+      28, 28, null, 35, 40, null, 28, null, 35, null, 38, null, 40, null, 43, null,
+    ],
+    arp: [
+      81, null, 84, 88, 84, null, 93, 88, 77, null, 81, 84, 81, null, 89, 84,
+      79, null, 83, 86, 83, null, 91, 86, 76, null, 79, 83, 79, null, 88, 83,
+    ],
+    lead: [
+      81, null, 84, null, 88, null, 86, null, 84, null, 81, null, 79, null, null, null,
+      77, null, 81, null, 84, null, 83, null, 81, null, 79, null, 77, null, null, null,
+      79, null, 83, null, 86, null, 88, null, 86, null, 83, null, 79, null, null, null,
+      76, null, 79, null, 83, null, 84, null, 83, null, 79, null, 76, null, null, null,
+    ],
+    leadWave: 'sawtooth',
+    leadFilterHz: 2500,
+    padWave: 'triangle',
+    bassWave: 'sawtooth',
+    drumStyle: 'rapids',
   },
 };
 
@@ -643,11 +709,11 @@ class SoundEngine {
 
     // Kick pattern
     const kickHits =
-      style === 'rocket' || style === 'boss' || style === 'volcanic'
+      style === 'rocket' || style === 'boss' || style === 'volcanic' || style === 'rapids'
         ? stepInBar % 4 === 0 || (style === 'boss' && stepInBar === 14)
         : style === 'desert' || style === 'nebula'
           ? stepInBar === 0 || stepInBar === 6 || stepInBar === 8 || stepInBar === 14
-          : style === 'jungle'
+          : style === 'jungle' || style === 'paris'
             ? stepInBar === 0 || stepInBar === 3 || stepInBar === 8 || stepInBar === 11
             : stepInBar === 0 || stepInBar === 8;
 
@@ -1391,6 +1457,40 @@ class SoundEngine {
       osc.start(t);
       osc.stop(t + 0.58);
     });
+  }
+
+  public playWindWhoosh() {
+    const dest = this.getSfxDest();
+    if (!dest || !this.ctx) return;
+    const now = this.ctx.currentTime;
+    this.playNoiseBurst(now, 0.34, 'bandpass', 520, 1900, 0.24, 0.9);
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(340, now);
+    osc.frequency.exponentialRampToValueAtTime(760, now + 0.24);
+    gain.gain.setValueAtTime(0.14, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.28);
+    osc.connect(gain).connect(dest);
+    osc.start(now);
+    osc.stop(now + 0.3);
+  }
+
+  public playSplash() {
+    const dest = this.getSfxDest();
+    if (!dest || !this.ctx) return;
+    const now = this.ctx.currentTime;
+    this.playNoiseBurst(now, 0.36, 'bandpass', 1400, 380, 0.3, 0.7);
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(240, now);
+    osc.frequency.exponentialRampToValueAtTime(90, now + 0.16);
+    gain.gain.setValueAtTime(0.18, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.18);
+    osc.connect(gain).connect(dest);
+    osc.start(now);
+    osc.stop(now + 0.2);
   }
 }
 
