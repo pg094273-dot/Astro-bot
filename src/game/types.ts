@@ -1,6 +1,6 @@
 export type GamePhase = 'title' | 'playing' | 'paused' | 'victory' | 'gameover';
 
-export type BiomeKind = 'jungle' | 'desert' | 'ice' | 'volcanic' | 'nebula';
+export type BiomeKind = 'jungle' | 'temple' | 'desert' | 'ice' | 'volcanic' | 'nebula';
 
 export type PlatformKind = 'solid' | 'moving' | 'crumble' | 'glass' | 'conveyor' | 'ice';
 
@@ -9,7 +9,7 @@ export interface PlatformDef {
   pos: [number, number, number];
   size: [number, number, number];
   kind: PlatformKind;
-  style?: 'jungle' | 'desert' | 'ice' | 'tech' | 'gold' | 'crystal' | 'volcanic' | 'nebula';
+  style?: 'jungle' | 'temple' | 'desert' | 'ice' | 'tech' | 'gold' | 'crystal' | 'volcanic' | 'nebula';
   moveOffset?: [number, number, number];
   moveSpeed?: number;
   movePhase?: number;

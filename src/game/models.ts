@@ -1241,19 +1241,22 @@ export function createMonkeySuitPickupMesh(): { group: THREE.Group; suit: THREE.
 export function createClimbWallMesh(
   size: [number, number, number],
   face: 'pz' | 'nz' | 'px' | 'nx',
-  stoneTex: THREE.Texture
+  stoneTex: THREE.Texture,
+  stoneBump?: THREE.Texture
 ): THREE.Group {
   const group = new THREE.Group();
   const [w, h, d] = size;
 
   const wallMat = new THREE.MeshStandardMaterial({
     map: stoneTex,
-    roughness: 0.75,
-    metalness: 0.1,
+    bumpMap: stoneBump,
+    bumpScale: 0.16,
+    roughness: 0.84,
+    metalness: 0.06,
   });
   const mossCapMat = new THREE.MeshStandardMaterial({
-    color: 0x15803d,
-    roughness: 0.78,
+    color: 0x3b7a1c,
+    roughness: 0.85,
   });
   const gripMat = new THREE.MeshStandardMaterial({
     color: 0xfacc15,

@@ -417,8 +417,9 @@ class SoundEngine {
   }
 
   public setMusicContext(biome: BiomeKind, isRocket: boolean, phase: GamePhase, isBoss = false) {
+    const biomeTheme: MusicTheme = biome === 'temple' ? 'jungle' : biome;
     const nextTheme: MusicTheme =
-      phase === 'title' ? 'title' : isBoss ? 'boss' : isRocket ? 'rocket' : biome;
+      phase === 'title' ? 'title' : isBoss ? 'boss' : isRocket ? 'rocket' : biomeTheme;
     const themeChanged = nextTheme !== this.currentTheme;
     this.currentTheme = nextTheme;
     this.currentPhase = phase;
