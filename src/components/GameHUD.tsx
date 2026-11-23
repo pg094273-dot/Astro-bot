@@ -41,12 +41,12 @@ export const GameHUD: React.FC<GameHUDProps> = ({
 
   const hintText =
     hud.perspectiveMode === 'COHETE'
-      ? 'WASD / Mando Maniobrar Cohete · Espacio / A / OK Turbo · Esc / Start Pausa'
+      ? 'Cruceta / WASD Maniobrar · OK / A / Espacio Turbo · Volver / Esc Pausa'
       : hud.isClimbing
-        ? 'W/S / Stick Trepar · A/D Lateral · Espacio / A / OK Saltar del muro'
+        ? 'Cruceta / Stick Trepar y Lateral · OK / A / Espacio Saltar del muro'
         : hud.hasBow
-          ? 'WASD / Mando Mover · Espacio / A Saltar · F / X Girar · G / B / RT Arco · Q/E Cámara'
-          : 'WASD / Mando Mover · Espacio / A Saltar/Planear · F / X Girar · Q/E / Stick Der. Cámara';
+          ? 'Cruceta / Mando Mover · OK / A Saltar · 2×OK / X / B Girar y Arco · Volver Pausa'
+          : 'Cruceta / Mando Mover · OK / A Saltar/Planear · 2×OK / X Girar · Volver Pausa';
 
   return (
     <div className="pointer-events-none fixed inset-0 z-10 flex flex-col justify-between p-4 pt-[max(1rem,env(safe-area-inset-top))] pb-[max(1rem,env(safe-area-inset-bottom))] pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] sm:p-6">
@@ -155,6 +155,7 @@ export const GameHUD: React.FC<GameHUDProps> = ({
 
           <button
             type="button"
+            tabIndex={-1}
             onClick={onToggleMusic}
             aria-label={hud.musicMuted ? 'Activar música' : 'Silenciar música'}
             title={hud.musicMuted ? 'Activar música' : 'Silenciar música'}
@@ -169,6 +170,7 @@ export const GameHUD: React.FC<GameHUDProps> = ({
 
           <button
             type="button"
+            tabIndex={-1}
             onClick={onToggleMute}
             aria-label={hud.muted ? 'Activar sonido' : 'Silenciar sonido'}
             title={hud.muted ? 'Activar sonido' : 'Silenciar sonido'}
@@ -179,6 +181,7 @@ export const GameHUD: React.FC<GameHUDProps> = ({
 
           <button
             type="button"
+            tabIndex={-1}
             onClick={onPause}
             aria-label="Pausar juego"
             className="pointer-events-auto flex h-10 w-10 items-center justify-center rounded-xl border border-white/15 bg-[#070d1d]/85 text-slate-200 transition-colors hover:bg-slate-800 hover:text-white focus-visible:outline-2 focus-visible:outline-sky-400"

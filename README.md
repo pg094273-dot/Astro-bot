@@ -14,9 +14,9 @@ Juego de plataformas 3D/2D estilo **Astro Bot** para **Android TV**, navegador y
 - **Banda sonora y efectos procedurales (Web Audio API)** e **instalable como PWA** en iPhone/iPad.
 
 ## Controles
-- **Teclado**: `WASD` / Flechas Mover · `Espacio` Saltar / Planear · `F` / `Shift` Girar · `G` / `R` Arco · `Q`/`E` Cámara · `Esc` Pausa
+- **Control remoto de Android TV (el mando del televisor)**: Cruceta Mover / Trepar / Cohete · Botón Central (`OK`) Saltar (mantener en el aire para planear / Turbo) · **Doble toque en `OK`** (o `OK` en el aire) Ataque Giratorio y Arco · `Volver` Pausa
 - **Mando Bluetooth / USB (Android TV)**: Stick Izquierdo / Cruceta Mover · `A` Saltar / Planear / Turbo · `X` Girar · `B` / `RT` Disparar Arco · Stick Derecho Cámara · `Start` Pausa
-- **Control remoto de Android TV**: Cruceta Mover · Botón Central (`OK`) Saltar / Seleccionar · `Volver` Pausa
+- **Teclado**: `WASD` / Flechas Mover · `Espacio` Saltar / Planear · `F` / `Shift` Girar · `G` / `R` Arco · `Q`/`E` Cámara · `Esc` Pausa
 
 ## Descargar e instalar el APK en Android TV
 

@@ -4,6 +4,7 @@ import android.os.Bundle;
 import android.view.WindowManager;
 import android.webkit.WebSettings;
 import android.webkit.WebView;
+import androidx.activity.OnBackPressedCallback;
 import androidx.core.view.WindowCompat;
 import androidx.core.view.WindowInsetsCompat;
 import androidx.core.view.WindowInsetsControllerCompat;
@@ -15,6 +16,24 @@ public class MainActivity extends BridgeActivity {
         super.onCreate(savedInstanceState);
         getWindow().addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON);
         hideSystemBars();
+
+        getOnBackPressedDispatcher().addCallback(this, new OnBackPressedCallback(true) {
+            @Override
+            public void handleOnBackPressed() {
+                if (bridge != null && bridge.getWebView() != null) {
+                    bridge.getWebView().evaluateJavascript(
+                        "(function(){return window.__handleAndroidBack ? window.__handleAndroidBack() : 'exit';})()",
+                        result -> {
+                            if (result != null && result.contains("exit")) {
+                                finish();
+                            }
+                        }
+                    );
+                } else {
+                    finish();
+                }
+            }
+        });
     }
 
     @Override
@@ -25,6 +44,8 @@ public class MainActivity extends BridgeActivity {
             WebSettings settings = webView.getSettings();
             settings.setMediaPlaybackRequiresUserGesture(false);
             settings.setDomStorageEnabled(true);
+            webView.setFocusable(true);
+            webView.setFocusableInTouchMode(true);
             webView.requestFocus();
         }
         hideSystemBars();

@@ -318,6 +318,7 @@ export class GameEngine {
 
   // Input state
   private keysHeld = new Set<string>();
+  private lastTvSelectTime = 0;
   private touchMoveX = 0;
   private touchMoveZ = 0;
   private touchJumpHeld = false;
@@ -531,19 +532,53 @@ export class GameEngine {
     soundEngine.stopHover();
   };
 
+  private normalizeKeyCode(e: KeyboardEvent): string {
+    const kc = e.keyCode;
+    if (kc === 19 || e.code === 'ArrowUp') return 'ArrowUp';
+    if (kc === 20 || e.code === 'ArrowDown') return 'ArrowDown';
+    if (kc === 21 || e.code === 'ArrowLeft') return 'ArrowLeft';
+    if (kc === 22 || e.code === 'ArrowRight') return 'ArrowRight';
+    if (kc === 23 || kc === 66 || e.key === 'Select' || e.code === 'Enter' || e.code === 'NumpadEnter') {
+      return 'TvSelect';
+    }
+    if (kc === 4 || e.code === 'Escape' || e.key === 'GoBack' || e.key === 'BrowserBack') {
+      return 'Escape';
+    }
+    return e.code || e.key || `kc_${kc}`;
+  }
+
   private handleKeyDown = (e: KeyboardEvent) => {
     soundEngine.unlock();
-    const code = e.code;
+    const code = this.normalizeKeyCode(e);
+    const kc = e.keyCode;
     const isFocusedButton = (e.target as HTMLElement | null)?.tagName === 'BUTTON';
-    const isTvSelect =
-      !isFocusedButton &&
-      (e.key === 'Select' || code === 'Enter' || code === 'NumpadEnter' || e.keyCode === 23);
-    const isTvBack =
-      code === 'Escape' ||
-      code === 'KeyP' ||
-      e.key === 'GoBack' ||
-      e.key === 'BrowserBack' ||
-      e.key === 'MediaPlayPause';
+    const isTvSelect = !isFocusedButton && code === 'TvSelect';
+    const isTvBack = code === 'Escape' || code === 'KeyP';
+    const isTvSpinKey =
+      code === 'KeyF' ||
+      code === 'ShiftLeft' ||
+      code === 'ShiftRight' ||
+      code === 'KeyJ' ||
+      code === 'Digit1' ||
+      code === 'Numpad1' ||
+      e.key === 'MediaPlayPause' ||
+      e.key === 'MediaFastForward' ||
+      e.key === 'ColorF0Red' ||
+      kc === 85 ||
+      kc === 90 ||
+      kc === 183;
+    const isTvBowKey =
+      code === 'KeyG' ||
+      code === 'KeyR' ||
+      code === 'KeyC' ||
+      code === 'Digit2' ||
+      code === 'Numpad2' ||
+      e.key === 'MediaRewind' ||
+      e.key === 'ColorF1Green' ||
+      kc === 89 ||
+      kc === 184;
+    const isCamLeft = code === 'KeyQ' || code === 'Digit3' || e.key === 'ChannelDown' || kc === 167 || kc === 185;
+    const isCamRight = code === 'KeyE' || code === 'Digit4' || e.key === 'ChannelUp' || kc === 166 || kc === 186;
 
     if (
       code === 'Space' ||
@@ -558,19 +593,28 @@ export class GameEngine {
 
     if (this.phase === 'playing') {
       const jumpKey = code === 'Space' || isTvSelect;
-      if (!this.keysHeld.has(code)) {
+      if (!this.keysHeld.has(code) && !e.repeat) {
         if (jumpKey) {
           if (this.rocketState === 'flying') {
             this.rocketBoostTimer = 0.55;
             soundEngine.playRocketBoost();
           } else {
+            const now = performance.now();
+            const isDoubleTapOk = isTvSelect && now - this.lastTvSelectTime < 340;
+            const isMidAirOk = isTvSelect && !this.grounded && this.coyoteTimer <= 0 && !this.isClimbing;
+            if (isTvSelect) this.lastTvSelectTime = now;
+
             this.jumpBufferTimer = 0.14;
+            if (isDoubleTapOk || isMidAirOk) {
+              this.triggerSpin();
+              if (this.hasBow) this.shootArrow();
+            }
           }
         }
-        if (code === 'KeyF' || code === 'ShiftLeft' || code === 'ShiftRight' || code === 'KeyJ') {
+        if (isTvSpinKey) {
           this.triggerSpin();
         }
-        if (code === 'KeyG' || code === 'KeyR' || code === 'KeyC') {
+        if (isTvBowKey) {
           this.shootArrow();
         }
       }
@@ -578,24 +622,29 @@ export class GameEngine {
         e.preventDefault();
         this.setPhase('paused');
       }
-    } else if (this.phase === 'paused' && isTvBack) {
+    } else if (this.phase === 'paused' && isTvBack && !e.repeat) {
       e.preventDefault();
       this.setPhase('playing');
     }
 
     this.keysHeld.add(code);
     if (isTvSelect) this.keysHeld.add('__TV_JUMP__');
+    if (isCamLeft) this.keysHeld.add('__CAM_L__');
+    if (isCamRight) this.keysHeld.add('__CAM_R__');
   };
 
   private handleKeyUp = (e: KeyboardEvent) => {
-    this.keysHeld.delete(e.code);
-    if (
-      e.key === 'Select' ||
-      e.code === 'Enter' ||
-      e.code === 'NumpadEnter' ||
-      e.keyCode === 23
-    ) {
+    const code = this.normalizeKeyCode(e);
+    const kc = e.keyCode;
+    this.keysHeld.delete(code);
+    if (code === 'TvSelect') {
       this.keysHeld.delete('__TV_JUMP__');
+    }
+    if (code === 'KeyQ' || code === 'Digit3' || e.key === 'ChannelDown' || kc === 167 || kc === 185) {
+      this.keysHeld.delete('__CAM_L__');
+    }
+    if (code === 'KeyE' || code === 'Digit4' || e.key === 'ChannelUp' || kc === 166 || kc === 186) {
+      this.keysHeld.delete('__CAM_R__');
     }
   };
 
@@ -3166,8 +3215,8 @@ export class GameEngine {
     }
 
     if (this.perspectiveMode === '3D') {
-      if (this.keysHeld.has('KeyQ')) this.camYaw += dt * 2.1;
-      if (this.keysHeld.has('KeyE')) this.camYaw -= dt * 2.1;
+      if (this.keysHeld.has('KeyQ') || this.keysHeld.has('__CAM_L__')) this.camYaw += dt * 2.1;
+      if (this.keysHeld.has('KeyE') || this.keysHeld.has('__CAM_R__')) this.camYaw -= dt * 2.1;
       if (Math.abs(this.gamepadCamX) > 0.05) this.camYaw -= this.gamepadCamX * dt * 2.4;
     } else if (this.active2DZone) {
       const targetYaw = this.active2DZone.moveAxis === 'x' ? 0 : Math.PI / 2;

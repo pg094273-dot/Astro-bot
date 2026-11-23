@@ -119,7 +119,10 @@ export const GameMenus: React.FC<GameMenusProps> = ({
                 <button
                   key={lvl.id}
                   type="button"
-                  onClick={() => onSelectLevel(lvl.index)}
+                  onClick={() => {
+                    if (isSelected) onStartGame(lvl.index);
+                    else onSelectLevel(lvl.index);
+                  }}
                   onFocus={() => {
                     if (lvl.index !== selectedLevel) onSelectLevel(lvl.index);
                   }}
@@ -150,7 +153,7 @@ export const GameMenus: React.FC<GameMenusProps> = ({
 
           <div className="flex flex-col items-center justify-between gap-3 border-t border-white/10 pt-3 sm:flex-row">
             <p className="text-xs text-slate-300">
-              Teclado / Mando / Control TV: Flechas o Stick Mover · Espacio / A / OK Saltar · F / X Girar · Esc / Start Pausa
+              Control TV: Cruceta Mover · OK Saltar / Planear · 2×OK Girar y Arco · Volver Pausa · También compatible con Mando Bluetooth
             </p>
             <button
               ref={primaryBtnRef}

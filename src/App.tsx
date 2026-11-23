@@ -220,6 +220,33 @@ export default function App() {
     };
   }, [hud.phase, hud.levelIndex, selectedLevel, handleSelectLevel, handleStartGame]);
 
+  // Native Android TV Back button bridge & gameplay canvas focus lock
+  useEffect(() => {
+    if (hud.phase === 'playing') {
+      mountRef.current?.focus();
+    }
+    const win = window as unknown as { __handleAndroidBack?: () => 'handled' | 'exit' };
+    win.__handleAndroidBack = () => {
+      if (hud.phase === 'playing') {
+        engineRef.current?.setPhase('paused');
+        return 'handled';
+      }
+      if (hud.phase === 'paused') {
+        engineRef.current?.setPhase('playing');
+        return 'handled';
+      }
+      if (hud.phase === 'gameover' || hud.phase === 'victory') {
+        setVictoryStats(null);
+        engineRef.current?.returnToTitle();
+        return 'handled';
+      }
+      return 'exit';
+    };
+    return () => {
+      delete win.__handleAndroidBack;
+    };
+  }, [hud.phase]);
+
   const handleToggleMute = useCallback(() => {
     engineRef.current?.setMuted(!hud.muted);
   }, [hud.muted]);
@@ -272,7 +299,7 @@ export default function App() {
   return (
     <main className="relative h-screen w-screen overflow-hidden bg-[#060b19]">
       {/* Isolated WebGL Canvas Container */}
-      <div ref={mountRef} className="absolute inset-0 h-full w-full" />
+      <div ref={mountRef} tabIndex={-1} className="absolute inset-0 h-full w-full outline-none" />
 
       {contextLost && (
         <div className="fixed inset-0 z-30 flex items-center justify-center bg-[#060b19]/95 p-6 text-center text-white">
