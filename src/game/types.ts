@@ -1,6 +1,6 @@
 export type GamePhase = 'title' | 'playing' | 'paused' | 'victory' | 'gameover';
 
-export type BiomeKind = 'jungle' | 'desert' | 'ice';
+export type BiomeKind = 'jungle' | 'desert' | 'ice' | 'volcanic' | 'nebula';
 
 export type PlatformKind = 'solid' | 'moving' | 'crumble' | 'glass' | 'conveyor' | 'ice';
 
@@ -9,13 +9,21 @@ export interface PlatformDef {
   pos: [number, number, number];
   size: [number, number, number];
   kind: PlatformKind;
-  style?: 'jungle' | 'desert' | 'ice' | 'tech' | 'gold' | 'crystal';
+  style?: 'jungle' | 'desert' | 'ice' | 'tech' | 'gold' | 'crystal' | 'volcanic' | 'nebula';
   moveOffset?: [number, number, number];
   moveSpeed?: number;
   movePhase?: number;
   conveyorDir?: [number, number];
   /** If set, platform starts inactive (wireframe outline) until the matching archery target is hit */
   linkedTargetId?: string;
+}
+
+export interface ClimbWallDef {
+  id: string;
+  pos: [number, number, number];
+  size: [number, number, number];
+  /** Which face has climbable grips: '+z', '-z', '+x', '-x' */
+  face: 'pz' | 'nz' | 'px' | 'nx';
 }
 
 export interface ArcheryTargetDef {
@@ -45,7 +53,7 @@ export interface MiniBotDef {
   pos: [number, number, number];
 }
 
-export type EnemyKind = 'chomper' | 'spiky' | 'hopper';
+export type EnemyKind = 'chomper' | 'spiky' | 'hopper' | 'brute';
 
 export interface EnemyDef {
   id: string;
@@ -53,6 +61,14 @@ export interface EnemyDef {
   pos: [number, number, number];
   patrolOffset: [number, number, number];
   speed: number;
+}
+
+export interface BossDef {
+  name: string;
+  pos: [number, number, number];
+  arenaCenter: [number, number, number];
+  arenaRadius: number;
+  maxHp: number;
 }
 
 export interface HazardLaserDef {
@@ -113,7 +129,10 @@ export interface LevelDef {
   spawn: [number, number, number];
   goalPos: [number, number, number];
   bowPickupPos?: [number, number, number];
+  monkeySuitPos?: [number, number, number];
+  climbWalls?: ClimbWallDef[];
   targets?: ArcheryTargetDef[];
+  boss?: BossDef;
   platforms: PlatformDef[];
   jumpPads: JumpPadDef[];
   crates: CrateDef[];
@@ -133,6 +152,9 @@ export interface HudSnapshot {
   biome: BiomeKind;
   perspectiveMode: '3D' | '2D' | 'COHETE';
   hasBow: boolean;
+  hasMonkeySuit: boolean;
+  isClimbing: boolean;
+  boss: { name: string; hp: number; maxHp: number } | null;
   health: number;
   maxHealth: number;
   coins: number;

@@ -4,12 +4,15 @@ import { soundEngine } from './audio';
 import { LEVELS } from './levels';
 import {
   AstroBotRig,
+  BossRig,
   createArcheryTargetMesh,
   createArrowMesh,
   createAstroBot,
   createBoostRingMesh,
+  createBossMesh,
   createBowPickupMesh,
   createCheckpointMesh,
+  createClimbWallMesh,
   createCoinMesh,
   createCrateMesh,
   createEnemyMesh,
@@ -17,6 +20,7 @@ import {
   createJumpPadMesh,
   createMineMesh,
   createMiniBotMesh,
+  createMonkeySuitPickupMesh,
   createRocketPadMesh,
   createRocketVehicle,
   RocketVehicleRig,
@@ -28,6 +32,7 @@ import {
 } from './textures';
 import {
   CameraZone2DDef,
+  ClimbWallDef,
   EnemyKind,
   GamePhase,
   HudSnapshot,
@@ -95,8 +100,34 @@ interface EnemyRuntime {
   patrolOffset: THREE.Vector3;
   speed: number;
   phase: number;
+  hp: number;
+  hitFlash: number;
   alive: boolean;
   hopPhase: number;
+}
+
+interface ClimbWallRuntime {
+  def: ClimbWallDef;
+  group: THREE.Group;
+  pos: THREE.Vector3;
+  halfSize: THREE.Vector3;
+}
+
+interface BossRuntime {
+  rig: BossRig;
+  name: string;
+  pos: THREE.Vector3;
+  arenaCenter: THREE.Vector3;
+  arenaRadius: number;
+  hp: number;
+  maxHp: number;
+  alive: boolean;
+  active: boolean;
+  invulnTimer: number;
+  state: 'idle' | 'chase' | 'windup' | 'shockwave' | 'charge' | 'recover';
+  stateTimer: number;
+  shockwaveRadius: number;
+  chargeDir: THREE.Vector3;
 }
 
 interface LaserRuntime {
@@ -184,6 +215,7 @@ export class GameEngine {
   private rimLight: THREE.DirectionalLight;
   private skyMesh: THREE.Mesh;
   private hazardSeaMesh: THREE.Mesh | null = null;
+  private hazardSeaTex: THREE.CanvasTexture | null = null;
 
   private levelGroup = new THREE.Group();
   private playerRig: AstroBotRig;
@@ -197,6 +229,7 @@ export class GameEngine {
   // Level runtime entities
   private currentLevel: LevelDef = LEVELS[0];
   private platforms: PlatformRuntime[] = [];
+  private climbWalls: ClimbWallRuntime[] = [];
   private jumpPads: { pos: THREE.Vector3; boost: number; group: THREE.Group; bounceAnim: number }[] = [];
   private crates: CrateRuntime[] = [];
   private coins: CoinRuntime[] = [];
@@ -207,7 +240,16 @@ export class GameEngine {
   private targets: ArcheryTargetRuntime[] = [];
   private arrows: ArrowRuntime[] = [];
   private bowPickup: { group: THREE.Group; bow: THREE.Group; pos: THREE.Vector3; collected: boolean } | null = null;
-  private goalPortal: { group: THREE.Group; ringInner: THREE.Mesh; pos: THREE.Vector3 } | null = null;
+  private monkeyPickup: { group: THREE.Group; suit: THREE.Group; pos: THREE.Vector3; collected: boolean } | null = null;
+  private bossRuntime: BossRuntime | null = null;
+  private goalPortal: {
+    group: THREE.Group;
+    ringInner: THREE.Mesh;
+    vortex: THREE.Mesh;
+    portalMat: THREE.MeshStandardMaterial;
+    pos: THREE.Vector3;
+    locked: boolean;
+  } | null = null;
 
   // Rocket section entities
   private rocketRig: RocketVehicleRig | null = null;
@@ -241,6 +283,9 @@ export class GameEngine {
   private spinCooldown = 0;
   private hasBow = false;
   private bowCooldown = 0;
+  private hasMonkeySuit = false;
+  private isClimbing = false;
+  private climbingWall: ClimbWallRuntime | null = null;
   private invulnTimer = 0;
   private health = 3;
   private readonly maxHealth = 3;
@@ -569,10 +614,12 @@ export class GameEngine {
       soundEngine.stopHover();
       this.keysHeld.clear();
     }
+    const isBossActive = Boolean(this.bossRuntime?.alive && this.bossRuntime.active);
     soundEngine.setMusicContext(
       this.currentLevel.theme.biome,
       this.perspectiveMode === 'COHETE',
-      this.phase
+      this.phase,
+      isBossActive
     );
     this.pushHud(true);
   }
@@ -650,6 +697,9 @@ export class GameEngine {
     for (const cr of this.crates) {
       if (!cr.broken) consider(cr.pos, 0.5);
     }
+    if (this.bossRuntime && this.bossRuntime.alive) {
+      consider(this.bossRuntime.pos, 2.0);
+    }
 
     if (bestTargetPos) {
       dir.copy(bestTargetPos).sub(origin).normalize();
@@ -693,6 +743,7 @@ export class GameEngine {
       this.levelGroup.remove(this.levelGroup.children[0]);
     }
     this.platforms = [];
+    this.climbWalls = [];
     this.jumpPads = [];
     this.crates = [];
     this.coins = [];
@@ -703,11 +754,82 @@ export class GameEngine {
     this.targets = [];
     this.arrows = [];
     this.bowPickup = null;
+    this.monkeyPickup = null;
+    this.bossRuntime = null;
     this.boostRings = [];
     this.mines = [];
     this.goalPortal = null;
     this.hazardSeaMesh = null;
+    this.hazardSeaTex = null;
     this.rocketRig = null;
+  }
+
+  private addHorizonMountainRing(
+    centerX: number,
+    centerZ: number,
+    baseY: number,
+    innerRadius: number,
+    outerRadius: number,
+    peakHeight: number,
+    lowColorHex: number,
+    highColorHex: number,
+    seed: number,
+    roughness = 0.88
+  ) {
+    const radialSegs = 4;
+    const angularSegs = 64;
+    const positions: number[] = [];
+    const colors: number[] = [];
+    const indices: number[] = [];
+
+    const lowCol = new THREE.Color(lowColorHex);
+    const highCol = new THREE.Color(highColorHex);
+    const tmpCol = new THREE.Color();
+
+    for (let r = 0; r <= radialSegs; r++) {
+      const t = r / radialSegs;
+      const radius = THREE.MathUtils.lerp(innerRadius, outerRadius, t);
+      const ridgeEnvelope = Math.sin(t * Math.PI);
+      for (let a = 0; a <= angularSegs; a++) {
+        const ang = (a / angularSegs) * Math.PI * 2;
+        const n1 = Math.sin(ang * 5 + seed) * 0.45 + 0.55;
+        const n2 = Math.cos(ang * 11 - seed * 1.7) * 0.35 + 0.4;
+        const n3 = Math.sin(ang * 19 + r * 1.3 + seed) * 0.2;
+        const hFactor = Math.max(0, (n1 * 0.55 + n2 * 0.3 + n3 * 0.15) * ridgeEnvelope);
+        const y = baseY + hFactor * peakHeight;
+
+        positions.push(centerX + Math.cos(ang) * radius, y, centerZ + Math.sin(ang) * radius);
+        tmpCol.copy(lowCol).lerp(highCol, Math.min(1, hFactor * 1.35));
+        colors.push(tmpCol.r, tmpCol.g, tmpCol.b);
+      }
+    }
+
+    const rowStride = angularSegs + 1;
+    for (let r = 0; r < radialSegs; r++) {
+      for (let a = 0; a < angularSegs; a++) {
+        const i0 = r * rowStride + a;
+        const i1 = i0 + 1;
+        const i2 = (r + 1) * rowStride + a;
+        const i3 = i2 + 1;
+        indices.push(i0, i2, i1, i1, i2, i3);
+      }
+    }
+
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.Float32BufferAttribute(positions, 3));
+    geo.setAttribute('color', new THREE.Float32BufferAttribute(colors, 3));
+    geo.setIndex(indices);
+    geo.computeVertexNormals();
+
+    const mat = new THREE.MeshStandardMaterial({
+      vertexColors: true,
+      roughness,
+      metalness: 0.08,
+      flatShading: true,
+    });
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.receiveShadow = true;
+    this.levelGroup.add(mesh);
   }
 
   private buildBiomeScenery(level: LevelDef) {
@@ -715,106 +837,292 @@ export class GameEngine {
     const dummy = new THREE.Object3D();
 
     if (biome === 'jungle') {
-      const treeCount = 62;
-      const trunkGeo = new THREE.CylinderGeometry(0.45, 0.72, 9.5, 8);
-      const trunkMat = new THREE.MeshStandardMaterial({ color: 0x78350f, roughness: 0.9 });
-      const crownGeo = new THREE.DodecahedronGeometry(3.2, 1);
+      // Distant lush rainforest mountain ring
+      this.addHorizonMountainRing(16, -50, level.theme.hazardFloorY - 1, 95, 175, 42, 0x064e3b, 0x16a34a, 1.4, 0.9);
+
+      // Multi-tiered realistic rainforest trees with textured bark trunks + 3 canopy tiers + ruined stone pillars
+      const treeCount = 68;
+      const trunkGeo = new THREE.CylinderGeometry(0.42, 0.85, 11, 10);
+      const trunkMat = new THREE.MeshStandardMaterial({ map: this.textures.barkTexture, roughness: 0.9 });
+      const crownLowGeo = new THREE.DodecahedronGeometry(3.5, 1);
+      const crownMidGeo = new THREE.DodecahedronGeometry(2.8, 1);
+      const crownTopGeo = new THREE.DodecahedronGeometry(1.9, 1);
       const crownMat = new THREE.MeshStandardMaterial({ color: 0x16a34a, roughness: 0.78 });
 
       const trunks = new THREE.InstancedMesh(trunkGeo, trunkMat, treeCount);
-      const crowns = new THREE.InstancedMesh(crownGeo, crownMat, treeCount);
+      const cLow = new THREE.InstancedMesh(crownLowGeo, crownMat, treeCount);
+      const cMid = new THREE.InstancedMesh(crownMidGeo, crownMat, treeCount);
+      const cTop = new THREE.InstancedMesh(crownTopGeo, crownMat, treeCount);
 
       for (let i = 0; i < treeCount; i++) {
         const side = i % 2 === 0 ? 1 : -1;
-        const dist = 22 + ((i * 19) % 58);
+        const dist = 22 + ((i * 19) % 62);
         const z = 14 - ((i * 21) % 135);
-        const x = (i % 3 === 0 ? 50 : 0) + side * dist;
-        const y = -8 + (i % 5) * 1.4;
-        const scale = 0.8 + (i % 4) * 0.25;
+        const x = (i % 3 === 0 ? 48 : 0) + side * dist;
+        const y = -9 + (i % 5) * 1.4;
+        const scale = 0.85 + (i % 4) * 0.25;
 
-        dummy.position.set(x, y + 4.5 * scale, z);
-        dummy.rotation.set(0, i * 0.8, 0);
+        dummy.position.set(x, y + 5.2 * scale, z);
+        dummy.rotation.set(0, i * 0.8, (i % 3 - 1) * 0.04);
         dummy.scale.set(scale, scale, scale);
         dummy.updateMatrix();
         trunks.setMatrixAt(i, dummy.matrix);
 
-        dummy.position.set(x, y + 9.4 * scale, z);
-        dummy.scale.set(scale * 1.15, scale * 0.82, scale * 1.15);
+        dummy.position.set(x, y + 9.6 * scale, z);
+        dummy.scale.set(scale * 1.2, scale * 0.75, scale * 1.2);
         dummy.updateMatrix();
-        crowns.setMatrixAt(i, dummy.matrix);
-        _color.setHSL(0.35 + (i % 3) * 0.03, 0.68, 0.42 + (i % 3) * 0.06);
-        crowns.setColorAt(i, _color);
+        cLow.setMatrixAt(i, dummy.matrix);
+        _color.setHSL(0.35 + (i % 3) * 0.025, 0.65, 0.32 + (i % 3) * 0.04);
+        cLow.setColorAt(i, _color);
+
+        dummy.position.set(x + 0.4, y + 11.4 * scale, z - 0.3);
+        dummy.scale.set(scale * 1.05, scale * 0.72, scale * 1.05);
+        dummy.updateMatrix();
+        cMid.setMatrixAt(i, dummy.matrix);
+        _color.setHSL(0.36 + (i % 3) * 0.025, 0.7, 0.4 + (i % 3) * 0.05);
+        cMid.setColorAt(i, _color);
+
+        dummy.position.set(x - 0.2, y + 13.0 * scale, z + 0.2);
+        dummy.scale.set(scale * 0.9, scale * 0.68, scale * 0.9);
+        dummy.updateMatrix();
+        cTop.setMatrixAt(i, dummy.matrix);
+        _color.setHSL(0.34, 0.74, 0.48);
+        cTop.setColorAt(i, _color);
       }
-      trunks.instanceMatrix.needsUpdate = true;
-      crowns.instanceMatrix.needsUpdate = true;
-      if (crowns.instanceColor) crowns.instanceColor.needsUpdate = true;
-      trunks.computeBoundingSphere();
-      crowns.computeBoundingSphere();
-      this.levelGroup.add(trunks, crowns);
+      for (const im of [trunks, cLow, cMid, cTop]) {
+        im.instanceMatrix.needsUpdate = true;
+        if (im.instanceColor) im.instanceColor.needsUpdate = true;
+        im.computeBoundingSphere();
+      }
+      this.levelGroup.add(trunks, cLow, cMid, cTop);
+
+      // Ancient Stone Temple Arches framing the jungle valley
+      const archMat = new THREE.MeshStandardMaterial({ map: this.textures.climbStone, roughness: 0.85 });
+      for (let a = 0; a < 5; a++) {
+        const arch = new THREE.Group();
+        arch.position.set(a % 2 === 0 ? -24 : 26, -6, -18 - a * 22);
+        arch.rotation.y = (a % 2 === 0 ? 1 : -1) * 0.35;
+        const pGeo = new THREE.BoxGeometry(2.2, 13, 2.2);
+        const pL = new THREE.Mesh(pGeo, archMat);
+        pL.position.set(-4.2, 6.5, 0);
+        const pR = new THREE.Mesh(pGeo, archMat);
+        pR.position.set(4.2, 6.5, 0);
+        const lintel = new THREE.Mesh(new THREE.BoxGeometry(11.6, 2.0, 2.6), archMat);
+        lintel.position.set(0, 13.2, 0);
+        arch.add(pL, pR, lintel);
+        this.levelGroup.add(arch);
+      }
     } else if (biome === 'desert') {
-      const mesaCount = 68;
-      const mesaGeo = new THREE.CylinderGeometry(2.6, 5.4, 18, 4);
-      const mesaMat = new THREE.MeshStandardMaterial({ color: 0xc2410c, roughness: 0.85, metalness: 0.05 });
+      // Rolling sandstone dune ridge horizon
+      this.addHorizonMountainRing(0, -135, level.theme.hazardFloorY - 1, 105, 195, 36, 0x9a3412, 0xf59e0b, 3.1, 0.88);
+
+      // Stratified mesas + stepped desert pyramids
+      const mesaCount = 54;
+      const mesaGeo = new THREE.CylinderGeometry(3.0, 6.2, 18, 5);
+      const mesaMat = new THREE.MeshStandardMaterial({ map: this.textures.desertSandstone, roughness: 0.86, metalness: 0.05 });
       const mesas = new THREE.InstancedMesh(mesaGeo, mesaMat, mesaCount);
 
       for (let i = 0; i < mesaCount; i++) {
         const side = i % 2 === 0 ? 1 : -1;
-        const dist = 24 + ((i * 21) % 68);
-        const z = 15 - (i * 4.6);
-        const scale = 0.85 + (i % 4) * 0.45;
+        const dist = 26 + ((i * 21) % 68);
+        const z = 15 - i * 5.2;
+        const scale = 0.9 + (i % 4) * 0.45;
         dummy.position.set(side * dist, -4 + (i % 3) * 1.5, z);
-        dummy.rotation.set(0, Math.PI / 4 + (i % 2) * 0.25, 0);
-        dummy.scale.set(scale, scale * (0.9 + (i % 3) * 0.3), scale);
+        dummy.rotation.set(0, Math.PI / 4 + (i % 3) * 0.25, 0);
+        dummy.scale.set(scale, scale * (0.9 + (i % 3) * 0.28), scale);
         dummy.updateMatrix();
         mesas.setMatrixAt(i, dummy.matrix);
-        _color.setHSL(0.06 + (i % 3) * 0.015, 0.72, 0.46 + (i % 3) * 0.06);
+        _color.setHSL(0.06 + (i % 3) * 0.015, 0.72, 0.48 + (i % 3) * 0.06);
         mesas.setColorAt(i, _color);
       }
       mesas.instanceMatrix.needsUpdate = true;
       if (mesas.instanceColor) mesas.instanceColor.needsUpdate = true;
       mesas.computeBoundingSphere();
       this.levelGroup.add(mesas);
-    } else {
-      const spireCount = 68;
-      const spireGeo = new THREE.ConeGeometry(2.5, 16, 6);
+
+      // Tiered Step Pyramids with golden capstones
+      const pyrMat = new THREE.MeshStandardMaterial({ map: this.textures.desertSandstone, roughness: 0.78 });
+      const goldCapMat = new THREE.MeshStandardMaterial({ color: 0xfbbf24, metalness: 0.85, roughness: 0.2 });
+      const pyrSpots: [number, number, number][] = [
+        [-42, -9, -45],
+        [44, -9, -110],
+        [-46, -9, -185],
+        [42, -9, -245],
+      ];
+      for (const [px, py, pz] of pyrSpots) {
+        const pyr = new THREE.Group();
+        pyr.position.set(px, py, pz);
+        for (let tier = 0; tier < 4; tier++) {
+          const w = 18 - tier * 3.8;
+          const b = new THREE.Mesh(new THREE.BoxGeometry(w, 3.5, w), pyrMat);
+          b.position.y = tier * 3.5 + 1.75;
+          pyr.add(b);
+        }
+        const apex = new THREE.Mesh(new THREE.ConeGeometry(2.6, 3.6, 4), goldCapMat);
+        apex.rotation.y = Math.PI / 4;
+        apex.position.y = 4 * 3.5 + 1.8;
+        pyr.add(apex);
+        this.levelGroup.add(pyr);
+      }
+    } else if (biome === 'ice') {
+      // Jagged Arctic mountain ridge ring
+      this.addHorizonMountainRing(-24, -55, level.theme.hazardFloorY - 1, 95, 175, 48, 0x0c4a6e, 0xe0f2fe, 5.2, 0.45);
+
+      const spireCount = 62;
+      const spireGeo = new THREE.ConeGeometry(2.6, 17, 6);
       const spireMat = new THREE.MeshPhysicalMaterial({
         color: 0xbae6fd,
-        roughness: 0.18,
+        roughness: 0.16,
         metalness: 0.15,
-        clearcoat: 0.9,
+        clearcoat: 0.92,
       });
+      const capGeo = new THREE.ConeGeometry(1.4, 5.5, 6);
+      const capMat = new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.38 });
+
       const spires = new THREE.InstancedMesh(spireGeo, spireMat, spireCount);
+      const caps = new THREE.InstancedMesh(capGeo, capMat, spireCount);
       for (let i = 0; i < spireCount; i++) {
         const side = i % 2 === 0 ? 1 : -1;
         const dist = 24 + ((i * 19) % 64);
         const z = 12 - ((i * 22) % 135);
         const x = (i % 2 === 0 ? -48 : 0) + side * dist;
-        const scale = 0.75 + (i % 5) * 0.32;
+        const scale = 0.8 + (i % 5) * 0.32;
         dummy.position.set(x, -5 + (i % 3) * 1.2, z);
-        dummy.rotation.set((i % 3) * 0.06, i * 0.7, (i % 2) * 0.05);
+        dummy.rotation.set((i % 3) * 0.05, i * 0.7, (i % 2) * 0.04);
         dummy.scale.set(scale, scale * 1.2, scale);
         dummy.updateMatrix();
         spires.setMatrixAt(i, dummy.matrix);
-        _color.setHSL(0.55 + (i % 3) * 0.02, 0.75, 0.78);
+        _color.setHSL(0.55 + (i % 3) * 0.02, 0.75, 0.76);
         spires.setColorAt(i, _color);
+
+        dummy.position.set(x, -5 + (i % 3) * 1.2 + 7.2 * scale, z);
+        dummy.scale.set(scale * 1.02, scale * 1.05, scale * 1.02);
+        dummy.updateMatrix();
+        caps.setMatrixAt(i, dummy.matrix);
       }
       spires.instanceMatrix.needsUpdate = true;
+      caps.instanceMatrix.needsUpdate = true;
       if (spires.instanceColor) spires.instanceColor.needsUpdate = true;
       spires.computeBoundingSphere();
-      this.levelGroup.add(spires);
+      caps.computeBoundingSphere();
+      this.levelGroup.add(spires, caps);
 
-      const auroraMat = new THREE.MeshBasicMaterial({
-        color: 0x2dd4bf,
-        transparent: true,
-        opacity: 0.28,
-        side: THREE.DoubleSide,
-        depthWrite: false,
-        blending: THREE.AdditiveBlending,
+      // Multi-ribbon Aurora Borealis
+      const auroraColors = [0x2dd4bf, 0x38bdf8, 0xa855f7];
+      for (let a = 0; a < auroraColors.length; a++) {
+        const auroraMat = new THREE.MeshBasicMaterial({
+          color: auroraColors[a],
+          transparent: true,
+          opacity: 0.24,
+          side: THREE.DoubleSide,
+          depthWrite: false,
+          blending: THREE.AdditiveBlending,
+        });
+        const auroraRibbon = new THREE.Mesh(
+          new THREE.TorusGeometry(82 + a * 8, 3.2, 8, 48, Math.PI * 0.95),
+          auroraMat
+        );
+        auroraRibbon.position.set(-22 + a * 6, 38 + a * 4, -60 - a * 8);
+        auroraRibbon.rotation.set(0.35 + a * 0.06, 0.25, 0.38 - a * 0.08);
+        this.levelGroup.add(auroraRibbon);
+      }
+    } else if (biome === 'volcanic') {
+      // Jagged basalt caldera mountain ring
+      this.addHorizonMountainRing(0, -115, level.theme.hazardFloorY - 1, 100, 190, 52, 0x1c1917, 0x7c2d12, 7.7, 0.92);
+
+      // Basalt crystal columns & glowing magma caldera cones
+      const colCount = 56;
+      const colGeo = new THREE.CylinderGeometry(1.8, 2.7, 22, 6);
+      const colMat = new THREE.MeshStandardMaterial({ map: this.textures.volcanicBasalt, roughness: 0.85, metalness: 0.15 });
+      const cols = new THREE.InstancedMesh(colGeo, colMat, colCount);
+
+      for (let i = 0; i < colCount; i++) {
+        const side = i % 2 === 0 ? 1 : -1;
+        const dist = 24 + ((i * 23) % 66);
+        const z = 10 - i * 4.5;
+        const scale = 0.85 + (i % 4) * 0.38;
+        dummy.position.set(side * dist, -5 + (i % 3) * 1.4, z);
+        dummy.rotation.set((i % 3 - 1) * 0.06, i * 0.5, (i % 2) * 0.05);
+        dummy.scale.set(scale, scale * 1.15, scale);
+        dummy.updateMatrix();
+        cols.setMatrixAt(i, dummy.matrix);
+      }
+      cols.instanceMatrix.needsUpdate = true;
+      cols.computeBoundingSphere();
+      this.levelGroup.add(cols);
+
+      // Volcano cones with glowing magma crater rims
+      const volcMat = new THREE.MeshStandardMaterial({ map: this.textures.volcanicBasalt, roughness: 0.88 });
+      const magmaRimMat = new THREE.MeshStandardMaterial({
+        color: 0xf97316,
+        emissive: 0xea580c,
+        emissiveIntensity: 2.2,
       });
-      const auroraRibbon = new THREE.Mesh(new THREE.TorusGeometry(80, 3.6, 8, 48, Math.PI * 0.9), auroraMat);
-      auroraRibbon.position.set(-22, 38, -60);
-      auroraRibbon.rotation.set(0.35, 0.25, 0.4);
-      this.levelGroup.add(auroraRibbon);
+      const volcSpots: [number, number, number][] = [
+        [-45, -10, -55],
+        [46, -10, -125],
+        [-42, -10, -195],
+      ];
+      for (const [vx, vy, vz] of volcSpots) {
+        const vg = new THREE.Group();
+        vg.position.set(vx, vy, vz);
+        const cone = new THREE.Mesh(new THREE.CylinderGeometry(4.5, 16, 26, 12, 1, true), volcMat);
+        cone.position.y = 13;
+        const glowRim = new THREE.Mesh(new THREE.CylinderGeometry(4.2, 4.2, 0.8, 12), magmaRimMat);
+        glowRim.position.y = 25.5;
+        vg.add(cone, glowRim);
+        this.levelGroup.add(vg);
+      }
+    } else {
+      // NEBULA CITADEL: Cosmic horizon ridge + ringed gas giant + floating monolith spires + orbital rings
+      this.addHorizonMountainRing(16, -75, level.theme.hazardFloorY - 1, 105, 195, 44, 0x0f172a, 0x6366f1, 9.9, 0.65);
+
+      const spireCount = 52;
+      const monoGeo = new THREE.OctahedronGeometry(2.6, 0);
+      const monoMat = new THREE.MeshPhysicalMaterial({
+        color: 0x312e81,
+        roughness: 0.2,
+        metalness: 0.72,
+        clearcoat: 0.85,
+      });
+      const monos = new THREE.InstancedMesh(monoGeo, monoMat, spireCount);
+      for (let i = 0; i < spireCount; i++) {
+        const side = i % 2 === 0 ? 1 : -1;
+        const dist = 28 + ((i * 19) % 70);
+        const z = 10 - i * 3.4;
+        const scale = 0.8 + (i % 5) * 0.35;
+        dummy.position.set(14 + side * dist, -2 + (i % 6) * 3.2, z);
+        dummy.rotation.set(0, i * 0.6, 0);
+        dummy.scale.set(scale * 0.75, scale * 2.4, scale * 0.75);
+        dummy.updateMatrix();
+        monos.setMatrixAt(i, dummy.matrix);
+        _color.setHSL(0.68 + (i % 3) * 0.04, 0.7, 0.45);
+        monos.setColorAt(i, _color);
+      }
+      monos.instanceMatrix.needsUpdate = true;
+      if (monos.instanceColor) monos.instanceColor.needsUpdate = true;
+      monos.computeBoundingSphere();
+      this.levelGroup.add(monos);
+
+      // Ringed Cosmic Planet over the Citadel
+      const planetGroup = new THREE.Group();
+      planetGroup.position.set(-48, 46, -175);
+      const planet = new THREE.Mesh(
+        new THREE.SphereGeometry(18, 28, 22),
+        new THREE.MeshStandardMaterial({
+          color: 0x6366f1,
+          emissive: 0x312e81,
+          emissiveIntensity: 0.65,
+          roughness: 0.55,
+        })
+      );
+      const pRing = new THREE.Mesh(
+        new THREE.TorusGeometry(28, 2.2, 8, 48),
+        new THREE.MeshBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.5 })
+      );
+      pRing.rotation.set(1.18, 0.25, 0.2);
+      planetGroup.add(planet, pRing);
+      this.levelGroup.add(planetGroup);
     }
   }
 
@@ -838,7 +1146,11 @@ export class GameEngine {
         ? this.textures.skyJungle
         : theme.biome === 'desert'
           ? this.textures.skyDesert
-          : this.textures.skyIce;
+          : theme.biome === 'ice'
+            ? this.textures.skyIce
+            : theme.biome === 'volcanic'
+              ? this.textures.skyVolcanic
+              : this.textures.skyNebula;
     skyMat.needsUpdate = true;
 
     const seaGeo = new THREE.PlaneGeometry(520, 520);
@@ -847,11 +1159,18 @@ export class GameEngine {
         ? this.textures.lagoonSurface
         : theme.biome === 'desert'
           ? this.textures.sandOceanSurface
-          : this.textures.iceSeaSurface;
+          : theme.biome === 'ice'
+            ? this.textures.iceSeaSurface
+            : theme.biome === 'volcanic'
+              ? this.textures.lavaSurface
+              : this.textures.nebulaSeaSurface;
+    this.hazardSeaTex = seaTex;
     const seaMat = new THREE.MeshStandardMaterial({
       map: seaTex,
       roughness: theme.biome === 'desert' ? 0.85 : 0.25,
       metalness: theme.biome === 'ice' ? 0.35 : 0.15,
+      emissive: theme.biome === 'volcanic' ? 0x7c2d12 : theme.biome === 'nebula' ? 0x1e1b4b : 0x000000,
+      emissiveIntensity: theme.biome === 'volcanic' ? 0.45 : 0.25,
     });
     this.hazardSeaMesh = new THREE.Mesh(seaGeo, seaMat);
     this.hazardSeaMesh.rotation.x = -Math.PI / 2;
@@ -924,6 +1243,40 @@ export class GameEngine {
       );
       if (z2d.moveAxis === 'z') rail.position.x = z2d.lockCoord - 1.85;
       this.levelGroup.add(rail);
+    }
+
+    // Climbable Walls (Level 4 Monkey Temple)
+    if (level.climbWalls) {
+      for (const cw of level.climbWalls) {
+        const group = createClimbWallMesh(cw.size, cw.face, this.textures.climbStone);
+        group.position.set(...cw.pos);
+        this.levelGroup.add(group);
+        this.climbWalls.push({
+          def: cw,
+          group,
+          pos: new THREE.Vector3(...cw.pos),
+          halfSize: new THREE.Vector3(cw.size[0] / 2, cw.size[1] / 2, cw.size[2] / 2),
+        });
+      }
+    }
+
+    // Monkey Suit Pickup
+    this.hasMonkeySuit = false;
+    this.isClimbing = false;
+    this.climbingWall = null;
+    for (const part of this.playerRig.monkeyParts) {
+      part.visible = false;
+    }
+    if (level.monkeySuitPos) {
+      const mp = createMonkeySuitPickupMesh();
+      mp.group.position.set(...level.monkeySuitPos);
+      this.levelGroup.add(mp.group);
+      this.monkeyPickup = {
+        group: mp.group,
+        suit: mp.suit,
+        pos: new THREE.Vector3(...level.monkeySuitPos),
+        collected: false,
+      };
     }
 
     // Bow Pickup & Archery Targets
@@ -1071,10 +1424,35 @@ export class GameEngine {
         patrolOffset: new THREE.Vector3(...en.patrolOffset),
         speed: en.speed,
         phase: idx * 1.1,
+        hp: en.kind === 'brute' ? 2 : 1,
+        hitFlash: 0,
         alive: true,
         hopPhase: 0,
       });
     });
+
+    // Final Boss ("Titán Kraxus")
+    if (level.boss) {
+      const bRig = createBossMesh();
+      bRig.root.position.set(...level.boss.pos);
+      this.levelGroup.add(bRig.root);
+      this.bossRuntime = {
+        rig: bRig,
+        name: level.boss.name,
+        pos: new THREE.Vector3(...level.boss.pos),
+        arenaCenter: new THREE.Vector3(...level.boss.arenaCenter),
+        arenaRadius: level.boss.arenaRadius,
+        hp: level.boss.maxHp,
+        maxHp: level.boss.maxHp,
+        alive: true,
+        active: false,
+        invulnTimer: 0,
+        state: 'chase',
+        stateTimer: 1.5,
+        shockwaveRadius: 0,
+        chargeDir: new THREE.Vector3(0, 0, 1),
+      };
+    }
 
     // Lasers
     for (const lz of level.lasers) {
@@ -1129,11 +1507,21 @@ export class GameEngine {
       this.checkpoints.push({ group, flagMat, pos: new THREE.Vector3(...cp.pos), activated: false });
     }
 
-    // Goal Portal
+    // Goal Portal (locked until Boss defeated if level has a Boss)
     const goal = createGoalPortalMesh();
     goal.group.position.set(...level.goalPos);
+    const goalLocked = Boolean(level.boss);
+    if (goalLocked) {
+      goal.vortex.visible = false;
+      goal.portalMat.color.setHex(0xf43f5e);
+      goal.portalMat.emissive.setHex(0xe11d48);
+    }
     this.levelGroup.add(goal.group);
-    this.goalPortal = { ...goal, pos: new THREE.Vector3(...level.goalPos) };
+    this.goalPortal = {
+      ...goal,
+      pos: new THREE.Vector3(...level.goalPos),
+      locked: goalLocked,
+    };
 
     this.spawnPos.set(...level.spawn);
     this.playerPos.copy(this.spawnPos);
@@ -1162,7 +1550,7 @@ export class GameEngine {
     this.bannerText = targetPhase === 'playing' ? level.name : null;
     this.bannerTimer = targetPhase === 'playing' ? 2.4 : 0;
 
-    soundEngine.setMusicContext(level.theme.biome, false, targetPhase);
+    soundEngine.setMusicContext(level.theme.biome, false, targetPhase, false);
 
     if (!this.isSoftwareGl) {
       this.renderer.compile(this.scene, this.camera);
@@ -1184,6 +1572,8 @@ export class GameEngine {
     const style = pDef.style ?? 'tech';
     if (style === 'jungle') return new THREE.MeshStandardMaterial({ map: this.textures.jungleGrass, roughness: 0.76, metalness: 0.04 });
     if (style === 'desert') return new THREE.MeshStandardMaterial({ map: this.textures.desertSandstone, roughness: 0.74, metalness: 0.08 });
+    if (style === 'volcanic') return new THREE.MeshStandardMaterial({ map: this.textures.volcanicBasalt, roughness: 0.78, metalness: 0.18 });
+    if (style === 'nebula') return new THREE.MeshStandardMaterial({ map: this.textures.nebulaDeck, roughness: 0.3, metalness: 0.48 });
     if (style === 'ice') {
       return new THREE.MeshPhysicalMaterial({
         map: this.textures.iceCrystal,
@@ -1275,6 +1665,10 @@ export class GameEngine {
       this.hazardSeaMesh.position.x = this.playerPos.x;
       this.hazardSeaMesh.position.z = this.playerPos.z;
     }
+    if (this.hazardSeaTex) {
+      this.hazardSeaTex.offset.x = (this.totalTime * 0.018) % 1;
+      this.hazardSeaTex.offset.y = (this.totalTime * 0.012) % 1;
+    }
 
     this.renderer.render(this.scene, this.camera);
 
@@ -1325,6 +1719,20 @@ export class GameEngine {
     if (this.bowPickup && !this.bowPickup.collected) {
       this.bowPickup.bow.rotation.y += dt * 2.2;
       this.bowPickup.bow.position.y = 1.05 + Math.sin(this.totalTime * 3.0) * 0.14;
+    }
+    if (this.monkeyPickup && !this.monkeyPickup.collected) {
+      this.monkeyPickup.suit.rotation.y += dt * 2.2;
+      this.monkeyPickup.suit.position.y = 1.1 + Math.sin(this.totalTime * 3.0) * 0.14;
+    }
+    if (this.currentLevel.theme.biome === 'volcanic' && Math.random() < 0.35) {
+      this.spawnBurst(
+        this.playerPos.x + (Math.random() - 0.5) * 18,
+        this.playerPos.y - 2,
+        this.playerPos.z + (Math.random() - 0.5) * 18,
+        0xf97316,
+        1,
+        1.2
+      );
     }
 
     for (const c of this.coins) {
@@ -1435,6 +1843,25 @@ export class GameEngine {
       }
     }
 
+    // Check Monkey Suit Pickup
+    if (this.monkeyPickup && !this.monkeyPickup.collected) {
+      const dx = this.playerPos.x - this.monkeyPickup.pos.x;
+      const dy = this.playerPos.y - this.monkeyPickup.pos.y;
+      const dz = this.playerPos.z - this.monkeyPickup.pos.z;
+      if (dx * dx + dz * dz < 2.1 && Math.abs(dy) < 1.8) {
+        this.monkeyPickup.collected = true;
+        this.monkeyPickup.group.visible = false;
+        this.hasMonkeySuit = true;
+        for (const part of this.playerRig.monkeyParts) {
+          part.visible = true;
+        }
+        soundEngine.playMonkeyPickup();
+        this.spawnBurst(this.monkeyPickup.pos.x, this.monkeyPickup.pos.y + 0.8, this.monkeyPickup.pos.z, 0x10b981, 24, 5.8);
+        this.showBanner('¡Traje de Mono equipado! Trepa por los muros con agarres verdes', 3.6);
+        this.pushHud(true);
+      }
+    }
+
     // Check Bow Pickup
     if (this.bowPickup && !this.bowPickup.collected) {
       const dx = this.playerPos.x - this.bowPickup.pos.x;
@@ -1526,7 +1953,7 @@ export class GameEngine {
     const targetVx = worldDirX * moveSpeed;
     const targetVz = worldDirZ * moveSpeed;
 
-    const onIce = this.grounded && this.standingPlatform?.def.kind === 'ice';
+    let onIce = this.grounded && this.standingPlatform?.def.kind === 'ice';
     const accel = onIce ? 2.6 : this.grounded ? 16 : 9;
     this.playerVel.x = THREE.MathUtils.damp(this.playerVel.x, targetVx, accel, dt);
     this.playerVel.z = THREE.MathUtils.damp(this.playerVel.z, targetVz, accel, dt);
@@ -1560,127 +1987,319 @@ export class GameEngine {
     this.spinTimer = Math.max(0, this.spinTimer - dt);
     this.spinCooldown = Math.max(0, this.spinCooldown - dt);
 
-    if (this.jumpBufferTimer > 0 && this.coyoteTimer > 0) {
-      this.playerVel.y = 12.6;
-      this.grounded = false;
-      this.standingPlatform = null;
-      this.coyoteTimer = 0;
-      this.jumpBufferTimer = 0;
-      this.playerSquash.set(0.78, 1.32, 0.78);
-      soundEngine.playJump();
-      this.spawnBurst(this.playerPos.x, this.playerPos.y + 0.1, this.playerPos.z, 0xe0f2fe, 8, 2.6);
-    }
-
-    const jumpHeld = this.keysHeld.has('Space') || this.touchJumpHeld;
-    if (!this.grounded && jumpHeld && this.playerVel.y < 1.8 && this.hoverFuel > 0) {
-      this.isHovering = true;
-      this.hoverFuel = Math.max(0, this.hoverFuel - dt * 1.08);
-      this.playerVel.y = THREE.MathUtils.damp(this.playerVel.y, -0.65, 14, dt);
-      soundEngine.startHover();
-    } else {
-      if (this.isHovering) soundEngine.stopHover();
-      this.isHovering = false;
-      this.playerVel.y -= 31.0 * dt;
-    }
-
-    const prevY = this.playerPos.y;
-    this.playerPos.x += this.playerVel.x * dt;
-    this.playerPos.z += this.playerVel.z * dt;
-    this.playerPos.y += this.playerVel.y * dt;
-
-    if (this.active2DZone) {
-      if (this.active2DZone.moveAxis === 'x') {
-        this.playerPos.z = THREE.MathUtils.damp(this.playerPos.z, this.active2DZone.lockCoord, 12, dt);
-      } else {
-        this.playerPos.x = THREE.MathUtils.damp(this.playerPos.x, this.active2DZone.lockCoord, 12, dt);
-      }
-    }
-
-    const playerRadius = 0.38;
-    const playerHeight = 1.45;
     let landedPlatform: PlatformRuntime | null = null;
+    let landedOnClimbWall = false;
     let bestGroundShadowY = -999;
 
-    for (const p of this.platforms) {
-      if (!p.visible) continue;
-      const minX = p.pos.x - p.halfSize.x - playerRadius;
-      const maxX = p.pos.x + p.halfSize.x + playerRadius;
-      const minZ = p.pos.z - p.halfSize.z - playerRadius;
-      const maxZ = p.pos.z + p.halfSize.z + playerRadius;
-      const topY = p.pos.y + p.halfSize.y;
-      const botY = p.pos.y - p.halfSize.y;
+    // CLIMBING STATE (Monkey Suit)
+    if (this.isClimbing && this.climbingWall) {
+      const cw = this.climbingWall;
+      const face = cw.def.face;
+      const topY = cw.pos.y + cw.halfSize.y;
+      const botY = cw.pos.y - cw.halfSize.y;
 
-      if (
-        this.playerPos.x >= p.pos.x - p.halfSize.x &&
-        this.playerPos.x <= p.pos.x + p.halfSize.x &&
-        this.playerPos.z >= p.pos.z - p.halfSize.z &&
-        this.playerPos.z <= p.pos.z + p.halfSize.z &&
-        topY <= this.playerPos.y + 0.15
-      ) {
-        if (topY > bestGroundShadowY) bestGroundShadowY = topY;
+      soundEngine.stopHover();
+      this.isHovering = false;
+      this.grounded = false;
+      this.standingPlatform = null;
+      this.hoverFuel = 1;
+      this.playerVel.set(0, 0, 0);
+
+      // Climb vertical (W/Up = -inZ, S/Down = +inZ) and lateral shimmy (A/D = inX)
+      const climbInput = -inZ;
+      const climbSpeed = 6.2;
+      const shimmySpeed = 4.6;
+      this.playerPos.y += climbInput * climbSpeed * dt;
+
+      if (face === 'pz') {
+        this.playerYaw = Math.PI;
+        this.playerPos.z = cw.pos.z + cw.halfSize.z + 0.42;
+        this.playerPos.x = THREE.MathUtils.clamp(
+          this.playerPos.x + inX * shimmySpeed * dt,
+          cw.pos.x - cw.halfSize.x + 0.42,
+          cw.pos.x + cw.halfSize.x - 0.42
+        );
+      } else if (face === 'nz') {
+        this.playerYaw = 0;
+        this.playerPos.z = cw.pos.z - cw.halfSize.z - 0.42;
+        this.playerPos.x = THREE.MathUtils.clamp(
+          this.playerPos.x - inX * shimmySpeed * dt,
+          cw.pos.x - cw.halfSize.x + 0.42,
+          cw.pos.x + cw.halfSize.x - 0.42
+        );
+      } else if (face === 'px') {
+        this.playerYaw = -Math.PI / 2;
+        this.playerPos.x = cw.pos.x + cw.halfSize.x + 0.42;
+        this.playerPos.z = THREE.MathUtils.clamp(
+          this.playerPos.z - inX * shimmySpeed * dt,
+          cw.pos.z - cw.halfSize.z + 0.42,
+          cw.pos.z + cw.halfSize.z - 0.42
+        );
+      } else {
+        this.playerYaw = Math.PI / 2;
+        this.playerPos.x = cw.pos.x - cw.halfSize.x - 0.42;
+        this.playerPos.z = THREE.MathUtils.clamp(
+          this.playerPos.z + inX * shimmySpeed * dt,
+          cw.pos.z - cw.halfSize.z + 0.42,
+          cw.pos.z + cw.halfSize.z - 0.42
+        );
       }
 
-      const insideXZ =
-        this.playerPos.x >= minX &&
-        this.playerPos.x <= maxX &&
-        this.playerPos.z >= minZ &&
-        this.playerPos.z <= maxZ;
-      if (!insideXZ) continue;
-
-      if (this.playerVel.y <= 0 && prevY >= topY - 0.35 && this.playerPos.y <= topY + 0.08) {
-        this.playerPos.y = topY;
-        if (!this.grounded && this.playerVel.y < -4.2) {
-          this.playerSquash.set(1.26, 0.74, 1.26);
-          soundEngine.playLand(Math.abs(this.playerVel.y));
-        }
-        this.playerVel.y = 0;
-        landedPlatform = p;
-      } else if (this.playerVel.y > 0 && prevY + playerHeight <= botY + 0.2 && this.playerPos.y + playerHeight >= botY) {
-        this.playerPos.y = botY - playerHeight;
-        this.playerVel.y = -1;
-      } else if (this.playerPos.y < topY - 0.15 && this.playerPos.y + playerHeight > botY + 0.15) {
-        const dxMin = Math.abs(this.playerPos.x - minX);
-        const dxMax = Math.abs(maxX - this.playerPos.x);
-        const dzMin = Math.abs(this.playerPos.z - minZ);
-        const dzMax = Math.abs(maxZ - this.playerPos.z);
-        const m = Math.min(dxMin, dxMax, dzMin, dzMax);
-        if (m === dxMin) {
-          this.playerPos.x = minX;
-          this.playerVel.x = Math.min(0, this.playerVel.x);
-        } else if (m === dxMax) {
-          this.playerPos.x = maxX;
-          this.playerVel.x = Math.max(0, this.playerVel.x);
-        } else if (m === dzMin) {
-          this.playerPos.z = minZ;
-          this.playerVel.z = Math.min(0, this.playerVel.z);
-        } else {
-          this.playerPos.z = maxZ;
-          this.playerVel.z = Math.max(0, this.playerVel.z);
-        }
+      if (Math.abs(climbInput) > 0.15 || Math.abs(inX) > 0.15) {
+        soundEngine.playClimbStep();
       }
-    }
 
-    this.grounded = landedPlatform !== null;
-    this.standingPlatform = landedPlatform;
+      // Mantle onto top when reaching top edge
+      if (this.playerPos.y >= topY - 0.08) {
+        this.isClimbing = false;
+        this.climbingWall = null;
+        this.playerPos.y = topY + 0.06;
+        if (face === 'pz') this.playerPos.z -= 0.85;
+        else if (face === 'nz') this.playerPos.z += 0.85;
+        else if (face === 'px') this.playerPos.x -= 0.85;
+        else this.playerPos.x += 0.85;
+        this.playerVel.set(0, 3.2, 0);
+        this.grounded = true;
+        soundEngine.playJump();
+        this.spawnBurst(this.playerPos.x, this.playerPos.y, this.playerPos.z, 0x10b981, 10, 3.0);
+        this.pushHud(true);
+      } else if (this.jumpBufferTimer > 0) {
+        // Wall-jump off climbable wall
+        this.jumpBufferTimer = 0;
+        this.isClimbing = false;
+        this.climbingWall = null;
+        const kick = 7.2;
+        this.playerVel.y = 12.0;
+        if (face === 'pz') this.playerVel.z = kick;
+        else if (face === 'nz') this.playerVel.z = -kick;
+        else if (face === 'px') this.playerVel.x = kick;
+        else this.playerVel.x = -kick;
+        soundEngine.playJump();
+        this.pushHud(true);
+      } else if (this.playerPos.y < botY + 0.15 && climbInput < -0.1) {
+        this.isClimbing = false;
+        this.climbingWall = null;
+        if (face === 'pz') this.playerPos.z += 0.3;
+        else if (face === 'nz') this.playerPos.z -= 0.3;
+        else if (face === 'px') this.playerPos.x += 0.3;
+        else this.playerPos.x -= 0.3;
+        this.pushHud(true);
+      }
 
-    if (landedPlatform && landedPlatform.def.kind === 'crumble' && landedPlatform.crumbleState === 'idle') {
-      landedPlatform.crumbleState = 'shaking';
-      landedPlatform.crumbleTimer = 0.75;
-    }
-
-    if (bestGroundShadowY > -900) {
-      this.contactShadowMesh.visible = true;
-      this.contactShadowMesh.position.set(this.playerPos.x, bestGroundShadowY + 0.025, this.playerPos.z);
-      const heightAbove = Math.max(0, this.playerPos.y - bestGroundShadowY);
-      const scale = THREE.MathUtils.clamp(1.0 - heightAbove * 0.08, 0.35, 1.0);
-      this.contactShadowMesh.scale.setScalar(scale);
-      (this.contactShadowMesh.material as THREE.MeshBasicMaterial).opacity = THREE.MathUtils.clamp(
-        0.72 - heightAbove * 0.07,
-        0.18,
-        0.72
-      );
-    } else {
       this.contactShadowMesh.visible = false;
+    } else {
+      if (this.jumpBufferTimer > 0 && this.coyoteTimer > 0) {
+        this.playerVel.y = 12.6;
+        this.grounded = false;
+        this.standingPlatform = null;
+        this.coyoteTimer = 0;
+        this.jumpBufferTimer = 0;
+        this.playerSquash.set(0.78, 1.32, 0.78);
+        soundEngine.playJump();
+        this.spawnBurst(this.playerPos.x, this.playerPos.y + 0.1, this.playerPos.z, 0xe0f2fe, 8, 2.6);
+      }
+
+      const jumpHeld = this.keysHeld.has('Space') || this.touchJumpHeld;
+      if (!this.grounded && jumpHeld && this.playerVel.y < 1.8 && this.hoverFuel > 0) {
+        this.isHovering = true;
+        this.hoverFuel = Math.max(0, this.hoverFuel - dt * 1.08);
+        this.playerVel.y = THREE.MathUtils.damp(this.playerVel.y, -0.65, 14, dt);
+        soundEngine.startHover();
+      } else {
+        if (this.isHovering) soundEngine.stopHover();
+        this.isHovering = false;
+        this.playerVel.y -= 31.0 * dt;
+      }
+
+      const prevY = this.playerPos.y;
+      this.playerPos.x += this.playerVel.x * dt;
+      this.playerPos.z += this.playerVel.z * dt;
+      this.playerPos.y += this.playerVel.y * dt;
+
+      if (this.active2DZone) {
+        if (this.active2DZone.moveAxis === 'x') {
+          this.playerPos.z = THREE.MathUtils.damp(this.playerPos.z, this.active2DZone.lockCoord, 12, dt);
+        } else {
+          this.playerPos.x = THREE.MathUtils.damp(this.playerPos.x, this.active2DZone.lockCoord, 12, dt);
+        }
+      }
+
+      const playerRadius = 0.38;
+      const playerHeight = 1.45;
+
+      for (const p of this.platforms) {
+        if (!p.visible) continue;
+        const minX = p.pos.x - p.halfSize.x - playerRadius;
+        const maxX = p.pos.x + p.halfSize.x + playerRadius;
+        const minZ = p.pos.z - p.halfSize.z - playerRadius;
+        const maxZ = p.pos.z + p.halfSize.z + playerRadius;
+        const topY = p.pos.y + p.halfSize.y;
+        const botY = p.pos.y - p.halfSize.y;
+
+        if (
+          this.playerPos.x >= p.pos.x - p.halfSize.x &&
+          this.playerPos.x <= p.pos.x + p.halfSize.x &&
+          this.playerPos.z >= p.pos.z - p.halfSize.z &&
+          this.playerPos.z <= p.pos.z + p.halfSize.z &&
+          topY <= this.playerPos.y + 0.15
+        ) {
+          if (topY > bestGroundShadowY) bestGroundShadowY = topY;
+        }
+
+        const insideXZ =
+          this.playerPos.x >= minX &&
+          this.playerPos.x <= maxX &&
+          this.playerPos.z >= minZ &&
+          this.playerPos.z <= maxZ;
+        if (!insideXZ) continue;
+
+        if (this.playerVel.y <= 0 && prevY >= topY - 0.35 && this.playerPos.y <= topY + 0.08) {
+          this.playerPos.y = topY;
+          if (!this.grounded && this.playerVel.y < -4.2) {
+            this.playerSquash.set(1.26, 0.74, 1.26);
+            soundEngine.playLand(Math.abs(this.playerVel.y));
+          }
+          this.playerVel.y = 0;
+          landedPlatform = p;
+        } else if (this.playerVel.y > 0 && prevY + playerHeight <= botY + 0.2 && this.playerPos.y + playerHeight >= botY) {
+          this.playerPos.y = botY - playerHeight;
+          this.playerVel.y = -1;
+        } else if (this.playerPos.y < topY - 0.15 && this.playerPos.y + playerHeight > botY + 0.15) {
+          const dxMin = Math.abs(this.playerPos.x - minX);
+          const dxMax = Math.abs(maxX - this.playerPos.x);
+          const dzMin = Math.abs(this.playerPos.z - minZ);
+          const dzMax = Math.abs(maxZ - this.playerPos.z);
+          const m = Math.min(dxMin, dxMax, dzMin, dzMax);
+          if (m === dxMin) {
+            this.playerPos.x = minX;
+            this.playerVel.x = Math.min(0, this.playerVel.x);
+          } else if (m === dxMax) {
+            this.playerPos.x = maxX;
+            this.playerVel.x = Math.max(0, this.playerVel.x);
+          } else if (m === dzMin) {
+            this.playerPos.z = minZ;
+            this.playerVel.z = Math.min(0, this.playerVel.z);
+          } else {
+            this.playerPos.z = maxZ;
+            this.playerVel.z = Math.max(0, this.playerVel.z);
+          }
+        }
+      }
+
+      // ClimbWall Solid Collision + Monkey Suit Latching
+      for (const cw of this.climbWalls) {
+        const minX = cw.pos.x - cw.halfSize.x - playerRadius;
+        const maxX = cw.pos.x + cw.halfSize.x + playerRadius;
+        const minZ = cw.pos.z - cw.halfSize.z - playerRadius;
+        const maxZ = cw.pos.z + cw.halfSize.z + playerRadius;
+        const topY = cw.pos.y + cw.halfSize.y;
+        const botY = cw.pos.y - cw.halfSize.y;
+
+        if (
+          this.playerPos.x >= cw.pos.x - cw.halfSize.x &&
+          this.playerPos.x <= cw.pos.x + cw.halfSize.x &&
+          this.playerPos.z >= cw.pos.z - cw.halfSize.z &&
+          this.playerPos.z <= cw.pos.z + cw.halfSize.z &&
+          topY <= this.playerPos.y + 0.15
+        ) {
+          if (topY > bestGroundShadowY) bestGroundShadowY = topY;
+        }
+
+        const insideXZ =
+          this.playerPos.x >= minX &&
+          this.playerPos.x <= maxX &&
+          this.playerPos.z >= minZ &&
+          this.playerPos.z <= maxZ;
+
+        if (insideXZ) {
+          if (this.playerVel.y <= 0 && prevY >= topY - 0.35 && this.playerPos.y <= topY + 0.08) {
+            this.playerPos.y = topY;
+            if (!this.grounded && this.playerVel.y < -4.2) {
+              this.playerSquash.set(1.26, 0.74, 1.26);
+              soundEngine.playLand(Math.abs(this.playerVel.y));
+            }
+            this.playerVel.y = 0;
+            this.grounded = true;
+            landedOnClimbWall = true;
+          } else if (this.playerPos.y < topY - 0.15 && this.playerPos.y + playerHeight > botY + 0.15) {
+            const dxMin = Math.abs(this.playerPos.x - minX);
+            const dxMax = Math.abs(maxX - this.playerPos.x);
+            const dzMin = Math.abs(this.playerPos.z - minZ);
+            const dzMax = Math.abs(maxZ - this.playerPos.z);
+            const m = Math.min(dxMin, dxMax, dzMin, dzMax);
+            if (m === dxMin) this.playerPos.x = minX;
+            else if (m === dxMax) this.playerPos.x = maxX;
+            else if (m === dzMin) this.playerPos.z = minZ;
+            else this.playerPos.z = maxZ;
+          }
+        }
+
+        // Check latch onto climbable face if wearing Monkey Suit
+        if (this.hasMonkeySuit && !this.isClimbing && this.playerPos.y >= botY - 0.25 && this.playerPos.y <= topY - 0.35) {
+          const face = cw.def.face;
+          const pushingIntoWall =
+            (face === 'pz' && worldDirZ < -0.2) ||
+            (face === 'nz' && worldDirZ > 0.2) ||
+            (face === 'px' && worldDirX < -0.2) ||
+            (face === 'nx' && worldDirX > 0.2) ||
+            !this.grounded;
+
+          if (pushingIntoWall) {
+            const nearPz =
+              face === 'pz' &&
+              Math.abs(this.playerPos.z - (cw.pos.z + cw.halfSize.z + 0.4)) < 0.38 &&
+              Math.abs(this.playerPos.x - cw.pos.x) <= cw.halfSize.x - 0.2;
+            const nearNz =
+              face === 'nz' &&
+              Math.abs(this.playerPos.z - (cw.pos.z - cw.halfSize.z - 0.4)) < 0.38 &&
+              Math.abs(this.playerPos.x - cw.pos.x) <= cw.halfSize.x - 0.2;
+            const nearPx =
+              face === 'px' &&
+              Math.abs(this.playerPos.x - (cw.pos.x + cw.halfSize.x + 0.4)) < 0.38 &&
+              Math.abs(this.playerPos.z - cw.pos.z) <= cw.halfSize.z - 0.2;
+            const nearNx =
+              face === 'nx' &&
+              Math.abs(this.playerPos.x - (cw.pos.x - cw.halfSize.x - 0.4)) < 0.38 &&
+              Math.abs(this.playerPos.z - cw.pos.z) <= cw.halfSize.z - 0.2;
+
+            if (nearPz || nearNz || nearPx || nearNx) {
+              this.isClimbing = true;
+              this.climbingWall = cw;
+              this.grounded = false;
+              this.playerVel.set(0, 0, 0);
+              soundEngine.playClimbStep();
+              this.pushHud(true);
+              break;
+            }
+          }
+        }
+      }
+
+      if (!this.isClimbing) {
+        this.grounded = landedPlatform !== null || landedOnClimbWall || bestGroundShadowY >= this.playerPos.y - 0.05;
+        this.standingPlatform = landedPlatform;
+        onIce = this.grounded && this.standingPlatform?.def.kind === 'ice';
+
+        if (landedPlatform && landedPlatform.def.kind === 'crumble' && landedPlatform.crumbleState === 'idle') {
+          landedPlatform.crumbleState = 'shaking';
+          landedPlatform.crumbleTimer = 0.75;
+        }
+
+        if (bestGroundShadowY > -900) {
+          this.contactShadowMesh.visible = true;
+          this.contactShadowMesh.position.set(this.playerPos.x, bestGroundShadowY + 0.025, this.playerPos.z);
+          const heightAbove = Math.max(0, this.playerPos.y - bestGroundShadowY);
+          const scale = THREE.MathUtils.clamp(1.0 - heightAbove * 0.08, 0.35, 1.0);
+          this.contactShadowMesh.scale.setScalar(scale);
+          (this.contactShadowMesh.material as THREE.MeshBasicMaterial).opacity = THREE.MathUtils.clamp(
+            0.72 - heightAbove * 0.07,
+            0.18,
+            0.72
+          );
+        } else {
+          this.contactShadowMesh.visible = false;
+        }
+      }
     }
 
     for (const jp of this.jumpPads) {
@@ -1788,27 +2407,40 @@ export class GameEngine {
       const dz = this.playerPos.z - en.pos.z;
       const horizDistSq = dx * dx + dz * dz;
       const dy = this.playerPos.y - en.pos.y;
+      const hitRadiusSq = en.kind === 'brute' ? 1.35 : 0.85;
 
-      if (this.isHovering && horizDistSq < 0.85 && dy > 0.4 && dy < 3.1) {
-        this.defeatEnemy(en);
+      if (en.hitFlash > 0) {
+        en.hitFlash -= dt;
+        en.group.visible = Math.floor(en.hitFlash * 24) % 2 === 0;
+      } else {
+        en.group.visible = true;
+      }
+
+      if (this.isHovering && horizDistSq < hitRadiusSq && dy > 0.4 && dy < 3.1) {
+        this.damageEnemy(en);
         continue;
       }
-      if (this.spinTimer > 0 && en.kind !== 'spiky' && horizDistSq < 2.1 && Math.abs(dy) < 1.2) {
-        this.defeatEnemy(en);
+      if (this.spinTimer > 0 && en.kind !== 'spiky' && horizDistSq < (en.kind === 'brute' ? 2.6 : 2.1) && Math.abs(dy) < 1.3) {
+        this.damageEnemy(en);
         continue;
       }
-      if (this.playerVel.y < -0.5 && horizDistSq < 0.9 && dy > 0.35 && dy < 1.15) {
+      if (this.playerVel.y < -0.5 && horizDistSq < (en.kind === 'brute' ? 1.35 : 0.9) && dy > 0.35 && dy < (en.kind === 'brute' ? 1.55 : 1.15)) {
         if (en.kind === 'spiky') {
           this.damagePlayer(dx, dz);
         } else {
-          this.defeatEnemy(en);
-          this.playerVel.y = 10.5;
+          this.damageEnemy(en);
+          this.playerVel.y = 10.8;
         }
         continue;
       }
-      if (horizDistSq < 0.72 && Math.abs(dy) < 0.95) {
+      if (horizDistSq < (en.kind === 'brute' ? 1.05 : 0.72) && Math.abs(dy) < (en.kind === 'brute' ? 1.3 : 0.95)) {
         this.damagePlayer(dx, dz);
       }
+    }
+
+    // FINAL BOSS ("Titán Kraxus") AI & Combat
+    if (this.bossRuntime && this.bossRuntime.alive) {
+      this.stepBoss(dt);
     }
 
     for (const lz of this.lasers) {
@@ -1831,7 +2463,7 @@ export class GameEngine {
       this.handleFallDamage();
     }
 
-    if (this.goalPortal) {
+    if (this.goalPortal && !this.goalPortal.locked) {
       const dx = this.playerPos.x - this.goalPortal.pos.x;
       const dy = this.playerPos.y - this.goalPortal.pos.y;
       const dz = this.playerPos.z - this.goalPortal.pos.z;
@@ -1840,7 +2472,7 @@ export class GameEngine {
         soundEngine.playVictory();
         this.spawnBurst(this.goalPortal.pos.x, this.goalPortal.pos.y + 1.5, this.goalPortal.pos.z, 0xfacc15, 36, 7.5);
         this.phase = 'victory';
-        soundEngine.setMusicContext(this.currentLevel.theme.biome, false, 'victory');
+        soundEngine.setMusicContext(this.currentLevel.theme.biome, false, 'victory', false);
         this.pushHud(true);
         this.onLevelComplete({
           levelIndex: this.currentLevel.index,
@@ -1855,7 +2487,7 @@ export class GameEngine {
     }
 
     const groundSpeed = Math.hypot(this.playerVel.x, this.playerVel.z);
-    if (this.grounded && groundSpeed > 2.4) {
+    if (this.grounded && groundSpeed > 2.4 && !this.isClimbing) {
       soundEngine.playFootstep(onIce);
     }
     this.animatePlayerVisuals(dt, groundSpeed);
@@ -1907,13 +2539,25 @@ export class GameEngine {
         for (const en of this.enemies) {
           if (!en.alive) continue;
           const dx = ar.pos.x - en.pos.x;
-          const dy = ar.pos.y - (en.pos.y + 0.55);
+          const dy = ar.pos.y - (en.pos.y + 0.65);
           const dz = ar.pos.z - en.pos.z;
-          if (dx * dx + dy * dy + dz * dz < 1.05) {
-            this.defeatEnemy(en);
+          if (dx * dx + dy * dy + dz * dz < (en.kind === 'brute' ? 1.55 : 1.05)) {
+            this.damageEnemy(en);
             remove = true;
             break;
           }
+        }
+      }
+
+      // Hit Boss Core
+      if (!remove && this.bossRuntime && this.bossRuntime.alive && this.bossRuntime.active) {
+        const b = this.bossRuntime;
+        const dx = ar.pos.x - b.pos.x;
+        const dy = ar.pos.y - (b.pos.y + 2.1);
+        const dz = ar.pos.z - b.pos.z;
+        if (dx * dx + dy * dy + dz * dz < 3.4) {
+          this.damageBoss();
+          remove = true;
         }
       }
 
@@ -2068,6 +2712,20 @@ export class GameEngine {
     }
   }
 
+  private damageEnemy(en: EnemyRuntime) {
+    if (en.hitFlash > 0) return;
+    en.hp -= 1;
+    if (en.hp <= 0) {
+      this.defeatEnemy(en);
+      return;
+    }
+    en.hitFlash = 0.45;
+    this.hitstopTimer = 0.035;
+    this.shakeIntensity = 0.2;
+    soundEngine.playEnemyHit();
+    this.spawnBurst(en.pos.x, en.pos.y + 0.7, en.pos.z, 0xf97316, 12, 4.5);
+  }
+
   private defeatEnemy(en: EnemyRuntime) {
     en.alive = false;
     en.group.visible = false;
@@ -2075,6 +2733,188 @@ export class GameEngine {
     this.shakeIntensity = 0.25;
     soundEngine.playEnemyHit();
     this.spawnBurst(en.pos.x, en.pos.y + 0.5, en.pos.z, 0xf43f5e, 18, 5.5);
+  }
+
+  private stepBoss(dt: number) {
+    const b = this.bossRuntime;
+    if (!b || !b.alive) return;
+
+    const dxToPlayer = this.playerPos.x - b.arenaCenter.x;
+    const dzToPlayer = this.playerPos.z - b.arenaCenter.z;
+    const playerInArena =
+      Math.hypot(dxToPlayer, dzToPlayer) < b.arenaRadius + 1.5 &&
+      this.playerPos.y >= b.arenaCenter.y - 1.5;
+
+    if (!b.active) {
+      b.rig.dorsalRing.rotation.z += dt * 1.4;
+      b.rig.root.position.copy(b.pos);
+      if (playerInArena) {
+        b.active = true;
+        b.state = 'chase';
+        b.stateTimer = 2.2;
+        soundEngine.setMusicContext(this.currentLevel.theme.biome, false, this.phase, true);
+        this.showBanner(`¡JEFE FINAL: ${b.name}! Golpea su núcleo o salta sobre su cabeza`, 3.6);
+        this.pushHud(true);
+      }
+      return;
+    }
+
+    b.invulnTimer = Math.max(0, b.invulnTimer - dt);
+    b.rig.dorsalRing.rotation.z += dt * (b.state === 'charge' ? 5.5 : 2.2);
+    if (b.invulnTimer > 0) {
+      b.rig.armorMat.emissive.setHex(Math.floor(b.invulnTimer * 24) % 2 === 0 ? 0xffffff : 0x000000);
+      b.rig.armorMat.emissiveIntensity = 0.65;
+    } else {
+      b.rig.armorMat.emissive.setHex(0x000000);
+      b.rig.armorMat.emissiveIntensity = 0;
+    }
+
+    const toPlayerX = this.playerPos.x - b.pos.x;
+    const toPlayerZ = this.playerPos.z - b.pos.z;
+    const dist = Math.hypot(toPlayerX, toPlayerZ) || 1;
+    const desiredYaw = Math.atan2(toPlayerX, toPlayerZ);
+
+    b.stateTimer -= dt;
+    b.rig.shockwaveRing.visible = false;
+
+    if (b.state === 'chase') {
+      b.rig.root.rotation.y = desiredYaw;
+      const spd = 3.8 + (b.maxHp - b.hp) * 0.45;
+      b.pos.x += (toPlayerX / dist) * spd * dt;
+      b.pos.z += (toPlayerZ / dist) * spd * dt;
+      const swing = Math.sin(this.totalTime * 7);
+      b.rig.leftLeg.rotation.x = swing * 0.45;
+      b.rig.rightLeg.rotation.x = -swing * 0.45;
+      b.rig.leftArm.rotation.x = -swing * 0.5;
+      b.rig.rightArm.rotation.x = swing * 0.5;
+      b.rig.bodyGroup.position.y = Math.abs(swing) * 0.12;
+      b.rig.coreMat.color.setHex(0xfbbf24);
+
+      if (b.stateTimer <= 0) {
+        b.state = 'windup';
+        b.stateTimer = 0.85;
+      }
+    } else if (b.state === 'windup') {
+      b.rig.root.rotation.y = desiredYaw;
+      b.rig.bodyGroup.position.y = -0.25 + Math.sin(this.totalTime * 30) * 0.06;
+      b.rig.leftArm.rotation.x = -2.2;
+      b.rig.rightArm.rotation.x = -2.2;
+      b.rig.coreMat.color.setHex(0xff2a55);
+      if (b.stateTimer <= 0) {
+        b.state = 'shockwave';
+        b.stateTimer = 1.4;
+        b.shockwaveRadius = 1.4;
+        this.shakeIntensity = 0.45;
+        soundEngine.playShockwave();
+        this.spawnBurst(b.pos.x, b.pos.y + 0.4, b.pos.z, 0xff2a55, 22, 6.5);
+      }
+    } else if (b.state === 'shockwave') {
+      b.rig.bodyGroup.position.y = 0;
+      b.rig.leftArm.rotation.x = -0.4;
+      b.rig.rightArm.rotation.x = -0.4;
+      b.shockwaveRadius += 9.8 * dt;
+      b.rig.shockwaveRing.visible = true;
+      b.rig.shockwaveRing.scale.setScalar(b.shockwaveRadius);
+      b.rig.shockwaveMat.opacity = Math.max(0, 1 - b.shockwaveRadius / 14);
+
+      // Jump-over shockwave damage check
+      if (Math.abs(dist - b.shockwaveRadius) < 0.85 && this.playerPos.y < b.arenaCenter.y + 1.15) {
+        this.damagePlayer(toPlayerX, toPlayerZ);
+      }
+      if (b.stateTimer <= 0) {
+        b.state = 'charge';
+        b.stateTimer = 1.05;
+        b.chargeDir.set(toPlayerX / dist, 0, toPlayerZ / dist);
+        b.rig.root.rotation.y = Math.atan2(b.chargeDir.x, b.chargeDir.z);
+      }
+    } else if (b.state === 'charge') {
+      const chargeSpeed = 10.6;
+      b.pos.x += b.chargeDir.x * chargeSpeed * dt;
+      b.pos.z += b.chargeDir.z * chargeSpeed * dt;
+      b.rig.leftArm.rotation.x = -1.4;
+      b.rig.rightArm.rotation.x = -1.4;
+      b.rig.bodyGroup.position.y = Math.abs(Math.sin(this.totalTime * 16)) * 0.16;
+      if (b.stateTimer <= 0) {
+        b.state = 'recover';
+        b.stateTimer = 1.6;
+      }
+    } else if (b.state === 'recover') {
+      b.rig.bodyGroup.position.y = -0.35;
+      b.rig.leftArm.rotation.x = 0.2;
+      b.rig.rightArm.rotation.x = 0.2;
+      b.rig.coreMat.color.setHex(0x38bdf8);
+      if (b.stateTimer <= 0) {
+        b.state = 'chase';
+        b.stateTimer = 2.2;
+      }
+    }
+
+    // Clamp boss inside arena bounds
+    const offX = b.pos.x - b.arenaCenter.x;
+    const offZ = b.pos.z - b.arenaCenter.z;
+    const offLen = Math.hypot(offX, offZ);
+    const maxOffset = b.arenaRadius - 2.0;
+    if (offLen > maxOffset) {
+      b.pos.x = b.arenaCenter.x + (offX / offLen) * maxOffset;
+      b.pos.z = b.arenaCenter.z + (offZ / offLen) * maxOffset;
+    }
+    b.rig.root.position.copy(b.pos);
+
+    // Player vs Boss collision & weak-point hits
+    const horizDistSq = toPlayerX * toPlayerX + toPlayerZ * toPlayerZ;
+    const dy = this.playerPos.y - b.pos.y;
+
+    // 1. Stomp on Boss Head
+    if (this.playerVel.y < -0.5 && horizDistSq < 3.0 && dy > 2.4 && dy < 4.6) {
+      this.damageBoss();
+      this.playerVel.y = 12.8;
+      this.hoverFuel = 1;
+      return;
+    }
+
+    // 2. Spin Attack against Boss Core/Torso
+    if (this.spinTimer > 0 && horizDistSq < 5.0 && dy >= -0.4 && dy < 2.8) {
+      this.damageBoss();
+      this.playerVel.set((toPlayerX / dist) * 7.5, 6.5, (toPlayerZ / dist) * 7.5);
+      return;
+    }
+
+    // 3. Body Contact Damage
+    if (horizDistSq < 2.6 && dy >= -0.5 && dy < 2.7) {
+      this.damagePlayer(toPlayerX, toPlayerZ);
+    }
+  }
+
+  private damageBoss() {
+    const b = this.bossRuntime;
+    if (!b || !b.alive || b.invulnTimer > 0) return;
+
+    b.hp -= 1;
+    b.invulnTimer = 0.85;
+    this.hitstopTimer = 0.06;
+    this.shakeIntensity = 0.45;
+    this.spawnBurst(b.pos.x, b.pos.y + 2.2, b.pos.z, 0xfbbf24, 28, 7.0);
+
+    if (b.hp <= 0) {
+      b.alive = false;
+      b.rig.root.visible = false;
+      soundEngine.playBossDefeat();
+      this.spawnBurst(b.pos.x, b.pos.y + 2.4, b.pos.z, 0xf43f5e, 45, 9.5);
+      this.spawnBurst(b.pos.x, b.pos.y + 2.4, b.pos.z, 0x38bdf8, 45, 9.0);
+      this.coinsCollected += 15;
+      if (this.goalPortal) {
+        this.goalPortal.locked = false;
+        this.goalPortal.vortex.visible = true;
+        this.goalPortal.portalMat.color.setHex(0x38bdf8);
+        this.goalPortal.portalMat.emissive.setHex(0x0ea5e9);
+      }
+      soundEngine.setMusicContext(this.currentLevel.theme.biome, false, this.phase, false);
+      this.showBanner(`¡${b.name} derrotado! Portal Estelar desbloqueado`, 4.2);
+    } else {
+      soundEngine.playBossHit();
+      this.showBanner(`¡Impacto a ${b.name}! (${b.hp}/${b.maxHp})`, 1.8);
+    }
+    this.pushHud(true);
   }
 
   private damagePlayer(knockX: number, knockZ: number) {
@@ -2154,22 +2994,36 @@ export class GameEngine {
       rig.thrusterRight.visible = false;
     } else {
       rig.rightArm.rotation.z = 0;
-      const runFactor = Math.min(1, groundSpeed / 8.5);
-      const stride = Math.sin(this.totalTime * 15) * runFactor;
-      if (this.grounded) {
-        rig.leftLeg.rotation.x = stride * 0.85;
-        rig.rightLeg.rotation.x = -stride * 0.85;
-        rig.leftArm.rotation.x = this.hasBow ? -0.55 : -stride * 0.75;
-        rig.rightArm.rotation.x = stride * 0.75;
-        rig.bodyGroup.position.y = Math.abs(stride) * 0.05;
-      } else {
-        rig.leftLeg.rotation.x = 0.35;
-        rig.rightLeg.rotation.x = -0.25;
-        rig.leftArm.rotation.x = -0.65;
-        rig.rightArm.rotation.x = -0.65;
+      if (this.isClimbing) {
+        const climbMotion = Math.sin(this.playerPos.y * 5.5);
+        rig.leftArm.rotation.x = -2.35 + climbMotion * 0.45;
+        rig.rightArm.rotation.x = -2.35 - climbMotion * 0.45;
+        rig.leftLeg.rotation.x = -climbMotion * 0.45;
+        rig.rightLeg.rotation.x = climbMotion * 0.45;
         rig.bodyGroup.position.y = 0;
+      } else {
+        const runFactor = Math.min(1, groundSpeed / 8.5);
+        const stride = Math.sin(this.totalTime * 15) * runFactor;
+        if (this.grounded) {
+          rig.leftLeg.rotation.x = stride * 0.85;
+          rig.rightLeg.rotation.x = -stride * 0.85;
+          rig.leftArm.rotation.x = this.hasBow ? -0.55 : -stride * 0.75;
+          rig.rightArm.rotation.x = stride * 0.75;
+          rig.bodyGroup.position.y = Math.abs(stride) * 0.05;
+        } else {
+          rig.leftLeg.rotation.x = 0.35;
+          rig.rightLeg.rotation.x = -0.25;
+          rig.leftArm.rotation.x = -0.65;
+          rig.rightArm.rotation.x = -0.65;
+          rig.bodyGroup.position.y = 0;
+        }
+        rig.capeGroup.rotation.x = 0.25 + runFactor * 0.55 + (this.isHovering ? 0.5 : 0);
       }
-      rig.capeGroup.rotation.x = 0.25 + runFactor * 0.55 + (this.isHovering ? 0.5 : 0);
+
+      if (this.hasMonkeySuit) {
+        rig.monkeyTail.rotation.y = Math.sin(this.totalTime * (this.isClimbing ? 10 : 6)) * 0.42;
+        rig.monkeyTail.rotation.x = Math.cos(this.totalTime * 4) * 0.14;
+      }
 
       rig.hoverBeam.visible = this.isHovering;
       rig.thrusterLeft.visible = this.isHovering;
@@ -2275,6 +3129,10 @@ export class GameEngine {
     const now = performance.now();
     if (!force && now - this.lastHudPush < 80) return;
     this.lastHudPush = now;
+    const bossHud =
+      this.bossRuntime && this.bossRuntime.alive && this.bossRuntime.active
+        ? { name: this.bossRuntime.name, hp: this.bossRuntime.hp, maxHp: this.bossRuntime.maxHp }
+        : null;
     this.onHudUpdate({
       phase: this.phase,
       levelIndex: this.currentLevel.index,
@@ -2282,6 +3140,9 @@ export class GameEngine {
       biome: this.currentLevel.theme.biome,
       perspectiveMode: this.perspectiveMode,
       hasBow: this.hasBow,
+      hasMonkeySuit: this.hasMonkeySuit,
+      isClimbing: this.isClimbing,
+      boss: bossHud,
       health: this.health,
       maxHealth: this.maxHealth,
       coins: this.coinsCollected,

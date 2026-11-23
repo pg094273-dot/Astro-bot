@@ -2,20 +2,20 @@ import { LevelDef } from './types';
 
 export const LEVELS: LevelDef[] = [
   // =========================================================================
-  // NIVEL 1: SELVA ESMERALDA (Largo: 3D + Arco y Flechas + 2D Lateral + 3D)
+  // NIVEL 1: SELVA ESMERALDA (3D + Arco Estelar + 2D Lateral + 3D)
   // =========================================================================
   {
     index: 0,
     id: 'emerald-jungle',
     name: 'Selva Esmeralda',
-    subtitle: 'Ruinas 3D, Arco Estelar, pasarela 2D y templos entre copas',
+    subtitle: 'Ruinas 3D, Arco Estelar, pasarela 2D y guardianes entre copas',
     theme: {
       biome: 'jungle',
       skyTop: '#0284c7',
       skyHorizon: '#bbf7d0',
       fogColor: '#86efac',
       fogNear: 60,
-      fogFar: 185,
+      fogFar: 195,
       keyLightColor: 0xfffbeb,
       keyLightIntensity: 2.2,
       hemiSkyColor: 0x7dd3fc,
@@ -34,12 +34,11 @@ export const LEVELS: LevelDef[] = [
     ],
     goalPos: [50, 12.3, -104],
     platforms: [
-      // 3D Intro Islands
       { id: 'j-start', pos: [0, 0, 0], size: [10, 2, 10], kind: 'solid', style: 'jungle' },
       { id: 'j-step1', pos: [0, 0.8, -11], size: [7, 1.4, 7], kind: 'solid', style: 'tech' },
       { id: 'j-bow-bridge', pos: [-6, 1.6, -11], size: [4.4, 0.8, 3.2], kind: 'glass', style: 'crystal', linkedTargetId: 't-j1' },
       { id: 'j-side1', pos: [-12, 2.0, -11], size: [5, 1.2, 5], kind: 'solid', style: 'gold' },
-      { id: 'j-court', pos: [0, 1.4, -22], size: [8, 1.6, 8], kind: 'solid', style: 'jungle' },
+      { id: 'j-court', pos: [0, 1.4, -22], size: [8.5, 1.6, 8.5], kind: 'solid', style: 'jungle' },
       { id: 'j-entry2d', pos: [0, 1.8, -32], size: [7, 1.6, 6], kind: 'solid', style: 'jungle' },
 
       // 2D Side-Scrolling Jungle Wall (z = -38, x = 0 -> 50)
@@ -50,10 +49,10 @@ export const LEVELS: LevelDef[] = [
         size: [4.2, 1.0, 3.8],
         kind: 'moving',
         style: 'tech',
-        moveOffset: [2.2, 0.6, 0],
-        moveSpeed: 1.5,
+        moveOffset: [2.2, 0.7, 0],
+        moveSpeed: 1.6,
       },
-      { id: 'j-2d-mid', pos: [25, 3.4, -38], size: [7.5, 1.4, 3.8], kind: 'solid', style: 'jungle' },
+      { id: 'j-2d-mid', pos: [25, 3.4, -38], size: [8.0, 1.4, 3.8], kind: 'solid', style: 'jungle' },
       {
         id: 'j-2d-move2',
         pos: [34.5, 4.0, -38],
@@ -61,13 +60,13 @@ export const LEVELS: LevelDef[] = [
         kind: 'moving',
         style: 'tech',
         moveOffset: [2.0, 0.9, 0],
-        moveSpeed: 1.6,
+        moveSpeed: 1.7,
       },
       { id: 'j-2d-2', pos: [43, 4.6, -38], size: [6.5, 1.4, 3.8], kind: 'solid', style: 'jungle' },
       { id: 'j-2d-exit', pos: [50, 5.0, -38], size: [6.5, 1.6, 6.5], kind: 'solid', style: 'gold' },
 
-      // Back to 3D Upper Canopy Ascent (x = 50, z = -38 -> -104)
-      { id: 'j-3d-canopy1', pos: [50, 5.4, -50], size: [8.5, 1.6, 8.5], kind: 'solid', style: 'jungle' },
+      // Back to 3D Upper Canopy Ascent
+      { id: 'j-3d-canopy1', pos: [50, 5.4, -50], size: [9, 1.6, 9], kind: 'solid', style: 'jungle' },
       {
         id: 'j-3d-move',
         pos: [50, 6.0, -61],
@@ -75,10 +74,10 @@ export const LEVELS: LevelDef[] = [
         kind: 'moving',
         style: 'tech',
         moveOffset: [4.0, 0, 0],
-        moveSpeed: 1.5,
+        moveSpeed: 1.65,
       },
-      { id: 'j-3d-canopy2', pos: [50, 6.6, -73], size: [9, 1.6, 9], kind: 'solid', style: 'jungle' },
-      { id: 'j-3d-high', pos: [50, 10.6, -86], size: [7.5, 1.5, 7.5], kind: 'solid', style: 'tech' },
+      { id: 'j-3d-canopy2', pos: [50, 6.6, -73], size: [9.5, 1.6, 9.5], kind: 'solid', style: 'jungle' },
+      { id: 'j-3d-high', pos: [50, 10.6, -86], size: [8, 1.5, 8], kind: 'solid', style: 'tech' },
       { id: 'j-3d-goal-bridge', pos: [50, 11.2, -94.5], size: [4.8, 0.9, 6.5], kind: 'glass', style: 'crystal', linkedTargetId: 't-j2' },
       { id: 'j-3d-goal', pos: [50, 11.4, -104], size: [10, 1.8, 10], kind: 'solid', style: 'gold' },
     ],
@@ -91,9 +90,7 @@ export const LEVELS: LevelDef[] = [
         lockCoord: -38,
       },
     ],
-    jumpPads: [
-      { pos: [50, 7.4, -76], boost: 18.2 },
-    ],
+    jumpPads: [{ pos: [50, 7.4, -76], boost: 18.2 }],
     crates: [
       { id: 'jc1', pos: [-3.0, 1.0, -2.5], coins: 3 },
       { id: 'jc2', pos: [3.0, 1.0, -2.5], coins: 3 },
@@ -124,14 +121,17 @@ export const LEVELS: LevelDef[] = [
       { id: 'mb-1-3', name: 'Astro Tucán', pos: [52.5, 7.4, -74] },
     ],
     enemies: [
-      { id: 'ej-1', kind: 'chomper', pos: [0, 1.5, -11], patrolOffset: [2.0, 0, 0], speed: 1.9 },
-      { id: 'ej-2', kind: 'hopper', pos: [0, 2.2, -22], patrolOffset: [2.2, 0, 0], speed: 1.8 },
-      { id: 'ej-3', kind: 'chomper', pos: [25, 4.1, -38], patrolOffset: [2.4, 0, 0], speed: 2.0 },
-      { id: 'ej-4', kind: 'spiky', pos: [50, 6.2, -50], patrolOffset: [2.4, 0, 0], speed: 2.0 },
-      { id: 'ej-5', kind: 'hopper', pos: [50, 7.4, -73], patrolOffset: [2.5, 0, 0], speed: 2.1 },
+      { id: 'ej-1', kind: 'chomper', pos: [0, 1.5, -11], patrolOffset: [2.2, 0, 0], speed: 2.0 },
+      { id: 'ej-2', kind: 'hopper', pos: [0, 2.2, -22], patrolOffset: [2.4, 0, 0], speed: 2.1 },
+      { id: 'ej-3', kind: 'spiky', pos: [0, 2.6, -32], patrolOffset: [2.1, 0, 0], speed: 2.0 },
+      { id: 'ej-4', kind: 'chomper', pos: [25, 4.1, -38], patrolOffset: [2.6, 0, 0], speed: 2.2 },
+      { id: 'ej-5', kind: 'spiky', pos: [50, 6.2, -50], patrolOffset: [2.6, 0, 0], speed: 2.2 },
+      { id: 'ej-6', kind: 'hopper', pos: [50, 7.4, -73], patrolOffset: [2.6, 0, 0], speed: 2.3 },
+      { id: 'ej-7', kind: 'brute', pos: [50, 11.4, -86], patrolOffset: [2.3, 0, 0], speed: 1.7 },
     ],
     lasers: [
-      { pos: [25, 4.6, -38], length: 3.6, axis: 'z', period: 3.1, phase: 0.2 },
+      { pos: [25, 4.6, -38], length: 3.6, axis: 'z', period: 2.9, phase: 0.2 },
+      { pos: [50, 7.9, -73], length: 8.5, axis: 'x', period: 3.0, phase: 0.8 },
     ],
     checkpoints: [
       { id: 'cp-j1', pos: [50, 5.8, -38] },
@@ -140,7 +140,7 @@ export const LEVELS: LevelDef[] = [
   },
 
   // =========================================================================
-  // NIVEL 2: DUNAS DEL DESIERTO (Tramo 2D largo + Cohete Astro LARGO y SUAVE)
+  // NIVEL 2: DUNAS DEL DESIERTO (Muralla 2D larga + Cohete Astro LARGO)
   // =========================================================================
   {
     index: 1,
@@ -152,8 +152,8 @@ export const LEVELS: LevelDef[] = [
       skyTop: '#1e1b4b',
       skyHorizon: '#fdba74',
       fogColor: '#ea580c',
-      fogNear: 70,
-      fogFar: 240,
+      fogNear: 75,
+      fogFar: 250,
       keyLightColor: 0xffedd5,
       keyLightIntensity: 2.35,
       hemiSkyColor: 0xfdba74,
@@ -167,10 +167,7 @@ export const LEVELS: LevelDef[] = [
     spawn: [0, 1.5, 0],
     goalPos: [0, 9.9, -284],
     platforms: [
-      // 3D Desert Courtyard
       { id: 'd-start', pos: [0, 0, 0], size: [10, 2, 10], kind: 'solid', style: 'desert' },
-
-      // Extended 2D Sandstone Canyon Wall (along Z at x=0, z = -11 -> -56)
       { id: 'd-2d-1', pos: [0, 0.8, -11.5], size: [3.8, 1.4, 7.5], kind: 'solid', style: 'desert' },
       { id: 'd-2d-c1', pos: [0, 1.6, -19.5], size: [3.6, 1.0, 4.5], kind: 'crumble', style: 'desert' },
       { id: 'd-2d-mid', pos: [0, 2.2, -28.5], size: [3.8, 1.4, 8], kind: 'solid', style: 'desert' },
@@ -181,16 +178,14 @@ export const LEVELS: LevelDef[] = [
         kind: 'moving',
         style: 'tech',
         moveOffset: [0, 1.3, 0],
-        moveSpeed: 1.5,
+        moveSpeed: 1.6,
       },
       { id: 'd-2d-c2', pos: [0, 3.6, -45.5], size: [3.6, 1.0, 4.5], kind: 'crumble', style: 'desert' },
       { id: 'd-2d-2', pos: [0, 3.8, -53], size: [3.8, 1.4, 6.5], kind: 'solid', style: 'desert' },
 
-      // Rocket Launchpad Terrace (back to 3D)
       { id: 'd-launchpad', pos: [0, 4.0, -64], size: [10.5, 1.8, 11], kind: 'solid', style: 'gold' },
       { id: 'd-side-bot', pos: [-10, 5.2, -64], size: [4.8, 1.2, 4.8], kind: 'solid', style: 'desert' },
 
-      // Landing & Pyramid Summit Finale (after long ~190m Rocket Canyon)
       { id: 'd-landing', pos: [0, 7.2, -258], size: [12, 2.0, 12], kind: 'solid', style: 'gold' },
       { id: 'd-bridge', pos: [0, 8.2, -271], size: [6.5, 1.4, 7.5], kind: 'solid', style: 'desert' },
       { id: 'd-goal', pos: [0, 9.0, -284], size: [10.5, 1.8, 10.5], kind: 'solid', style: 'desert' },
@@ -234,9 +229,7 @@ export const LEVELS: LevelDef[] = [
         [-2.8, 8.8, -236],
       ],
     },
-    jumpPads: [
-      { pos: [-3.5, 4.9, -64], boost: 13.5 },
-    ],
+    jumpPads: [{ pos: [-3.5, 4.9, -64], boost: 13.5 }],
     crates: [
       { id: 'dc1', pos: [-2.8, 1.0, -2.5], coins: 3 },
       { id: 'dc2', pos: [2.8, 1.0, -2.5], coins: 3 },
@@ -249,7 +242,6 @@ export const LEVELS: LevelDef[] = [
       { pos: [0, 3.7, -28.5] },
       { pos: [0, 5.1, -45.5] },
       { pos: [-6, 5.9, -64] },
-      // Airborne Rocket coin trails
       { pos: [0, 6.5, -84] },
       { pos: [-3.5, 7.5, -100] },
       { pos: [3.6, 8.6, -116] },
@@ -271,19 +263,22 @@ export const LEVELS: LevelDef[] = [
       { id: 'mb-2-3', name: 'Astro Sol', pos: [3.6, 8.2, -258] },
     ],
     enemies: [
-      { id: 'ed-1', kind: 'chomper', pos: [0, 1.5, -11.5], patrolOffset: [0, 0, 2.1], speed: 1.9 },
-      { id: 'ed-2', kind: 'chomper', pos: [0, 2.9, -28.5], patrolOffset: [0, 0, 2.2], speed: 2.0 },
-      { id: 'ed-3', kind: 'spiky', pos: [0, 8.2, -260], patrolOffset: [2.8, 0, 0], speed: 2.1 },
-      { id: 'ed-4', kind: 'hopper', pos: [0, 8.9, -271], patrolOffset: [2.0, 0, 0], speed: 2.2 },
+      { id: 'ed-1', kind: 'chomper', pos: [0, 1.5, -11.5], patrolOffset: [0, 0, 2.2], speed: 2.1 },
+      { id: 'ed-2', kind: 'chomper', pos: [0, 2.9, -28.5], patrolOffset: [0, 0, 2.4], speed: 2.2 },
+      { id: 'ed-3', kind: 'spiky', pos: [0, 4.5, -53], patrolOffset: [0, 0, 1.8], speed: 2.0 },
+      { id: 'ed-4', kind: 'brute', pos: [0, 8.2, -259], patrolOffset: [3.2, 0, 0], speed: 1.8 },
+      { id: 'ed-5', kind: 'hopper', pos: [0, 8.9, -271], patrolOffset: [2.2, 0, 0], speed: 2.3 },
+      { id: 'ed-6', kind: 'spiky', pos: [0, 9.9, -281], patrolOffset: [3.0, 0, 0], speed: 2.2 },
     ],
     lasers: [
-      { pos: [0, 5.0, -53], length: 3.6, axis: 'x', period: 3.0, phase: 0.4 },
+      { pos: [0, 5.0, -53], length: 3.6, axis: 'x', period: 2.8, phase: 0.4 },
+      { pos: [0, 9.3, -271], length: 6.2, axis: 'x', period: 2.6, phase: 0.2 },
     ],
     checkpoints: [{ id: 'cp-d1', pos: [3.2, 4.9, -63] }],
   },
 
   // =========================================================================
-  // NIVEL 3: GLACIAR AURORA (Hielo 3D largo + Arco Estelar + Tramo 2D Glacial)
+  // NIVEL 3: GLACIAR AURORA (Hielo 3D + Arco Estelar + 2D + Fortaleza Polar)
   // =========================================================================
   {
     index: 2,
@@ -295,8 +290,8 @@ export const LEVELS: LevelDef[] = [
       skyTop: '#020617',
       skyHorizon: '#38bdf8',
       fogColor: '#0c4a6e',
-      fogNear: 54,
-      fogFar: 185,
+      fogNear: 56,
+      fogFar: 195,
       keyLightColor: 0xe0f2fe,
       keyLightIntensity: 2.1,
       hemiSkyColor: 0x67e8f9,
@@ -309,26 +304,23 @@ export const LEVELS: LevelDef[] = [
     },
     spawn: [0, 1.5, 0],
     bowPickupPos: [0, 1.0, -3.2],
-    targets: [
-      { id: 't-i1', pos: [-34, 7.4, -55], coins: 5 },
-    ],
+    targets: [{ id: 't-i1', pos: [-34, 7.4, -55], coins: 5 }],
     goalPos: [-48, 12.9, -110],
     platforms: [
-      // 3D Slippery Ice Intro
       { id: 'i-start', pos: [0, 0, 0], size: [9.5, 2, 9.5], kind: 'ice', style: 'ice' },
       { id: 'i-glass1', pos: [0, 1.0, -10.5], size: [4.8, 0.9, 5.2], kind: 'glass', style: 'crystal' },
       { id: 'i-plat1', pos: [0, 1.8, -20.5], size: [8.5, 1.6, 8.5], kind: 'ice', style: 'ice' },
       { id: 'i-step-pre2d', pos: [0, 2.2, -31], size: [6.5, 1.4, 6.5], kind: 'ice', style: 'ice' },
       { id: 'i-2d-entry', pos: [0, 2.6, -41], size: [6.5, 1.6, 5.8], kind: 'solid', style: 'tech' },
 
-      // Extended 2D Glacial Wall (x = 0 -> -48 at z = -41)
+      // Extended 2D Glacial Wall
       {
         id: 'i-2d-conv1',
         pos: [-9.5, 3.0, -41],
         size: [8, 1.2, 3.6],
         kind: 'conveyor',
         style: 'tech',
-        conveyorDir: [3.0, 0],
+        conveyorDir: [3.2, 0],
       },
       { id: 'i-2d-mid', pos: [-19.5, 3.6, -41], size: [6.8, 1.4, 3.8], kind: 'solid', style: 'ice' },
       {
@@ -338,7 +330,7 @@ export const LEVELS: LevelDef[] = [
         kind: 'moving',
         style: 'ice',
         moveOffset: [0, 1.8, 0],
-        moveSpeed: 1.6,
+        moveSpeed: 1.7,
       },
       {
         id: 'i-2d-conv2',
@@ -346,11 +338,11 @@ export const LEVELS: LevelDef[] = [
         size: [7.5, 1.2, 3.6],
         kind: 'conveyor',
         style: 'tech',
-        conveyorDir: [-2.8, 0],
+        conveyorDir: [-3.0, 0],
       },
       { id: 'i-2d-exit', pos: [-48, 5.4, -41], size: [7, 1.6, 6.5], kind: 'solid', style: 'gold' },
 
-      // Extended 3D Glacier Fortress Finale (x = -48, z = -41 -> -110)
+      // Extended 3D Glacier Fortress Finale
       { id: 'i-3d-arena1', pos: [-48, 5.8, -55], size: [9.5, 1.8, 9.5], kind: 'ice', style: 'ice' },
       { id: 'i-3d-side-bridge', pos: [-39.5, 6.4, -55], size: [4.6, 0.9, 3.4], kind: 'glass', style: 'crystal', linkedTargetId: 't-i1' },
       { id: 'i-3d-side', pos: [-33, 6.8, -55], size: [5, 1.2, 5], kind: 'solid', style: 'gold' },
@@ -368,9 +360,7 @@ export const LEVELS: LevelDef[] = [
         lockCoord: -41,
       },
     ],
-    jumpPads: [
-      { pos: [-48, 8.1, -86.5], boost: 18.2 },
-    ],
+    jumpPads: [{ pos: [-48, 8.1, -86.5], boost: 18.2 }],
     crates: [
       { id: 'ic1', pos: [-2.6, 1.0, -2.5], coins: 3 },
       { id: 'ic2', pos: [2.6, 1.0, -2.5], coins: 3 },
@@ -398,20 +388,427 @@ export const LEVELS: LevelDef[] = [
       { id: 'mb-3-3', name: 'Astro Boreal', pos: [-45, 12.9, -110] },
     ],
     enemies: [
-      { id: 'ei-1', kind: 'spiky', pos: [0, 2.6, -20.5], patrolOffset: [2.2, 0, 0], speed: 2.1 },
-      { id: 'ei-2', kind: 'chomper', pos: [-19.5, 4.3, -41], patrolOffset: [2.1, 0, 0], speed: 2.2 },
-      { id: 'ei-3', kind: 'spiky', pos: [-48, 7.1, -69], patrolOffset: [1.8, 0, 0], speed: 2.1 },
-      { id: 'ei-4', kind: 'hopper', pos: [-48, 8.1, -82], patrolOffset: [2.6, 0, 0], speed: 2.4 },
-      { id: 'ei-5', kind: 'spiky', pos: [-48, 8.1, -84.5], patrolOffset: [2.6, 0, 0], speed: 2.3 },
+      { id: 'ei-1', kind: 'spiky', pos: [0, 2.6, -20.5], patrolOffset: [2.4, 0, 0], speed: 2.2 },
+      { id: 'ei-2', kind: 'hopper', pos: [0, 2.9, -31], patrolOffset: [2.0, 0, 0], speed: 2.1 },
+      { id: 'ei-3', kind: 'chomper', pos: [-19.5, 4.3, -41], patrolOffset: [2.2, 0, 0], speed: 2.3 },
+      { id: 'ei-4', kind: 'brute', pos: [-48, 6.7, -55], patrolOffset: [2.8, 0, 0], speed: 1.8 },
+      { id: 'ei-5', kind: 'spiky', pos: [-48, 7.1, -69], patrolOffset: [2.0, 0, 0], speed: 2.2 },
+      { id: 'ei-6', kind: 'hopper', pos: [-48, 8.1, -82], patrolOffset: [2.6, 0, 0], speed: 2.4 },
+      { id: 'ei-7', kind: 'spiky', pos: [-48, 8.1, -84.5], patrolOffset: [2.6, 0, 0], speed: 2.4 },
     ],
     lasers: [
-      { pos: [0, 3.1, -20.5], length: 7.8, axis: 'x', period: 2.8, phase: 0 },
-      { pos: [-19.5, 4.8, -41], length: 3.6, axis: 'z', period: 2.9, phase: 0.6 },
-      { pos: [-48, 8.6, -83], length: 9.0, axis: 'z', period: 2.6, phase: 0.9 },
+      { pos: [0, 3.1, -20.5], length: 7.8, axis: 'x', period: 2.7, phase: 0 },
+      { pos: [-19.5, 4.8, -41], length: 3.6, axis: 'z', period: 2.8, phase: 0.6 },
+      { pos: [-48, 8.6, -83], length: 9.0, axis: 'z', period: 2.5, phase: 0.9 },
     ],
     checkpoints: [
       { id: 'cp-i1', pos: [-48, 6.2, -41] },
       { id: 'cp-i2', pos: [-50.5, 8.1, -83] },
+    ],
+  },
+
+  // =========================================================================
+  // NIVEL 4: TEMPLO DEL MONO (Disfraz Traje de Mono + Escalada Vertical + 2D)
+  // =========================================================================
+  {
+    index: 3,
+    id: 'monkey-temple',
+    name: 'Templo del Mono',
+    subtitle: 'Ponte el Traje de Mono para trepar muros antiguos hacia la cima',
+    theme: {
+      biome: 'jungle',
+      skyTop: '#0369a1',
+      skyHorizon: '#a7f3d0',
+      fogColor: '#6ee7b7',
+      fogNear: 62,
+      fogFar: 205,
+      keyLightColor: 0xfef3c7,
+      keyLightIntensity: 2.25,
+      hemiSkyColor: 0x67e8f9,
+      hemiGroundColor: 0x064e3b,
+      hemiIntensity: 1.05,
+      accentColor: '#10b981',
+      hazardFloorY: -12,
+      hazardColor: 0x047857,
+      hazardEmissive: 0x065f46,
+    },
+    spawn: [0, 1.5, 0],
+    monkeySuitPos: [0, 1.0, -3.5],
+    goalPos: [-16, 24.1, -84],
+    climbWalls: [
+      // Wall 1: climb +Z face from m-base1 (z=-28) up to y=8.8
+      { id: 'cw-1', pos: [0, 5.2, -30], size: [5.8, 7.2, 4.0], face: 'pz' },
+      // Wall 2: climb +X face from m-pre-cw2 (x=-3.5) up to y=15.7
+      { id: 'cw-2', pos: [-5.5, 12.2, -49], size: [4.0, 7.0, 5.8], face: 'px' },
+      // Wall 3: climb +Z face from m-tower-base (z=-72) up to y=23.2
+      { id: 'cw-3', pos: [-16, 19.6, -74], size: [6.2, 7.2, 4.0], face: 'pz' },
+      // Secret side climb wall for Mini-Bot 2
+      { id: 'cw-secret', pos: [6.5, 12.0, -37], size: [4.0, 6.4, 4.8], face: 'nx' },
+    ],
+    platforms: [
+      { id: 'm-start', pos: [0, 0, 0], size: [10, 2, 10], kind: 'solid', style: 'jungle' },
+      { id: 'm-step1', pos: [0, 0.6, -11.5], size: [7.5, 1.4, 7.5], kind: 'solid', style: 'jungle' },
+      { id: 'm-base1', pos: [0, 1.0, -24], size: [8, 1.6, 8], kind: 'solid', style: 'gold' },
+
+      // Top of cw-1 is y=8.8, z=-28..-32 -> step onto m-canopy1
+      { id: 'm-canopy1', pos: [0, 8.2, -37], size: [8, 1.4, 8.5], kind: 'solid', style: 'jungle' },
+      // Top of cw-secret is y=15.2, x=4.5..8.5, z=-37
+      { id: 'm-pre-cw2', pos: [0, 8.2, -49], size: [7, 1.4, 7.5], kind: 'solid', style: 'tech' },
+
+      // Top of cw-2 is y=15.7, x=-3.5..-7.5, z=-49 -> 2D Vine Bridge leftwards to x=-16
+      { id: 'm-2d-c1', pos: [-11.5, 15.0, -49], size: [4.8, 1.1, 3.8], kind: 'crumble', style: 'jungle' },
+      {
+        id: 'm-2d-move',
+        pos: [-16, 15.2, -57],
+        size: [4.6, 1.1, 4.6],
+        kind: 'moving',
+        style: 'tech',
+        moveOffset: [0, 0, 2.2],
+        moveSpeed: 1.7,
+      },
+      { id: 'm-tower-base', pos: [-16, 15.4, -68], size: [8.5, 1.6, 8], kind: 'solid', style: 'gold' },
+
+      // Top of cw-3 is y=23.2, z=-72..-76 -> Summit Arena
+      { id: 'm-summit', pos: [-16, 22.4, -84], size: [11, 1.8, 11], kind: 'solid', style: 'gold' },
+    ],
+    zones2D: [
+      {
+        id: 'monkey-2d-ledge',
+        min: [-14.5, 11, -52.5],
+        max: [-7.5, 22, -45.5],
+        moveAxis: 'x',
+        lockCoord: -49,
+      },
+    ],
+    jumpPads: [{ pos: [2.8, 9.0, -37], boost: 13.5 }],
+    crates: [
+      { id: 'mc1', pos: [-2.8, 1.0, -2.5], coins: 3 },
+      { id: 'mc2', pos: [2.8, 1.0, -2.5], coins: 3 },
+      { id: 'mc3', pos: [-2.8, 9.0, -36], coins: 3 },
+      { id: 'mc4', pos: [-18.5, 16.2, -67], coins: 3 },
+    ],
+    coins: [
+      { pos: [0, 2.1, -11.5] },
+      { pos: [0, 2.8, -24] },
+      { pos: [0, 5.2, -27.5] },
+      { pos: [0, 7.5, -27.5] },
+      { pos: [0, 10.1, -37] },
+      { pos: [6.5, 16.5, -37] },
+      { pos: [-3.0, 12.2, -49] },
+      { pos: [-3.0, 14.5, -49] },
+      { pos: [-11.5, 16.6, -49] },
+      { pos: [-16, 17.2, -68] },
+      { pos: [-16, 19.8, -71.5] },
+      { pos: [-16, 22.2, -71.5] },
+      { pos: [-18, 24.4, -82] },
+      { pos: [-14, 24.4, -82] },
+    ],
+    miniBots: [
+      { id: 'mb-4-1', name: 'Astro Simio', pos: [0, 9.0, -49] },
+      { id: 'mb-4-2', name: 'Astro Lémur', pos: [6.5, 15.2, -37] },
+      { id: 'mb-4-3', name: 'Astro Totem', pos: [-13.5, 23.3, -84] },
+    ],
+    enemies: [
+      { id: 'em-1', kind: 'chomper', pos: [0, 1.3, -11.5], patrolOffset: [2.4, 0, 0], speed: 2.2 },
+      { id: 'em-2', kind: 'spiky', pos: [0, 1.8, -24], patrolOffset: [2.5, 0, 0], speed: 2.1 },
+      { id: 'em-3', kind: 'hopper', pos: [0, 8.9, -37], patrolOffset: [2.4, 0, 0], speed: 2.3 },
+      { id: 'em-4', kind: 'chomper', pos: [0, 8.9, -49], patrolOffset: [2.0, 0, 0], speed: 2.3 },
+      { id: 'em-5', kind: 'spiky', pos: [-16, 16.2, -68], patrolOffset: [2.6, 0, 0], speed: 2.3 },
+      { id: 'em-6', kind: 'brute', pos: [-16, 23.3, -82], patrolOffset: [3.2, 0, 0], speed: 1.9 },
+    ],
+    lasers: [
+      { pos: [0, 2.3, -24], length: 7.5, axis: 'x', period: 2.8, phase: 0.3 },
+      { pos: [-16, 16.7, -68], length: 7.5, axis: 'z', period: 2.6, phase: 0.5 },
+    ],
+    checkpoints: [
+      { id: 'cp-m1', pos: [2.8, 8.9, -39.5] },
+      { id: 'cp-m2', pos: [-13.5, 16.2, -68] },
+    ],
+  },
+
+  // =========================================================================
+  // NIVEL 5: CAÑÓN VOLCÁNICO (Basalto sobre Lava + Cohete Volcánico + Brutes)
+  // =========================================================================
+  {
+    index: 4,
+    id: 'volcanic-canyon',
+    name: 'Cañón Volcánico',
+    subtitle: 'Basalto sobre magma, cintas térmicas, Arco y Cohete en la caldera',
+    theme: {
+      biome: 'volcanic',
+      skyTop: '#1c0a0a',
+      skyHorizon: '#f97316',
+      fogColor: '#9a3412',
+      fogNear: 64,
+      fogFar: 225,
+      keyLightColor: 0xfdba74,
+      keyLightIntensity: 2.35,
+      hemiSkyColor: 0xfb923c,
+      hemiGroundColor: 0x450a0a,
+      hemiIntensity: 1.05,
+      accentColor: '#f97316',
+      hazardFloorY: -12,
+      hazardColor: 0xea580c,
+      hazardEmissive: 0xc2410c,
+    },
+    spawn: [0, 1.5, 0],
+    bowPickupPos: [0, 1.0, -3.2],
+    targets: [{ id: 't-v1', pos: [0, 4.4, -38], coins: 5 }],
+    goalPos: [0, 11.4, -240],
+    platforms: [
+      { id: 'v-start', pos: [0, 0, 0], size: [10, 2, 10], kind: 'solid', style: 'volcanic' },
+      {
+        id: 'v-conv1',
+        pos: [0, 0.8, -11.5],
+        size: [5.5, 1.2, 8],
+        kind: 'conveyor',
+        style: 'volcanic',
+        conveyorDir: [0, 3.6],
+      },
+      { id: 'v-arena1', pos: [0, 1.4, -23.5], size: [9.5, 1.6, 9.5], kind: 'solid', style: 'volcanic' },
+      { id: 'v-bridge-t', pos: [0, 2.2, -33.5], size: [4.8, 0.9, 6.2], kind: 'glass', style: 'crystal', linkedTargetId: 't-v1' },
+
+      // 2D Volcanic Ridge along Z (x = 0, z = -42.5 -> -86)
+      { id: 'v-2d-entry', pos: [0, 2.6, -42.5], size: [6.5, 1.6, 6.5], kind: 'solid', style: 'volcanic' },
+      { id: 'v-2d-c1', pos: [0, 3.2, -51], size: [3.8, 1.0, 4.8], kind: 'crumble', style: 'volcanic' },
+      {
+        id: 'v-2d-move',
+        pos: [0, 3.8, -60],
+        size: [3.8, 1.0, 4.8],
+        kind: 'moving',
+        style: 'tech',
+        moveOffset: [0, 1.0, 2.0],
+        moveSpeed: 1.85,
+      },
+      { id: 'v-2d-c2', pos: [0, 4.4, -69], size: [3.8, 1.0, 4.8], kind: 'crumble', style: 'volcanic' },
+      { id: 'v-2d-mid', pos: [0, 4.7, -76.5], size: [3.8, 1.2, 5.0], kind: 'solid', style: 'volcanic' },
+      { id: 'v-launchpad', pos: [0, 4.7, -86], size: [10.5, 1.8, 11], kind: 'solid', style: 'gold' },
+
+      { id: 'v-landing', pos: [0, 8.2, -212], size: [12, 2.0, 12], kind: 'solid', style: 'gold' },
+      { id: 'v-gauntlet', pos: [0, 9.2, -226], size: [8, 1.6, 9], kind: 'solid', style: 'volcanic' },
+      { id: 'v-goal', pos: [0, 10.5, -240], size: [11, 1.8, 11], kind: 'solid', style: 'gold' },
+    ],
+    zones2D: [
+      {
+        id: 'volcanic-2d-ridge',
+        min: [-3.5, -2, -79.5],
+        max: [3.5, 16, -40],
+        moveAxis: 'z',
+        lockCoord: 0,
+      },
+    ],
+    rocketSection: {
+      launchpadPos: [0, 5.6, -88.5],
+      landingPos: [0, 9.2, -212],
+      cruiseSpeed: 10.4,
+      rings: [
+        [0, 7.2, -104],
+        [3.8, 8.4, -120],
+        [-3.8, 9.2, -136],
+        [0, 10.5, -152],
+        [4.2, 8.8, -168],
+        [-3.6, 9.5, -184],
+        [0, 9.8, -198],
+      ],
+      mines: [
+        [-3.0, 7.4, -112],
+        [0, 8.6, -128],
+        [3.6, 9.2, -144],
+        [-3.4, 9.8, -160],
+        [0, 8.4, -176],
+        [3.2, 9.6, -192],
+      ],
+    },
+    jumpPads: [{ pos: [0, 2.2, -26.5], boost: 14.5 }],
+    crates: [
+      { id: 'vc1', pos: [-3.0, 1.0, -2.5], coins: 3 },
+      { id: 'vc2', pos: [3.0, 1.0, -2.5], coins: 3 },
+      { id: 'vc3', pos: [-3.2, 2.2, -22], coins: 3 },
+      { id: 'vc4', pos: [-3.5, 9.2, -210], coins: 3 },
+    ],
+    coins: [
+      { pos: [0, 2.2, -11.5] },
+      { pos: [0, 3.0, -23.5] },
+      { pos: [0, 3.6, -33.5] },
+      { pos: [0, 7.2, -104] },
+      { pos: [3.8, 8.4, -120] },
+      { pos: [-3.8, 9.2, -136] },
+      { pos: [0, 10.5, -152] },
+      { pos: [4.2, 8.8, -168] },
+      { pos: [-3.6, 9.5, -184] },
+      { pos: [0, 9.8, -198] },
+      { pos: [0, 11.2, -226] },
+      { pos: [-2, 12.2, -237] },
+      { pos: [2, 12.2, -237] },
+    ],
+    miniBots: [
+      { id: 'mb-5-1', name: 'Astro Magma', pos: [-3.2, 2.2, -24.5] },
+      { id: 'mb-5-2', name: 'Astro Basalto', pos: [0, 5.4, -76.5] },
+      { id: 'mb-5-3', name: 'Astro Fénix', pos: [3.4, 10.0, -226] },
+    ],
+    enemies: [
+      { id: 'ev-1', kind: 'spiky', pos: [0, 2.2, -23.5], patrolOffset: [2.8, 0, 0], speed: 2.3 },
+      { id: 'ev-2', kind: 'chomper', pos: [0, 3.4, -42.5], patrolOffset: [0, 0, 2.0], speed: 2.3 },
+      { id: 'ev-3', kind: 'hopper', pos: [0, 5.3, -76.5], patrolOffset: [0, 0, 1.6], speed: 2.4 },
+      { id: 'ev-4', kind: 'brute', pos: [0, 9.2, -212], patrolOffset: [3.4, 0, 0], speed: 2.0 },
+      { id: 'ev-5', kind: 'spiky', pos: [0, 10.0, -226], patrolOffset: [2.5, 0, 0], speed: 2.5 },
+      { id: 'ev-6', kind: 'brute', pos: [0, 11.4, -238], patrolOffset: [3.2, 0, 0], speed: 2.1 },
+    ],
+    lasers: [
+      { pos: [0, 2.7, -23.5], length: 8.6, axis: 'x', period: 2.5, phase: 0.1 },
+      { pos: [0, 10.5, -226], length: 7.5, axis: 'x', period: 2.3, phase: 0.6 },
+    ],
+    checkpoints: [
+      { id: 'cp-v1', pos: [3.2, 5.6, -83] },
+      { id: 'cp-v2', pos: [-3.2, 9.2, -214] },
+    ],
+  },
+
+  // =========================================================================
+  // NIVEL 6: CIUDADELA NEBULOSA (Desafío Final + JEFE FINAL: TITÁN KRAXUS)
+  // =========================================================================
+  {
+    index: 5,
+    id: 'nebula-citadel',
+    name: 'Ciudadela Nebulosa',
+    subtitle: 'Tramo estelar extremo y batalla final contra Titán Kraxus',
+    theme: {
+      biome: 'nebula',
+      skyTop: '#020617',
+      skyHorizon: '#6366f1',
+      fogColor: '#1e1b4b',
+      fogNear: 65,
+      fogFar: 230,
+      keyLightColor: 0xe0e7ff,
+      keyLightIntensity: 2.25,
+      hemiSkyColor: 0xa78bfa,
+      hemiGroundColor: 0x0f172a,
+      hemiIntensity: 1.05,
+      accentColor: '#a855f7',
+      hazardFloorY: -13,
+      hazardColor: 0x312e81,
+      hazardEmissive: 0x4c1d95,
+    },
+    spawn: [0, 1.5, 0],
+    bowPickupPos: [0, 1.0, -3.2],
+    targets: [{ id: 't-n1', pos: [0, 7.8, -68], coins: 5 }],
+    boss: {
+      name: 'Titán Kraxus',
+      pos: [0, 12.0, -142],
+      arenaCenter: [0, 12.0, -138],
+      arenaRadius: 12.5,
+      maxHp: 5,
+    },
+    goalPos: [0, 12.0, -149],
+    platforms: [
+      { id: 'n-start', pos: [0, 0, 0], size: [10, 2, 10], kind: 'solid', style: 'nebula' },
+      { id: 'n-ice1', pos: [0, 1.0, -12], size: [6.5, 1.4, 8], kind: 'ice', style: 'ice' },
+      {
+        id: 'n-move1',
+        pos: [0, 2.0, -23.5],
+        size: [4.6, 1.0, 4.6],
+        kind: 'moving',
+        style: 'tech',
+        moveOffset: [3.8, 0, 0],
+        moveSpeed: 1.85,
+      },
+      { id: 'n-arena1', pos: [0, 2.8, -36], size: [9.5, 1.6, 9.5], kind: 'solid', style: 'nebula' },
+      {
+        id: 'n-conv1',
+        pos: [0, 3.8, -48.5],
+        size: [5.5, 1.2, 8.5],
+        kind: 'conveyor',
+        style: 'tech',
+        conveyorDir: [0, 4.0],
+      },
+      { id: 'n-2d-entry', pos: [0, 4.8, -60], size: [7.5, 1.6, 7], kind: 'solid', style: 'nebula' },
+      { id: 'n-bridge-t', pos: [0, 5.6, -69], size: [4.8, 0.9, 6.5], kind: 'glass', style: 'crystal', linkedTargetId: 't-n1' },
+
+      // 2D Nebula Wall (z = -78, x = 0 -> 38)
+      { id: 'n-2d-1', pos: [6, 6.2, -78], size: [9.5, 1.4, 3.8], kind: 'solid', style: 'nebula' },
+      { id: 'n-2d-c1', pos: [15, 7.0, -78], size: [4.4, 1.0, 3.8], kind: 'crumble', style: 'nebula' },
+      {
+        id: 'n-2d-move2',
+        pos: [23.5, 7.8, -78],
+        size: [4.2, 1.0, 3.8],
+        kind: 'moving',
+        style: 'tech',
+        moveOffset: [2.4, 1.2, 0],
+        moveSpeed: 1.9,
+      },
+      { id: 'n-2d-2', pos: [32, 8.6, -78], size: [7.5, 1.4, 3.8], kind: 'solid', style: 'nebula' },
+      { id: 'n-2d-exit', pos: [39.5, 9.0, -78], size: [7.5, 1.6, 7.5], kind: 'solid', style: 'gold' },
+
+      // Final approach to Boss Arena
+      { id: 'n-app-1', pos: [34, 10.2, -89], size: [6.0, 1.4, 6.0], kind: 'solid', style: 'nebula' },
+      {
+        id: 'n-app-2',
+        pos: [23, 10.4, -98],
+        size: [6.5, 1.4, 6.5],
+        kind: 'moving',
+        style: 'tech',
+        moveOffset: [2.8, 0, 0],
+        moveSpeed: 1.65,
+      },
+      { id: 'n-app-2b', pos: [12, 10.6, -108], size: [6.5, 1.4, 6.5], kind: 'solid', style: 'nebula' },
+      { id: 'n-app-3', pos: [0, 10.8, -117], size: [8, 1.6, 8], kind: 'solid', style: 'gold' },
+
+      // GRAND BOSS ARENA (28x28)
+      { id: 'n-boss-arena', pos: [0, 11.0, -138], size: [28, 2.0, 28], kind: 'solid', style: 'nebula' },
+    ],
+    zones2D: [
+      {
+        id: 'nebula-2d-wall',
+        min: [-1.5, 2, -81.5],
+        max: [38.5, 20, -74.5],
+        moveAxis: 'x',
+        lockCoord: -78,
+      },
+    ],
+    jumpPads: [{ pos: [39.5, 9.8, -80.5], boost: 16.5 }],
+    crates: [
+      { id: 'nc1', pos: [-3.0, 1.0, -2.5], coins: 3 },
+      { id: 'nc2', pos: [3.0, 1.0, -2.5], coins: 3 },
+      { id: 'nc3', pos: [-3.2, 3.6, -35], coins: 3 },
+      { id: 'nc4', pos: [-2.8, 11.6, -116], coins: 3 },
+    ],
+    coins: [
+      { pos: [0, 2.4, -12] },
+      { pos: [0, 3.4, -23.5] },
+      { pos: [0, 4.4, -36] },
+      { pos: [0, 5.4, -48.5] },
+      { pos: [0, 7.0, -69] },
+      { pos: [6, 7.7, -78] },
+      { pos: [15, 8.6, -78] },
+      { pos: [23.5, 9.8, -78] },
+      { pos: [32, 10.1, -78] },
+      { pos: [34, 11.8, -89] },
+      { pos: [23, 12.0, -98] },
+      { pos: [12, 12.2, -108] },
+      { pos: [0, 12.4, -117] },
+      { pos: [-7, 13.0, -138] },
+      { pos: [7, 13.0, -138] },
+    ],
+    miniBots: [
+      { id: 'mb-6-1', name: 'Astro Pulsar', pos: [-3.2, 3.6, -37] },
+      { id: 'mb-6-2', name: 'Astro Cometa', pos: [32, 9.3, -78] },
+      { id: 'mb-6-3', name: 'Astro Corona', pos: [12, 11.3, -108] },
+    ],
+    enemies: [
+      { id: 'en-1', kind: 'spiky', pos: [0, 1.7, -12], patrolOffset: [2.1, 0, 0], speed: 2.3 },
+      { id: 'en-2', kind: 'brute', pos: [0, 3.6, -36], patrolOffset: [3.0, 0, 0], speed: 2.0 },
+      { id: 'en-3', kind: 'hopper', pos: [0, 5.6, -60], patrolOffset: [2.4, 0, 0], speed: 2.4 },
+      { id: 'en-4', kind: 'chomper', pos: [6, 6.9, -78], patrolOffset: [2.6, 0, 0], speed: 2.5 },
+      { id: 'en-5', kind: 'spiky', pos: [32, 9.3, -78], patrolOffset: [2.2, 0, 0], speed: 2.4 },
+      { id: 'en-6', kind: 'brute', pos: [12, 11.3, -108], patrolOffset: [2.0, 0, 0], speed: 2.1 },
+    ],
+    lasers: [
+      { pos: [0, 4.1, -36], length: 8.6, axis: 'x', period: 2.4, phase: 0 },
+      { pos: [12, 11.8, -108], length: 6.0, axis: 'z', period: 2.3, phase: 0.4 },
+    ],
+    checkpoints: [
+      { id: 'cp-n1', pos: [39.5, 9.8, -78] },
+      { id: 'cp-n2', pos: [0, 11.6, -118.5] },
     ],
   },
 ];

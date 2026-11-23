@@ -1,6 +1,14 @@
 import { BiomeKind, GamePhase } from './types';
 
-export type MusicTheme = 'title' | 'jungle' | 'desert' | 'ice' | 'rocket';
+export type MusicTheme =
+  | 'title'
+  | 'jungle'
+  | 'desert'
+  | 'ice'
+  | 'volcanic'
+  | 'nebula'
+  | 'rocket'
+  | 'boss';
 
 interface ThemeArrangement {
   bpm: number;
@@ -12,7 +20,7 @@ interface ThemeArrangement {
   leadFilterHz: number;
   padWave: OscillatorType;
   bassWave: OscillatorType;
-  drumStyle: 'soft' | 'jungle' | 'desert' | 'ice' | 'rocket';
+  drumStyle: 'soft' | 'jungle' | 'desert' | 'ice' | 'volcanic' | 'nebula' | 'rocket' | 'boss';
 }
 
 function midiToFreq(midi: number): number {
@@ -149,6 +157,70 @@ const ARRANGEMENTS: Record<MusicTheme, ThemeArrangement> = {
     drumStyle: 'ice',
   },
 
+  // "Cañón Volcánico" — Driving volcanic synth-rock in E Phrygian at 132 BPM
+  volcanic: {
+    bpm: 132,
+    chords: [
+      [52, 59, 64, 67], // Em5/Em
+      [53, 60, 65, 69], // Fmaj
+      [55, 62, 67, 71], // G
+      [53, 57, 60, 64], // Fmaj7
+    ],
+    bass: [
+      28, 28, 40, 28, 28, 40, 28, 35, 28, 28, 40, 28, 31, 33, 35, 28,
+      29, 29, 41, 29, 29, 41, 29, 36, 29, 29, 41, 29, 33, 36, 38, 41,
+      31, 31, 43, 31, 31, 43, 31, 38, 31, 31, 43, 31, 35, 38, 40, 43,
+      29, 29, 41, 29, 28, 40, 28, 35, 29, 29, 41, 29, 40, 38, 36, 35,
+    ],
+    arp: [
+      76, 79, 83, 88, 83, 79, 76, 83, 77, 81, 84, 89, 84, 81, 77, 84,
+      79, 83, 86, 91, 86, 83, 79, 86, 77, 81, 83, 88, 83, 81, 77, 76,
+    ],
+    lead: [
+      76, null, 77, null, 79, null, 83, null, 84, null, 83, null, 79, null, 77, null,
+      76, null, 72, null, 74, null, 76, null, 77, null, 76, null, 74, null, null, null,
+      79, null, 83, null, 86, null, 84, null, 83, null, 79, null, 77, null, 76, null,
+      77, null, 76, null, 74, null, 72, null, 71, null, 76, null, null, null, null, null,
+    ],
+    leadWave: 'sawtooth',
+    leadFilterHz: 2200,
+    padWave: 'sawtooth',
+    bassWave: 'sawtooth',
+    drumStyle: 'volcanic',
+  },
+
+  // "Ciudadela Nebulosa" — Soaring cosmic synthwave in C# minor at 128 BPM
+  nebula: {
+    bpm: 128,
+    chords: [
+      [61, 64, 68, 73], // C#m
+      [57, 61, 64, 69], // A
+      [59, 63, 66, 71], // B
+      [56, 61, 64, 68], // G#m7
+    ],
+    bass: [
+      37, null, 37, 49, 37, null, 44, null, 37, null, 37, 49, 44, null, 49, null,
+      33, null, 33, 45, 33, null, 40, null, 33, null, 33, 45, 40, null, 45, null,
+      35, null, 35, 47, 35, null, 42, null, 35, null, 35, 47, 42, null, 47, null,
+      32, null, 32, 44, 32, null, 39, null, 32, null, 35, 39, 44, null, 47, null,
+    ],
+    arp: [
+      73, 76, 80, 85, 80, 76, 85, 80, 69, 73, 76, 81, 76, 73, 81, 76,
+      71, 75, 78, 83, 78, 75, 83, 78, 68, 73, 76, 80, 76, 73, 80, 76,
+    ],
+    lead: [
+      80, null, null, 83, 85, null, 88, null, 87, null, 85, null, 83, null, 80, null,
+      81, null, null, 80, 76, null, 80, null, 83, null, null, null, null, null, null, null,
+      83, null, null, 85, 87, null, 90, null, 88, null, 87, null, 85, null, 83, null,
+      80, null, 83, null, 85, null, 80, null, 76, null, null, null, null, null, null, null,
+    ],
+    leadWave: 'triangle',
+    leadFilterHz: 3200,
+    padWave: 'sawtooth',
+    bassWave: 'sawtooth',
+    drumStyle: 'nebula',
+  },
+
   // "Propulsión Estelar" — High-energy Astro Rocket overdrive at 136 BPM
   rocket: {
     bpm: 136,
@@ -179,6 +251,38 @@ const ARRANGEMENTS: Record<MusicTheme, ThemeArrangement> = {
     padWave: 'sawtooth',
     bassWave: 'sawtooth',
     drumStyle: 'rocket',
+  },
+
+  // "Titán Kraxus" — Epic high-tempo Boss Battle at 142 BPM (D minor heroic showdown)
+  boss: {
+    bpm: 142,
+    chords: [
+      [50, 57, 62, 65], // Dm
+      [58, 62, 65, 70], // Bb
+      [55, 58, 62, 67], // Gm
+      [57, 61, 64, 69], // A7
+    ],
+    bass: [
+      26, 38, 26, 38, 26, 38, 26, 38, 26, 38, 26, 38, 29, 41, 31, 43,
+      34, 46, 34, 46, 34, 46, 34, 46, 34, 46, 34, 46, 33, 45, 31, 43,
+      31, 43, 31, 43, 31, 43, 31, 43, 31, 43, 31, 43, 34, 46, 36, 48,
+      33, 45, 33, 45, 33, 45, 33, 45, 37, 49, 38, 50, 40, 52, 43, 55,
+    ],
+    arp: [
+      74, 77, 81, 86, 81, 77, 86, 81, 70, 74, 77, 82, 77, 74, 82, 77,
+      67, 70, 74, 79, 74, 70, 79, 74, 69, 73, 76, 81, 76, 73, 81, 76,
+    ],
+    lead: [
+      74, null, 74, 77, 81, null, 86, null, 85, null, 81, null, 79, null, 77, null,
+      74, null, 77, null, 82, null, 81, null, 79, null, 77, null, 74, null, null, null,
+      79, null, 79, 82, 86, null, 91, null, 89, null, 86, null, 84, null, 82, null,
+      81, null, 85, null, 88, null, 89, null, 88, null, 85, null, 81, null, null, null,
+    ],
+    leadWave: 'sawtooth',
+    leadFilterHz: 2800,
+    padWave: 'sawtooth',
+    bassWave: 'sawtooth',
+    drumStyle: 'boss',
   },
 };
 
@@ -312,9 +416,9 @@ class SoundEngine {
     return this.musicMuted;
   }
 
-  public setMusicContext(biome: BiomeKind, isRocket: boolean, phase: GamePhase) {
+  public setMusicContext(biome: BiomeKind, isRocket: boolean, phase: GamePhase, isBoss = false) {
     const nextTheme: MusicTheme =
-      phase === 'title' ? 'title' : isRocket ? 'rocket' : biome;
+      phase === 'title' ? 'title' : isBoss ? 'boss' : isRocket ? 'rocket' : biome;
     const themeChanged = nextTheme !== this.currentTheme;
     this.currentTheme = nextTheme;
     this.currentPhase = phase;
@@ -538,9 +642,9 @@ class SoundEngine {
 
     // Kick pattern
     const kickHits =
-      style === 'rocket'
-        ? stepInBar % 4 === 0
-        : style === 'desert'
+      style === 'rocket' || style === 'boss' || style === 'volcanic'
+        ? stepInBar % 4 === 0 || (style === 'boss' && stepInBar === 14)
+        : style === 'desert' || style === 'nebula'
           ? stepInBar === 0 || stepInBar === 6 || stepInBar === 8 || stepInBar === 14
           : style === 'jungle'
             ? stepInBar === 0 || stepInBar === 3 || stepInBar === 8 || stepInBar === 11
@@ -550,9 +654,9 @@ class SoundEngine {
       const osc = this.ctx.createOscillator();
       const gain = this.ctx.createGain();
       osc.type = 'sine';
-      osc.frequency.setValueAtTime(style === 'rocket' ? 145 : 120, time);
+      osc.frequency.setValueAtTime(style === 'rocket' || style === 'boss' ? 148 : 120, time);
       osc.frequency.exponentialRampToValueAtTime(42, time + 0.09);
-      const peak = style === 'soft' ? 0.16 : 0.28;
+      const peak = style === 'soft' ? 0.16 : style === 'boss' ? 0.32 : 0.28;
       gain.gain.setValueAtTime(peak, time);
       gain.gain.exponentialRampToValueAtTime(0.001, time + 0.12);
       osc.connect(gain).connect(this.musicBus);
@@ -571,19 +675,19 @@ class SoundEngine {
       noise.buffer = this.noiseBuffer;
       const bp = this.ctx.createBiquadFilter();
       bp.type = 'bandpass';
-      bp.frequency.setValueAtTime(style === 'ice' ? 2800 : 1850, time);
+      bp.frequency.setValueAtTime(style === 'ice' || style === 'nebula' ? 2800 : 1850, time);
       bp.Q.setValueAtTime(1.2, time);
       const gain = this.ctx.createGain();
-      const peak = style === 'rocket' ? 0.16 : 0.11;
+      const peak = style === 'rocket' || style === 'boss' ? 0.17 : 0.11;
       gain.gain.setValueAtTime(peak, time);
-      gain.gain.exponentialRampToValueAtTime(0.001, time + (style === 'rocket' ? 0.12 : 0.08));
+      gain.gain.exponentialRampToValueAtTime(0.001, time + (style === 'rocket' || style === 'boss' ? 0.12 : 0.08));
       noise.connect(bp).connect(gain).connect(this.musicBus);
       noise.start(time);
       noise.stop(time + 0.14);
     }
 
-    // Desert / Jungle melodic tom accents
-    if ((style === 'jungle' || style === 'desert') && (stepInBar === 6 || stepInBar === 10)) {
+    // Desert / Jungle / Volcanic melodic tom accents
+    if ((style === 'jungle' || style === 'desert' || style === 'volcanic') && (stepInBar === 6 || stepInBar === 10)) {
       const tom = this.ctx.createOscillator();
       const gain = this.ctx.createGain();
       tom.type = 'triangle';
@@ -599,7 +703,7 @@ class SoundEngine {
 
     // Crisp Hi-hat on off-beats / 16ths
     const hatHit =
-      style === 'rocket'
+      style === 'rocket' || style === 'boss' || style === 'nebula'
         ? stepInBar % 2 === 0 || stepInBar === 15
         : style === 'soft'
           ? stepInBar % 4 === 2
@@ -1186,6 +1290,105 @@ class SoundEngine {
       osc.connect(gain).connect(dest);
       osc.start(t);
       osc.stop(t + 0.3);
+    });
+  }
+
+  public playMonkeyPickup() {
+    const dest = this.getSfxDest();
+    if (!dest || !this.ctx) return;
+    const now = this.ctx.currentTime;
+    const notes = [392, 523.25, 659.25, 783.99, 1046.5];
+    notes.forEach((freq, i) => {
+      if (!this.ctx) return;
+      const t = now + i * 0.055;
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(freq, t);
+      gain.gain.setValueAtTime(0.17, t);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.28);
+      osc.connect(gain).connect(dest);
+      osc.start(t);
+      osc.stop(t + 0.3);
+    });
+  }
+
+  public playClimbStep() {
+    const dest = this.getSfxDest();
+    if (!dest || !this.ctx) return;
+    const now = this.ctx.currentTime;
+    if (now - this.lastFootstepTime < 0.2) return;
+    this.lastFootstepTime = now;
+
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(260 + Math.random() * 50, now);
+    osc.frequency.exponentialRampToValueAtTime(140, now + 0.055);
+    gain.gain.setValueAtTime(0.09, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.06);
+    osc.connect(gain).connect(dest);
+    osc.start(now);
+    osc.stop(now + 0.07);
+  }
+
+  public playBossHit() {
+    const dest = this.getSfxDest();
+    if (!dest || !this.ctx) return;
+    const now = this.ctx.currentTime;
+
+    const sub = this.ctx.createOscillator();
+    const sGain = this.ctx.createGain();
+    sub.type = 'sawtooth';
+    sub.frequency.setValueAtTime(190, now);
+    sub.frequency.exponentialRampToValueAtTime(48, now + 0.26);
+    sGain.gain.setValueAtTime(0.32, now);
+    sGain.gain.exponentialRampToValueAtTime(0.001, now + 0.28);
+    sub.connect(sGain).connect(dest);
+    sub.start(now);
+    sub.stop(now + 0.29);
+
+    this.playNoiseBurst(now, 0.22, 'bandpass', 1800, 320, 0.26, 1.2);
+  }
+
+  public playShockwave() {
+    const dest = this.getSfxDest();
+    if (!dest || !this.ctx) return;
+    const now = this.ctx.currentTime;
+
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(125, now);
+    osc.frequency.exponentialRampToValueAtTime(34, now + 0.35);
+    gain.gain.setValueAtTime(0.32, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.38);
+    osc.connect(gain).connect(dest);
+    osc.start(now);
+    osc.stop(now + 0.4);
+
+    this.playNoiseBurst(now, 0.28, 'lowpass', 950, 140, 0.24);
+  }
+
+  public playBossDefeat() {
+    const dest = this.getSfxDest();
+    if (!dest || !this.ctx) return;
+    const now = this.ctx.currentTime;
+
+    this.playNoiseBurst(now, 0.55, 'lowpass', 1600, 120, 0.34);
+    const fanfare = [392, 523.25, 659.25, 783.99, 1046.5, 1318.5, 1567.98];
+    fanfare.forEach((freq, i) => {
+      if (!this.ctx) return;
+      const t = now + 0.12 + i * 0.08;
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(freq, t);
+      gain.gain.setValueAtTime(0.2, t);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.55);
+      osc.connect(gain).connect(dest);
+      osc.start(t);
+      osc.stop(t + 0.58);
     });
   }
 }

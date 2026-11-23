@@ -99,8 +99,8 @@ export const GameMenus: React.FC<GameMenusProps> = ({
         </div>
 
         {/* Bottom Dock: Level Selector Cards + Primary Start CTA + Single Control Hint Line */}
-        <div className="mx-auto flex w-full max-w-4xl flex-col gap-4 rounded-2xl border border-white/15 bg-[#070d1d]/88 p-5 text-white shadow-2xl">
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+        <div className="mx-auto flex w-full max-w-5xl flex-col gap-4 rounded-2xl border border-white/15 bg-[#070d1d]/88 p-5 text-white shadow-2xl">
+          <div className="grid max-h-[42vh] grid-cols-1 gap-2.5 overflow-y-auto pr-1 sm:max-h-none sm:grid-cols-2 sm:overflow-visible lg:grid-cols-3">
             {LEVELS.map((lvl) => {
               const isSelected = lvl.index === selectedLevel;
               const stats = progress[lvl.index];

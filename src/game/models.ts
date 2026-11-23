@@ -18,6 +18,8 @@ export interface AstroBotRig {
   thrusterRight: THREE.Mesh;
   antennaTip: THREE.Mesh;
   bowMesh: THREE.Group;
+  monkeyParts: THREE.Object3D[];
+  monkeyTail: THREE.Group;
 }
 
 export function createAstroBot(): AstroBotRig {
@@ -305,6 +307,99 @@ export function createAstroBot(): AstroBotRig {
   spinRing.visible = false;
   root.add(spinRing);
 
+  // Monkey Suit Costume Parts (hidden until collected)
+  const monkeyParts: THREE.Object3D[] = [];
+  const monkeyFurMat = new THREE.MeshStandardMaterial({ color: 0x78350f, roughness: 0.72, metalness: 0.08 });
+  const monkeySkinMat = new THREE.MeshStandardMaterial({ color: 0xfde68a, roughness: 0.52, metalness: 0.04 });
+  const monkeyEmeraldMat = new THREE.MeshStandardMaterial({
+    color: 0x10b981,
+    emissive: 0x059669,
+    emissiveIntensity: 0.7,
+    roughness: 0.25,
+    metalness: 0.6,
+  });
+
+  // Monkey Hood & Ears on Head
+  const monkeyHood = new THREE.Mesh(
+    new THREE.SphereGeometry(0.415, 22, 16, 0, Math.PI * 2, 0, Math.PI * 0.62),
+    monkeyFurMat
+  );
+  monkeyHood.rotation.x = -0.18;
+  monkeyHood.visible = false;
+  headGroup.add(monkeyHood);
+  monkeyParts.push(monkeyHood);
+
+  const mEarOuterGeo = new THREE.SphereGeometry(0.15, 14, 12);
+  const mEarInnerGeo = new THREE.SphereGeometry(0.095, 12, 10);
+  const mEarL = new THREE.Mesh(mEarOuterGeo, monkeyFurMat);
+  mEarL.scale.set(0.45, 1.0, 0.95);
+  mEarL.position.set(-0.46, 0.08, -0.02);
+  mEarL.visible = false;
+  const mEarLIn = new THREE.Mesh(mEarInnerGeo, monkeySkinMat);
+  mEarLIn.scale.set(0.5, 0.9, 0.9);
+  mEarLIn.position.set(-0.04, 0, 0.04);
+  mEarL.add(mEarLIn);
+  headGroup.add(mEarL);
+  monkeyParts.push(mEarL);
+
+  const mEarR = mEarL.clone();
+  mEarR.position.set(0.46, 0.08, -0.02);
+  mEarR.children[0].position.set(0.04, 0, 0.04);
+  mEarR.visible = false;
+  headGroup.add(mEarR);
+  monkeyParts.push(mEarR);
+
+  // Explorer Bandana Trim on Forehead
+  const bandana = new THREE.Mesh(new THREE.TorusGeometry(0.375, 0.045, 8, 22), monkeyEmeraldMat);
+  bandana.rotation.x = Math.PI / 2 - 0.14;
+  bandana.position.set(0, 0.2, 0.02);
+  bandana.visible = false;
+  headGroup.add(bandana);
+  monkeyParts.push(bandana);
+
+  // Climbing Belt & Chest Harness
+  const harness = new THREE.Mesh(new THREE.BoxGeometry(0.4, 0.18, 0.34), monkeyFurMat);
+  harness.position.set(0, 0.68, 0.02);
+  harness.visible = false;
+  bodyGroup.add(harness);
+  monkeyParts.push(harness);
+
+  const beltBuckle = new THREE.Mesh(new THREE.OctahedronGeometry(0.085, 0), monkeyEmeraldMat);
+  beltBuckle.position.set(0, 0.56, 0.26);
+  beltBuckle.visible = false;
+  bodyGroup.add(beltBuckle);
+  monkeyParts.push(beltBuckle);
+
+  // Grip Climbing Gloves on Arms
+  const gripGloveGeo = new THREE.SphereGeometry(0.125, 12, 12);
+  const mGloveL = new THREE.Mesh(gripGloveGeo, monkeyEmeraldMat);
+  mGloveL.position.y = -0.32;
+  mGloveL.visible = false;
+  leftArm.add(mGloveL);
+  monkeyParts.push(mGloveL);
+
+  const mGloveR = new THREE.Mesh(gripGloveGeo, monkeyEmeraldMat);
+  mGloveR.position.y = -0.32;
+  mGloveR.visible = false;
+  rightArm.add(mGloveR);
+  monkeyParts.push(mGloveR);
+
+  // Articulated Curly Monkey Tail
+  const monkeyTail = new THREE.Group();
+  monkeyTail.position.set(0, 0.5, -0.24);
+  const tailSeg1 = new THREE.Mesh(new THREE.CapsuleGeometry(0.042, 0.32, 6, 10), monkeyFurMat);
+  tailSeg1.rotation.x = -0.95;
+  tailSeg1.position.set(0, 0.1, -0.18);
+  const tailSeg2 = new THREE.Mesh(new THREE.CapsuleGeometry(0.036, 0.28, 6, 10), monkeyFurMat);
+  tailSeg2.rotation.x = 0.55;
+  tailSeg2.position.set(0, 0.32, -0.36);
+  const tailTip = new THREE.Mesh(new THREE.SphereGeometry(0.055, 10, 10), monkeySkinMat);
+  tailTip.position.set(0, 0.45, -0.28);
+  monkeyTail.add(tailSeg1, tailSeg2, tailTip);
+  monkeyTail.visible = false;
+  bodyGroup.add(monkeyTail);
+  monkeyParts.push(monkeyTail);
+
   return {
     root,
     bodyGroup,
@@ -322,6 +417,8 @@ export function createAstroBot(): AstroBotRig {
     thrusterRight,
     antennaTip,
     bowMesh,
+    monkeyParts,
+    monkeyTail,
   };
 }
 
@@ -541,14 +638,28 @@ export function createEnemyMesh(kind: EnemyKind): EnemyRig {
   const group = new THREE.Group();
 
   const shellMat = new THREE.MeshPhysicalMaterial({
-    color: kind === 'spiky' ? 0x991b1b : kind === 'hopper' ? 0x6b21a8 : 0x1e293b,
+    color:
+      kind === 'spiky'
+        ? 0x991b1b
+        : kind === 'hopper'
+          ? 0x6b21a8
+          : kind === 'brute'
+            ? 0x7c2d12
+            : 0x1e293b,
     roughness: 0.28,
     metalness: 0.62,
     clearcoat: 0.7,
   });
 
   const trimMat = new THREE.MeshStandardMaterial({
-    color: kind === 'spiky' ? 0xfacc15 : kind === 'hopper' ? 0xd8b4fe : 0xf43f5e,
+    color:
+      kind === 'spiky'
+        ? 0xfacc15
+        : kind === 'hopper'
+          ? 0xd8b4fe
+          : kind === 'brute'
+            ? 0xf97316
+            : 0xf43f5e,
     roughness: 0.22,
     metalness: 0.78,
   });
@@ -564,6 +675,49 @@ export function createEnemyMesh(kind: EnemyKind): EnemyRig {
     emissive: 0xff1e42,
     emissiveIntensity: 2.4,
   });
+
+  if (kind === 'brute') {
+    // Heavy Armored Horned Mech-Bull Sentinel
+    const body = new THREE.Mesh(new THREE.BoxGeometry(0.95, 0.92, 0.85), shellMat);
+    body.position.y = 0.68;
+    body.castShadow = true;
+    group.add(body);
+
+    const shoulderL = new THREE.Mesh(new THREE.SphereGeometry(0.28, 12, 10), trimMat);
+    shoulderL.position.set(-0.56, 0.92, 0);
+    const shoulderR = shoulderL.clone();
+    shoulderR.position.x = 0.56;
+    group.add(shoulderL, shoulderR);
+
+    const visor = new THREE.Mesh(new THREE.BoxGeometry(0.56, 0.2, 0.16), darkMat);
+    visor.position.set(0, 0.78, 0.41);
+    group.add(visor);
+
+    const eye = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.08, 0.06), eyeMat);
+    eye.position.set(0, 0.78, 0.48);
+    group.add(eye);
+
+    // Twin Curved Horns
+    const hornGeo = new THREE.ConeGeometry(0.11, 0.48, 8);
+    const hornMat = new THREE.MeshStandardMaterial({ color: 0xfef08a, metalness: 0.8, roughness: 0.22 });
+    const hornL = new THREE.Mesh(hornGeo, hornMat);
+    hornL.position.set(-0.34, 1.24, 0.2);
+    hornL.rotation.set(0.45, 0, 0.42);
+    const hornR = new THREE.Mesh(hornGeo, hornMat);
+    hornR.position.set(0.34, 1.24, 0.2);
+    hornR.rotation.set(0.45, 0, -0.42);
+    group.add(hornL, hornR);
+
+    // Heavy Feet
+    const footGeo = new THREE.BoxGeometry(0.32, 0.26, 0.42);
+    const footL = new THREE.Mesh(footGeo, darkMat);
+    footL.position.set(-0.26, 0.13, 0.05);
+    const footR = new THREE.Mesh(footGeo, darkMat);
+    footR.position.set(0.26, 0.13, 0.05);
+    group.add(footL, footR);
+
+    return { group, body, eyeMat };
+  }
 
   if (kind === 'chomper') {
     // Armored beetle/chomp-bot with articulated jaw & windup key
@@ -799,7 +953,12 @@ export function createCheckpointMesh(): { group: THREE.Group; flagMat: THREE.Mes
   return { group, flagMat };
 }
 
-export function createGoalPortalMesh(): { group: THREE.Group; ringInner: THREE.Mesh } {
+export function createGoalPortalMesh(): {
+  group: THREE.Group;
+  ringInner: THREE.Mesh;
+  vortex: THREE.Mesh;
+  portalMat: THREE.MeshStandardMaterial;
+} {
   const group = new THREE.Group();
 
   const plinthMat = new THREE.MeshStandardMaterial({
@@ -839,7 +998,7 @@ export function createGoalPortalMesh(): { group: THREE.Group; ringInner: THREE.M
   vortex.position.y = 2.15;
   group.add(vortex);
 
-  return { group, ringInner };
+  return { group, ringInner, vortex, portalMat };
 }
 
 export function createRocketPadMesh(): THREE.Group {
@@ -1029,5 +1188,279 @@ export function createArcheryTargetMesh(): { group: THREE.Group; ringMat: THREE.
   group.add(bullCenter);
 
   return { group, ringMat };
+}
+
+export function createMonkeySuitPickupMesh(): { group: THREE.Group; suit: THREE.Group } {
+  const group = new THREE.Group();
+  const baseMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, metalness: 0.65, roughness: 0.3 });
+  const ringMat = new THREE.MeshStandardMaterial({
+    color: 0x10b981,
+    emissive: 0x059669,
+    emissiveIntensity: 1.9,
+  });
+  const furMat = new THREE.MeshStandardMaterial({ color: 0x92400e, roughness: 0.68 });
+  const tanMat = new THREE.MeshStandardMaterial({ color: 0xfde68a, roughness: 0.5 });
+
+  const ped = new THREE.Mesh(new THREE.CylinderGeometry(0.75, 0.9, 0.24, 18), baseMat);
+  ped.position.y = 0.12;
+  group.add(ped);
+
+  const halo = new THREE.Mesh(new THREE.TorusGeometry(0.66, 0.06, 8, 22), ringMat);
+  halo.rotation.x = Math.PI / 2;
+  halo.position.y = 0.26;
+  group.add(halo);
+
+  const suit = new THREE.Group();
+  suit.position.y = 1.1;
+
+  const maskHead = new THREE.Mesh(new THREE.SphereGeometry(0.36, 18, 14), furMat);
+  suit.add(maskHead);
+
+  const earGeo = new THREE.SphereGeometry(0.14, 12, 10);
+  const earL = new THREE.Mesh(earGeo, tanMat);
+  earL.scale.set(0.45, 1, 1);
+  earL.position.set(-0.39, 0.06, 0);
+  const earR = earL.clone();
+  earR.position.x = 0.39;
+  suit.add(earL, earR);
+
+  const face = new THREE.Mesh(new THREE.SphereGeometry(0.24, 14, 12), tanMat);
+  face.scale.set(1.05, 0.78, 0.55);
+  face.position.set(0, -0.06, 0.26);
+  suit.add(face);
+
+  const emeraldBand = new THREE.Mesh(new THREE.TorusGeometry(0.37, 0.05, 8, 20), ringMat);
+  emeraldBand.rotation.x = Math.PI / 2 - 0.15;
+  emeraldBand.position.y = 0.18;
+  suit.add(emeraldBand);
+
+  group.add(suit);
+  return { group, suit };
+}
+
+export function createClimbWallMesh(
+  size: [number, number, number],
+  face: 'pz' | 'nz' | 'px' | 'nx',
+  stoneTex: THREE.Texture
+): THREE.Group {
+  const group = new THREE.Group();
+  const [w, h, d] = size;
+
+  const wallMat = new THREE.MeshStandardMaterial({
+    map: stoneTex,
+    roughness: 0.75,
+    metalness: 0.1,
+  });
+  const mossCapMat = new THREE.MeshStandardMaterial({
+    color: 0x15803d,
+    roughness: 0.78,
+  });
+  const gripMat = new THREE.MeshStandardMaterial({
+    color: 0xfacc15,
+    emissive: 0x10b981,
+    emissiveIntensity: 0.7,
+    roughness: 0.28,
+    metalness: 0.35,
+  });
+
+  const block = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), wallMat);
+  block.castShadow = true;
+  block.receiveShadow = true;
+  group.add(block);
+
+  const cap = new THREE.Mesh(new THREE.BoxGeometry(w + 0.14, 0.26, d + 0.14), mossCapMat);
+  cap.position.y = h / 2 - 0.1;
+  cap.receiveShadow = true;
+  group.add(cap);
+
+  // Staggered climbing handholds on active face
+  const isZ = face === 'pz' || face === 'nz';
+  const sign = face === 'pz' || face === 'px' ? 1 : -1;
+  const faceSpan = isZ ? w : d;
+  const rows = Math.max(3, Math.floor(h / 1.15));
+  const cols = Math.max(2, Math.floor(faceSpan / 1.25));
+  const gripGeo = isZ ? new THREE.BoxGeometry(0.55, 0.16, 0.18) : new THREE.BoxGeometry(0.18, 0.16, 0.55);
+
+  for (let r = 0; r < rows; r++) {
+    const gy = -h / 2 + 0.85 + r * ((h - 1.3) / Math.max(1, rows - 1));
+    for (let c = 0; c < cols; c++) {
+      const offset = (c - (cols - 1) / 2) * 1.15 + ((r % 2) * 0.35 - 0.18);
+      const grip = new THREE.Mesh(gripGeo, gripMat);
+      if (isZ) {
+        grip.position.set(THREE.MathUtils.clamp(offset, -w / 2 + 0.45, w / 2 - 0.45), gy, sign * (d / 2 + 0.08));
+      } else {
+        grip.position.set(sign * (w / 2 + 0.08), gy, THREE.MathUtils.clamp(offset, -d / 2 + 0.45, d / 2 - 0.45));
+      }
+      group.add(grip);
+    }
+  }
+
+  return group;
+}
+
+export interface BossRig {
+  root: THREE.Group;
+  bodyGroup: THREE.Group;
+  headGroup: THREE.Group;
+  leftArm: THREE.Group;
+  rightArm: THREE.Group;
+  leftLeg: THREE.Group;
+  rightLeg: THREE.Group;
+  dorsalRing: THREE.Mesh;
+  coreMesh: THREE.Mesh;
+  coreMat: THREE.MeshStandardMaterial;
+  armorMat: THREE.MeshPhysicalMaterial;
+  shockwaveRing: THREE.Mesh;
+  shockwaveMat: THREE.MeshBasicMaterial;
+}
+
+export function createBossMesh(): BossRig {
+  const root = new THREE.Group();
+  const bodyGroup = new THREE.Group();
+  root.add(bodyGroup);
+
+  const armorMat = new THREE.MeshPhysicalMaterial({
+    color: 0x311042,
+    roughness: 0.25,
+    metalness: 0.72,
+    clearcoat: 0.85,
+  });
+  const trimMat = new THREE.MeshStandardMaterial({
+    color: 0xf43f5e,
+    emissive: 0x881337,
+    emissiveIntensity: 0.55,
+    metalness: 0.75,
+    roughness: 0.22,
+  });
+  const darkMat = new THREE.MeshStandardMaterial({
+    color: 0x090d16,
+    roughness: 0.5,
+    metalness: 0.45,
+  });
+  const coreMat = new THREE.MeshStandardMaterial({
+    color: 0xfbbf24,
+    emissive: 0xf59e0b,
+    emissiveIntensity: 2.2,
+    roughness: 0.15,
+  });
+  const eyeMat = new THREE.MeshStandardMaterial({
+    color: 0xff1e42,
+    emissive: 0xff1e42,
+    emissiveIntensity: 2.6,
+  });
+
+  // Heavy Torso
+  const torso = new THREE.Mesh(new THREE.BoxGeometry(2.2, 1.85, 1.65), armorMat);
+  torso.position.y = 2.05;
+  torso.castShadow = true;
+  bodyGroup.add(torso);
+
+  const chestBezel = new THREE.Mesh(new THREE.TorusGeometry(0.55, 0.11, 10, 24), trimMat);
+  chestBezel.position.set(0, 2.05, 0.84);
+  bodyGroup.add(chestBezel);
+
+  const coreMesh = new THREE.Mesh(new THREE.SphereGeometry(0.46, 18, 16), coreMat);
+  coreMesh.scale.set(1, 1, 0.55);
+  coreMesh.position.set(0, 2.05, 0.84);
+  bodyGroup.add(coreMesh);
+
+  // Dorsal Reactor Halo
+  const dorsalRing = new THREE.Mesh(new THREE.TorusGeometry(1.55, 0.14, 10, 32), trimMat);
+  dorsalRing.position.set(0, 2.4, -0.95);
+  bodyGroup.add(dorsalRing);
+
+  // Articulated Horned Head
+  const headGroup = new THREE.Group();
+  headGroup.position.set(0, 3.35, 0.1);
+  bodyGroup.add(headGroup);
+
+  const headSkull = new THREE.Mesh(new THREE.BoxGeometry(1.25, 0.92, 1.15), armorMat);
+  headSkull.castShadow = true;
+  headGroup.add(headSkull);
+
+  const visor = new THREE.Mesh(new THREE.BoxGeometry(0.96, 0.28, 0.2), darkMat);
+  visor.position.set(0, 0.05, 0.52);
+  headGroup.add(visor);
+
+  const eyes = new THREE.Mesh(new THREE.BoxGeometry(0.76, 0.12, 0.08), eyeMat);
+  eyes.position.set(0, 0.05, 0.6);
+  headGroup.add(eyes);
+
+  const hornGeo = new THREE.ConeGeometry(0.18, 0.95, 10);
+  const hornMat = new THREE.MeshStandardMaterial({ color: 0xfef08a, metalness: 0.85, roughness: 0.2 });
+  const hornL = new THREE.Mesh(hornGeo, hornMat);
+  hornL.position.set(-0.6, 0.68, 0.1);
+  hornL.rotation.set(0.35, 0, 0.48);
+  const hornR = new THREE.Mesh(hornGeo, hornMat);
+  hornR.position.set(0.6, 0.68, 0.1);
+  hornR.rotation.set(0.35, 0, -0.48);
+  headGroup.add(hornL, hornR);
+
+  // Twin Heavy Claw Arms
+  const makeBossArm = (side: number) => {
+    const arm = new THREE.Group();
+    arm.position.set(side * 1.48, 2.55, 0);
+    const pauldron = new THREE.Mesh(new THREE.SphereGeometry(0.54, 14, 12), trimMat);
+    arm.add(pauldron);
+    const forearm = new THREE.Mesh(new THREE.BoxGeometry(0.55, 1.25, 0.55), armorMat);
+    forearm.position.y = -0.82;
+    forearm.castShadow = true;
+    arm.add(forearm);
+    const fist = new THREE.Mesh(new THREE.BoxGeometry(0.68, 0.58, 0.72), darkMat);
+    fist.position.set(0, -1.55, 0.1);
+    fist.castShadow = true;
+    arm.add(fist);
+    return arm;
+  };
+  const leftArm = makeBossArm(-1);
+  const rightArm = makeBossArm(1);
+  bodyGroup.add(leftArm, rightArm);
+
+  // Heavy Stomping Legs
+  const makeBossLeg = (side: number) => {
+    const leg = new THREE.Group();
+    leg.position.set(side * 0.65, 1.15, 0);
+    const thigh = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.3, 0.85, 12), darkMat);
+    thigh.position.y = -0.45;
+    leg.add(thigh);
+    const boot = new THREE.Mesh(new THREE.BoxGeometry(0.66, 0.42, 0.92), armorMat);
+    boot.position.set(0, -0.94, 0.12);
+    boot.castShadow = true;
+    leg.add(boot);
+    return leg;
+  };
+  const leftLeg = makeBossLeg(-1);
+  const rightLeg = makeBossLeg(1);
+  bodyGroup.add(leftLeg, rightLeg);
+
+  // Expanding Ground Shockwave Ring (hidden unless pulsing)
+  const shockwaveMat = new THREE.MeshBasicMaterial({
+    color: 0xff2a55,
+    transparent: true,
+    opacity: 0.85,
+    side: THREE.DoubleSide,
+    depthWrite: false,
+  });
+  const shockwaveRing = new THREE.Mesh(new THREE.TorusGeometry(1.0, 0.14, 8, 36), shockwaveMat);
+  shockwaveRing.rotation.x = Math.PI / 2;
+  shockwaveRing.position.y = 0.22;
+  shockwaveRing.visible = false;
+  root.add(shockwaveRing);
+
+  return {
+    root,
+    bodyGroup,
+    headGroup,
+    leftArm,
+    rightArm,
+    leftLeg,
+    rightLeg,
+    dorsalRing,
+    coreMesh,
+    coreMat,
+    armorMat,
+    shockwaveRing,
+    shockwaveMat,
+  };
 }
 

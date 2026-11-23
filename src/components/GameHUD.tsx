@@ -42,9 +42,11 @@ export const GameHUD: React.FC<GameHUDProps> = ({
   const hintText =
     hud.perspectiveMode === 'COHETE'
       ? 'WASD Maniobrar Cohete · Espacio Turbo · Esc Pausa'
-      : hud.hasBow
-        ? 'WASD Mover · Espacio Saltar/Planear · F Girar · G / Clic Izq. Disparar Arco · Q/E Cámara'
-        : 'WASD Mover · Espacio Saltar / Mantener Planear · F / Clic Der. Girar · Arrastrar / Q·E Cámara';
+      : hud.isClimbing
+        ? 'W/S Trepar · A/D Moverse lateralmente · Espacio Saltar de la pared'
+        : hud.hasBow
+          ? 'WASD Mover · Espacio Saltar/Planear · F Girar · G / Clic Izq. Disparar Arco · Q/E Cámara'
+          : 'WASD Mover · Espacio Saltar / Mantener Planear · F / Clic Der. Girar · Arrastrar / Q·E Cámara';
 
   return (
     <div className="pointer-events-none fixed inset-0 z-10 flex flex-col justify-between p-4 pt-[max(1rem,env(safe-area-inset-top))] pb-[max(1rem,env(safe-area-inset-bottom))] pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] sm:p-6">
@@ -87,6 +89,13 @@ export const GameHUD: React.FC<GameHUDProps> = ({
               <>
                 <span className="text-white/30" aria-hidden="true">·</span>
                 <span className="text-xs font-semibold text-sky-300">Arco</span>
+              </>
+            )}
+
+            {hud.hasMonkeySuit && (
+              <>
+                <span className="text-white/30" aria-hidden="true">·</span>
+                <span className="text-xs font-semibold text-emerald-300">Traje Mono</span>
               </>
             )}
 
@@ -178,6 +187,26 @@ export const GameHUD: React.FC<GameHUDProps> = ({
           </button>
         </div>
       </div>
+
+      {/* Final Boss Health Bar */}
+      {hud.boss && (
+        <div className="mx-auto mt-2 flex w-full max-w-md flex-col gap-1.5 rounded-xl border border-rose-500/40 bg-[#140714]/88 px-4 py-2.5 text-white shadow-xl">
+          <div className="flex items-center justify-between">
+            <span className="font-display text-xs font-bold tracking-wider text-rose-300 uppercase">
+              Jefe Final · {hud.boss.name}
+            </span>
+            <span className="font-mono-num text-xs font-bold text-amber-300">
+              {hud.boss.hp}/{hud.boss.maxHp}
+            </span>
+          </div>
+          <div className="h-2.5 w-full overflow-hidden rounded-full bg-slate-900">
+            <div
+              className="h-full origin-left bg-gradient-to-r from-rose-500 to-amber-400 transition-transform duration-150"
+              style={{ transform: `scaleX(${Math.max(0, Math.min(1, hud.boss.hp / hud.boss.maxHp))})` }}
+            />
+          </div>
+        </div>
+      )}
 
       {/* Transient Event Banner */}
       {hud.bannerText && (
