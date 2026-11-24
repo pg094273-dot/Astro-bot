@@ -29,6 +29,8 @@ const INITIAL_HUD: HudSnapshot = {
   totalCoins: 0,
   botsRescued: 0,
   totalBots: LEVELS[0].miniBots.length,
+  relicsCollected: 0,
+  totalRelics: LEVELS[0].relics?.length ?? 0,
   hoverFuel: 1,
   botRocketCharges: 0,
   botRocketActive: false,
@@ -63,6 +65,8 @@ export default function App() {
     totalCoins: number;
     bots: number;
     totalBots: number;
+    relics: number;
+    totalRelics: number;
     time: number;
   } | null>(null);
 
@@ -83,6 +87,7 @@ export default function App() {
             [stats.levelIndex]: {
               bestCoins: Math.max(existing?.bestCoins ?? 0, stats.coins),
               bestBots: Math.max(existing?.bestBots ?? 0, stats.bots),
+              bestRelics: Math.max(existing?.bestRelics ?? 0, stats.relics),
               bestTime:
                 existing?.bestTime != null
                   ? Math.min(existing.bestTime, stats.time)

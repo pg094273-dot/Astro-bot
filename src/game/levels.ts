@@ -2,20 +2,20 @@ import { LevelDef, getRiverCenterX } from './types';
 
 export const LEVELS: LevelDef[] = [
   // =========================================================================
-  // NIVEL 1: SELVA ESMERALDA (3D + Arco Estelar + 2D Lateral + 3D)
+  // NIVEL 1: SELVA ESMERALDA (3D + Arco Estelar + 2D Lateral + Rutas Altas + Jefe)
   // =========================================================================
   {
     index: 0,
     id: 'emerald-jungle',
     name: 'Selva Esmeralda',
-    subtitle: 'Ruinas 3D, Arco Estelar, pasarela 2D y guardianes entre copas',
+    subtitle: 'Ruinas 3D, Arco Estelar, rutas secretas y Guardián Musgo-Alfa',
     theme: {
       biome: 'jungle',
       skyTop: '#1e66b0',
       skyHorizon: '#cde8f6',
       fogColor: '#bfe3ee',
-      fogNear: 70,
-      fogFar: 225,
+      fogNear: 75,
+      fogFar: 245,
       keyLightColor: 0xfff7e6,
       keyLightIntensity: 2.35,
       hemiSkyColor: 0x99d6f5,
@@ -30,15 +30,35 @@ export const LEVELS: LevelDef[] = [
     bowPickupPos: [0, 1.0, -3.2],
     targets: [
       { id: 't-j1', pos: [-11.5, 2.6, -11], coins: 5 },
-      { id: 't-j2', pos: [50, 12.2, -100], coins: 5 },
+      { id: 't-j2', pos: [50, 12.2, -97], coins: 5 },
     ],
-    goalPos: [50, 12.3, -104],
+    switches: [
+      { id: 'sw-j1', pos: [52.8, 6.2, -50], message: '¡Puente Antiguo de las Copas activado!', coins: 5 },
+    ],
+    relics: [
+      { id: 'rel-j1', name: 'Reliquia Esmeralda', pos: [-12, 9.8, -22] },
+      { id: 'rel-j2', name: 'Reliquia del Dosel', pos: [67, 8.8, -50] },
+      { id: 'rel-j3', name: 'Reliquia Solar', pos: [67, 9.6, -77] },
+    ],
+    windZones: [
+      { id: 'wz-j1', pos: [-12, 2.6, -16], radius: 2.1, height: 7.4, liftSpeed: 11.8 },
+    ],
+    boss: {
+      name: 'Guardián Musgo-Alfa',
+      style: 'jungle',
+      pos: [50, 12.4, -110],
+      arenaCenter: [50, 12.4, -109],
+      arenaRadius: 8.6,
+      maxHp: 3,
+    },
+    goalPos: [50, 12.4, -116],
     platforms: [
-      { id: 'j-start', pos: [0, 0, 0], size: [10, 2, 10], kind: 'solid', style: 'jungle' },
+      { id: 'j-start', pos: [0, 0, 0], size: [10, 2, 10], kind: 'solid', style: 'jungle', shape: 'organic' },
       { id: 'j-step1', pos: [0, 0.8, -11], size: [7, 1.4, 7], kind: 'solid', style: 'tech' },
       { id: 'j-bow-bridge', pos: [-6, 1.6, -11], size: [4.4, 0.8, 3.2], kind: 'glass', style: 'crystal', linkedTargetId: 't-j1' },
-      { id: 'j-side1', pos: [-12, 2.0, -11], size: [5, 1.2, 5], kind: 'solid', style: 'gold' },
-      { id: 'j-court', pos: [0, 1.4, -22], size: [8.5, 1.6, 8.5], kind: 'solid', style: 'jungle' },
+      { id: 'j-side1', pos: [-12, 2.0, -13.5], size: [5.5, 1.2, 8.5], kind: 'solid', style: 'gold' },
+      { id: 'j-high-alcove', pos: [-12, 8.3, -22], size: [5.2, 1.2, 5.2], kind: 'solid', style: 'temple', shape: 'organic' },
+      { id: 'j-court', pos: [0, 1.4, -22], size: [8.5, 1.6, 8.5], kind: 'solid', style: 'jungle', shape: 'organic' },
       { id: 'j-entry2d', pos: [0, 1.8, -32], size: [7, 1.6, 6], kind: 'solid', style: 'jungle' },
 
       // 2D Side-Scrolling Jungle Wall (z = -38, x = 0 -> 50)
@@ -65,8 +85,10 @@ export const LEVELS: LevelDef[] = [
       { id: 'j-2d-2', pos: [43, 4.6, -38], size: [6.5, 1.4, 3.8], kind: 'solid', style: 'jungle' },
       { id: 'j-2d-exit', pos: [50, 5.0, -38], size: [6.5, 1.6, 6.5], kind: 'solid', style: 'gold' },
 
-      // Back to 3D Upper Canopy Ascent
-      { id: 'j-3d-canopy1', pos: [50, 5.4, -50], size: [9, 1.6, 9], kind: 'solid', style: 'jungle' },
+      // Back to 3D Upper Canopy Ascent + Switch Secret Island + Rotating/Disappearing Branch
+      { id: 'j-3d-canopy1', pos: [50, 5.4, -50], size: [9.5, 1.6, 9.5], kind: 'solid', style: 'jungle', shape: 'organic' },
+      { id: 'j-secret-bridge', pos: [59, 6.2, -50], size: [6.0, 0.9, 3.4], kind: 'glass', style: 'crystal', linkedSwitchId: 'sw-j1' },
+      { id: 'j-secret-island', pos: [67, 7.0, -50], size: [6.2, 1.4, 6.2], kind: 'solid', style: 'gold', shape: 'disc' },
       {
         id: 'j-3d-move',
         pos: [50, 6.0, -61],
@@ -76,10 +98,12 @@ export const LEVELS: LevelDef[] = [
         moveOffset: [4.0, 0, 0],
         moveSpeed: 1.65,
       },
-      { id: 'j-3d-canopy2', pos: [50, 6.6, -73], size: [9.5, 1.6, 9.5], kind: 'solid', style: 'jungle' },
+      { id: 'j-3d-canopy2', pos: [50, 6.6, -73], size: [9.5, 1.6, 9.5], kind: 'solid', style: 'jungle', shape: 'organic' },
+      { id: 'j-rot-branch', pos: [60, 7.2, -73], size: [6.0, 1.2, 6.0], kind: 'rotating', style: 'temple', rotSpeed: 1.05, shape: 'disc' },
+      { id: 'j-dis-branch', pos: [67, 7.8, -77], size: [5.2, 1.0, 5.2], kind: 'disappearing', style: 'crystal', cyclePeriod: 4.0, cyclePhase: 0 },
       { id: 'j-3d-high', pos: [50, 10.6, -86], size: [8, 1.5, 8], kind: 'solid', style: 'tech' },
-      { id: 'j-3d-goal-bridge', pos: [50, 11.2, -94.5], size: [4.8, 0.9, 6.5], kind: 'glass', style: 'crystal', linkedTargetId: 't-j2' },
-      { id: 'j-3d-goal', pos: [50, 11.4, -104], size: [10, 1.8, 10], kind: 'solid', style: 'gold' },
+      { id: 'j-3d-goal-bridge', pos: [50, 11.2, -94.5], size: [5.2, 0.9, 7.0], kind: 'glass', style: 'crystal', linkedTargetId: 't-j2' },
+      { id: 'j-3d-goal', pos: [50, 11.4, -109], size: [20, 2.0, 20], kind: 'solid', style: 'jungle', shape: 'organic' },
     ],
     zones2D: [
       {
@@ -101,6 +125,7 @@ export const LEVELS: LevelDef[] = [
     coins: [
       { pos: [0, 2.2, -5.5] },
       { pos: [-6, 2.8, -11] },
+      { pos: [-12, 6.2, -16] },
       { pos: [0, 3.2, -22] },
       { pos: [4, 3.8, -38] },
       { pos: [8, 3.8, -38] },
@@ -109,25 +134,27 @@ export const LEVELS: LevelDef[] = [
       { pos: [34.5, 6.1, -38] },
       { pos: [43, 6.3, -38] },
       { pos: [50, 7.2, -44] },
+      { pos: [59, 7.6, -50] },
+      { pos: [60, 8.8, -73] },
       { pos: [50, 7.6, -61] },
       { pos: [50, 11.2, -80] },
       { pos: [50, 12.6, -94.5] },
-      { pos: [48, 13.2, -102] },
-      { pos: [52, 13.2, -102] },
+      { pos: [46, 13.4, -104] },
+      { pos: [54, 13.4, -104] },
     ],
     miniBots: [
-      { id: 'mb-1-1', name: 'Astro Liana', pos: [-12.5, 2.6, -11] },
-      { id: 'mb-1-2', name: 'Astro Maya', pos: [25, 4.1, -38] },
-      { id: 'mb-1-3', name: 'Astro Tucán', pos: [52.5, 7.4, -74] },
+      { id: 'mb-1-1', name: 'Chispa Liana', pos: [-12.5, 2.6, -11] },
+      { id: 'mb-1-2', name: 'Chispa Maya', pos: [25, 4.1, -38] },
+      { id: 'mb-1-3', name: 'Chispa Tucán', pos: [52.5, 7.4, -74] },
     ],
     enemies: [
       { id: 'ej-1', kind: 'chomper', pos: [0, 1.5, -11], patrolOffset: [2.2, 0, 0], speed: 2.0 },
       { id: 'ej-2', kind: 'hopper', pos: [0, 2.2, -22], patrolOffset: [2.4, 0, 0], speed: 2.1 },
-      { id: 'ej-3', kind: 'spiky', pos: [0, 2.6, -32], patrolOffset: [2.1, 0, 0], speed: 2.0 },
+      { id: 'ej-3', kind: 'flyer', pos: [15.5, 5.2, -38], patrolOffset: [0, 0.9, 0], speed: 1.9 },
       { id: 'ej-4', kind: 'chomper', pos: [25, 4.1, -38], patrolOffset: [2.6, 0, 0], speed: 2.2 },
-      { id: 'ej-5', kind: 'spiky', pos: [50, 6.2, -50], patrolOffset: [2.6, 0, 0], speed: 2.2 },
-      { id: 'ej-6', kind: 'hopper', pos: [50, 7.4, -73], patrolOffset: [2.6, 0, 0], speed: 2.3 },
-      { id: 'ej-7', kind: 'brute', pos: [50, 11.4, -86], patrolOffset: [2.3, 0, 0], speed: 1.7 },
+      { id: 'ej-5', kind: 'chaser', pos: [50, 6.2, -50], patrolOffset: [2.6, 0, 0], speed: 2.6 },
+      { id: 'ej-6', kind: 'shooter', pos: [50, 7.4, -73], patrolOffset: [0, 0, 0], speed: 1.0 },
+      { id: 'ej-7', kind: 'guardian', pos: [50, 11.4, -86], patrolOffset: [2.1, 0, 0], speed: 1.6 },
     ],
     lasers: [
       { pos: [25, 4.6, -38], length: 3.6, axis: 'z', period: 2.9, phase: 0.2 },
@@ -140,20 +167,20 @@ export const LEVELS: LevelDef[] = [
   },
 
   // =========================================================================
-  // NIVEL 2: DUNAS DEL DESIERTO (Muralla 2D larga + Cohete Astro LARGO)
+  // NIVEL 2: DUNAS DEL DESIERTO (Muralla 2D + Vuelo Orbital + Oasis Secreto)
   // =========================================================================
   {
     index: 1,
     id: 'desert-dunes',
     name: 'Dunas del Desierto',
-    subtitle: 'Muralla 2D extendida y gran vuelo en Cohete Astro por el cañón',
+    subtitle: 'Muralla 2D, ascenso térmico, Cohete Estelar y oasis secreto',
     theme: {
       biome: 'desert',
       skyTop: '#2a7da8',
       skyHorizon: '#f6d692',
       fogColor: '#edd094',
       fogNear: 82,
-      fogFar: 275,
+      fogFar: 280,
       keyLightColor: 0xfff6e0,
       keyLightIntensity: 2.4,
       hemiSkyColor: 0x93cde0,
@@ -165,9 +192,20 @@ export const LEVELS: LevelDef[] = [
       hazardEmissive: 0x9a5c22,
     },
     spawn: [0, 1.5, 0],
+    switches: [
+      { id: 'sw-d1', pos: [-10, 5.8, -61.8], message: '¡Elevador Solar del Cañón activado!', coins: 5 },
+    ],
+    relics: [
+      { id: 'rel-d1', name: 'Reliquia del Espejismo', pos: [0, 7.8, -28.5] },
+      { id: 'rel-d2', name: 'Reliquia Pirámide', pos: [9, 10.6, -64] },
+      { id: 'rel-d3', name: 'Reliquia del Oasis', pos: [20, 11.0, -266] },
+    ],
+    windZones: [
+      { id: 'wz-d1', pos: [0, 2.9, -28.5], radius: 1.8, height: 5.8, liftSpeed: 11.2 },
+    ],
     goalPos: [0, 9.9, -284],
     platforms: [
-      { id: 'd-start', pos: [0, 0, 0], size: [10, 2, 10], kind: 'solid', style: 'desert' },
+      { id: 'd-start', pos: [0, 0, 0], size: [10, 2, 10], kind: 'solid', style: 'desert', shape: 'organic' },
       { id: 'd-2d-1', pos: [0, 0.8, -11.5], size: [3.8, 1.4, 7.5], kind: 'solid', style: 'desert' },
       { id: 'd-2d-c1', pos: [0, 1.6, -19.5], size: [3.6, 1.0, 4.5], kind: 'crumble', style: 'desert' },
       { id: 'd-2d-mid', pos: [0, 2.2, -28.5], size: [3.8, 1.4, 8], kind: 'solid', style: 'desert' },
@@ -184,11 +222,24 @@ export const LEVELS: LevelDef[] = [
       { id: 'd-2d-2', pos: [0, 3.8, -53], size: [3.8, 1.4, 6.5], kind: 'solid', style: 'desert' },
 
       { id: 'd-launchpad', pos: [0, 4.0, -64], size: [10.5, 1.8, 11], kind: 'solid', style: 'gold' },
-      { id: 'd-side-bot', pos: [-10, 5.2, -64], size: [4.8, 1.2, 4.8], kind: 'solid', style: 'desert' },
+      { id: 'd-side-bot', pos: [-10, 5.2, -64], size: [5.0, 1.2, 6.2], kind: 'solid', style: 'desert' },
+      {
+        id: 'd-elev1',
+        pos: [9, 4.8, -64],
+        size: [4.8, 1.1, 4.8],
+        kind: 'elevator',
+        style: 'gold',
+        moveOffset: [0, 4.2, 0],
+        moveSpeed: 1.4,
+        linkedSwitchId: 'sw-d1',
+      },
 
       { id: 'd-landing', pos: [0, 7.2, -258], size: [12, 2.0, 12], kind: 'solid', style: 'gold' },
+      { id: 'd-rot-oasis', pos: [10.5, 8.0, -258], size: [5.8, 1.2, 5.8], kind: 'rotating', style: 'desert', rotSpeed: -1.1, shape: 'disc' },
+      { id: 'd-dis-oasis', pos: [20, 8.8, -258], size: [4.8, 1.0, 4.8], kind: 'disappearing', style: 'crystal', cyclePeriod: 3.8, cyclePhase: 0.4 },
+      { id: 'd-secret-oasis', pos: [20, 9.6, -266], size: [6.4, 1.4, 6.4], kind: 'solid', style: 'gold', shape: 'organic' },
       { id: 'd-bridge', pos: [0, 8.2, -271], size: [6.5, 1.4, 7.5], kind: 'solid', style: 'desert' },
-      { id: 'd-goal', pos: [0, 9.0, -284], size: [10.5, 1.8, 10.5], kind: 'solid', style: 'desert' },
+      { id: 'd-goal', pos: [0, 9.0, -284], size: [10.5, 1.8, 10.5], kind: 'solid', style: 'desert', shape: 'organic' },
     ],
     zones2D: [
       {
@@ -242,6 +293,7 @@ export const LEVELS: LevelDef[] = [
       { pos: [0, 3.7, -28.5] },
       { pos: [0, 5.1, -45.5] },
       { pos: [-6, 5.9, -64] },
+      { pos: [10.5, 9.6, -258] },
       { pos: [0, 6.5, -84] },
       { pos: [-3.5, 7.5, -100] },
       { pos: [3.6, 8.6, -116] },
@@ -258,40 +310,43 @@ export const LEVELS: LevelDef[] = [
       { pos: [2, 10.8, -281] },
     ],
     miniBots: [
-      { id: 'mb-2-1', name: 'Astro Duna', pos: [0, 2.9, -29.5] },
-      { id: 'mb-2-2', name: 'Astro Esfinge', pos: [-10, 5.8, -64] },
-      { id: 'mb-2-3', name: 'Astro Sol', pos: [3.6, 8.2, -258] },
+      { id: 'mb-2-1', name: 'Chispa Duna', pos: [0, 2.9, -29.5] },
+      { id: 'mb-2-2', name: 'Chispa Esfinge', pos: [-10, 5.8, -64] },
+      { id: 'mb-2-3', name: 'Chispa Sol', pos: [3.6, 8.2, -258] },
     ],
     enemies: [
       { id: 'ed-1', kind: 'chomper', pos: [0, 1.5, -11.5], patrolOffset: [0, 0, 2.2], speed: 2.1 },
-      { id: 'ed-2', kind: 'chomper', pos: [0, 2.9, -28.5], patrolOffset: [0, 0, 2.4], speed: 2.2 },
+      { id: 'ed-2', kind: 'flyer', pos: [0, 5.0, -37.5], patrolOffset: [0, 0.8, 0], speed: 2.0 },
       { id: 'ed-3', kind: 'spiky', pos: [0, 4.5, -53], patrolOffset: [0, 0, 1.8], speed: 2.0 },
-      { id: 'ed-4', kind: 'brute', pos: [0, 8.2, -259], patrolOffset: [3.2, 0, 0], speed: 1.8 },
-      { id: 'ed-5', kind: 'hopper', pos: [0, 8.9, -271], patrolOffset: [2.2, 0, 0], speed: 2.3 },
-      { id: 'ed-6', kind: 'spiky', pos: [0, 9.9, -281], patrolOffset: [3.0, 0, 0], speed: 2.2 },
+      { id: 'ed-4', kind: 'guardian', pos: [0, 8.2, -259], patrolOffset: [2.8, 0, 0], speed: 1.7 },
+      { id: 'ed-5', kind: 'shooter', pos: [0, 8.9, -271], patrolOffset: [0, 0, 0], speed: 1.0 },
+      { id: 'ed-6', kind: 'chaser', pos: [0, 9.9, -281], patrolOffset: [3.0, 0, 0], speed: 2.6 },
     ],
     lasers: [
       { pos: [0, 5.0, -53], length: 3.6, axis: 'x', period: 2.8, phase: 0.4 },
       { pos: [0, 9.3, -271], length: 6.2, axis: 'x', period: 2.6, phase: 0.2 },
     ],
-    checkpoints: [{ id: 'cp-d1', pos: [3.2, 4.9, -63] }],
+    checkpoints: [
+      { id: 'cp-d1', pos: [3.2, 4.9, -63] },
+      { id: 'cp-d2', pos: [-3.2, 8.2, -260] },
+    ],
   },
 
   // =========================================================================
-  // NIVEL 3: GLACIAR AURORA (Hielo 3D + Arco Estelar + 2D + Fortaleza Polar)
+  // NIVEL 3: GLACIAR AURORA (Hielo 3D + Arco Estelar + 2D + Coloso Criogénico)
   // =========================================================================
   {
     index: 2,
     id: 'aurora-glacier',
     name: 'Glaciar Aurora',
-    subtitle: 'Hielo resbaladizo, Arco Estelar, acantilado 2D y fortaleza polar',
+    subtitle: 'Hielo cristalino, corrientes polares y Coloso Criogénico',
     theme: {
       biome: 'ice',
       skyTop: '#166bb5',
       skyHorizon: '#cbe8fa',
       fogColor: '#b9def6',
       fogNear: 78,
-      fogFar: 255,
+      fogFar: 265,
       keyLightColor: 0xfffdf8,
       keyLightIntensity: 2.45,
       hemiSkyColor: 0x8fd1f8,
@@ -305,11 +360,31 @@ export const LEVELS: LevelDef[] = [
     spawn: [0, 1.5, 0],
     bowPickupPos: [0, 1.0, -3.2],
     targets: [{ id: 't-i1', pos: [-34, 7.4, -55], coins: 5 }],
-    goalPos: [-48, 12.9, -110],
+    switches: [
+      { id: 'sw-i1', pos: [-33, 7.4, -52.8], message: '¡Elevador Glacial activado!', coins: 5 },
+    ],
+    relics: [
+      { id: 'rel-i1', name: 'Reliquia Boreal', pos: [9, 8.4, -20.5] },
+      { id: 'rel-i2', name: 'Reliquia Glaciar', pos: [-33, 12.6, -64] },
+      { id: 'rel-i3', name: 'Reliquia Cristal', pos: [-66, 9.8, -83] },
+    ],
+    windZones: [
+      { id: 'wz-i1', pos: [0, 2.6, -20.5], radius: 2.0, height: 6.4, liftSpeed: 11.5 },
+    ],
+    boss: {
+      name: 'Coloso Criogénico',
+      style: 'ice',
+      pos: [-48, 13.0, -114],
+      arenaCenter: [-48, 13.0, -113],
+      arenaRadius: 8.6,
+      maxHp: 4,
+    },
+    goalPos: [-48, 13.0, -120],
     platforms: [
-      { id: 'i-start', pos: [0, 0, 0], size: [9.5, 2, 9.5], kind: 'ice', style: 'ice' },
+      { id: 'i-start', pos: [0, 0, 0], size: [9.5, 2, 9.5], kind: 'ice', style: 'ice', shape: 'organic' },
       { id: 'i-glass1', pos: [0, 1.0, -10.5], size: [4.8, 0.9, 5.2], kind: 'glass', style: 'crystal' },
-      { id: 'i-plat1', pos: [0, 1.8, -20.5], size: [8.5, 1.6, 8.5], kind: 'ice', style: 'ice' },
+      { id: 'i-plat1', pos: [0, 1.8, -20.5], size: [8.5, 1.6, 8.5], kind: 'ice', style: 'ice', shape: 'organic' },
+      { id: 'i-high-arch', pos: [9, 7.0, -20.5], size: [5.4, 1.1, 5.4], kind: 'solid', style: 'gold', shape: 'disc' },
       { id: 'i-step-pre2d', pos: [0, 2.2, -31], size: [6.5, 1.4, 6.5], kind: 'ice', style: 'ice' },
       { id: 'i-2d-entry', pos: [0, 2.6, -41], size: [6.5, 1.6, 5.8], kind: 'solid', style: 'tech' },
 
@@ -342,14 +417,26 @@ export const LEVELS: LevelDef[] = [
       },
       { id: 'i-2d-exit', pos: [-48, 5.4, -41], size: [7, 1.6, 6.5], kind: 'solid', style: 'gold' },
 
-      // Extended 3D Glacier Fortress Finale
-      { id: 'i-3d-arena1', pos: [-48, 5.8, -55], size: [9.5, 1.8, 9.5], kind: 'ice', style: 'ice' },
+      // Extended 3D Glacier Fortress + Secret Elevators & Rotating Disc
+      { id: 'i-3d-arena1', pos: [-48, 5.8, -55], size: [9.5, 1.8, 9.5], kind: 'ice', style: 'ice', shape: 'organic' },
       { id: 'i-3d-side-bridge', pos: [-39.5, 6.4, -55], size: [4.6, 0.9, 3.4], kind: 'glass', style: 'crystal', linkedTargetId: 't-i1' },
-      { id: 'i-3d-side', pos: [-33, 6.8, -55], size: [5, 1.2, 5], kind: 'solid', style: 'gold' },
+      { id: 'i-3d-side', pos: [-33, 6.8, -55], size: [5.4, 1.2, 6.0], kind: 'solid', style: 'gold' },
+      {
+        id: 'i-elev-secret',
+        pos: [-33, 7.2, -64],
+        size: [4.8, 1.1, 4.8],
+        kind: 'elevator',
+        style: 'crystal',
+        moveOffset: [0, 4.2, 0],
+        moveSpeed: 1.45,
+        linkedSwitchId: 'sw-i1',
+      },
       { id: 'i-3d-iceway', pos: [-48, 6.4, -69], size: [6, 1.4, 10], kind: 'ice', style: 'ice' },
-      { id: 'i-3d-arena2', pos: [-48, 7.2, -83], size: [9.5, 1.8, 9.5], kind: 'ice', style: 'ice' },
-      { id: 'i-3d-bridge', pos: [-48, 11.2, -96], size: [5.5, 1.0, 6.0], kind: 'glass', style: 'crystal' },
-      { id: 'i-3d-goal', pos: [-48, 12.0, -110], size: [10.5, 1.8, 10.5], kind: 'solid', style: 'gold' },
+      { id: 'i-3d-arena2', pos: [-48, 7.2, -83], size: [9.5, 1.8, 9.5], kind: 'ice', style: 'ice', shape: 'organic' },
+      { id: 'i-rot-side', pos: [-57.5, 7.8, -83], size: [5.8, 1.1, 5.8], kind: 'rotating', style: 'ice', rotSpeed: 1.15, shape: 'disc' },
+      { id: 'i-dis-side', pos: [-66, 8.4, -83], size: [5.0, 1.0, 5.0], kind: 'disappearing', style: 'crystal', cyclePeriod: 3.8, cyclePhase: 0.3 },
+      { id: 'i-3d-bridge', pos: [-48, 11.2, -96], size: [5.5, 1.0, 6.5], kind: 'glass', style: 'crystal' },
+      { id: 'i-3d-goal', pos: [-48, 12.0, -113], size: [20, 2.0, 20], kind: 'ice', style: 'ice', shape: 'organic' },
     ],
     zones2D: [
       {
@@ -370,6 +457,7 @@ export const LEVELS: LevelDef[] = [
     coins: [
       { pos: [0, 2.4, -10.5] },
       { pos: [0, 3.4, -20.5] },
+      { pos: [9, 8.2, -20.5] },
       { pos: [0, 3.8, -31] },
       { pos: [-9.5, 4.4, -41] },
       { pos: [-19.5, 5.1, -41] },
@@ -377,23 +465,24 @@ export const LEVELS: LevelDef[] = [
       { pos: [-38.5, 6.4, -41] },
       { pos: [-48, 7.2, -48] },
       { pos: [-39.5, 7.8, -55] },
+      { pos: [-57.5, 9.2, -83] },
       { pos: [-48, 7.9, -69] },
       { pos: [-48, 12.4, -96] },
-      { pos: [-50, 13.8, -107] },
-      { pos: [-46, 13.8, -107] },
+      { pos: [-52, 13.8, -109] },
+      { pos: [-44, 13.8, -109] },
     ],
     miniBots: [
-      { id: 'mb-3-1', name: 'Astro Cristal', pos: [2.8, 2.6, -21] },
-      { id: 'mb-3-2', name: 'Astro Frost', pos: [-33, 7.4, -55] },
-      { id: 'mb-3-3', name: 'Astro Boreal', pos: [-45, 12.9, -110] },
+      { id: 'mb-3-1', name: 'Chispa Cristal', pos: [2.8, 2.6, -21] },
+      { id: 'mb-3-2', name: 'Chispa Frost', pos: [-33, 7.4, -55] },
+      { id: 'mb-3-3', name: 'Chispa Boreal', pos: [-44, 13.0, -106] },
     ],
     enemies: [
       { id: 'ei-1', kind: 'spiky', pos: [0, 2.6, -20.5], patrolOffset: [2.4, 0, 0], speed: 2.2 },
-      { id: 'ei-2', kind: 'hopper', pos: [0, 2.9, -31], patrolOffset: [2.0, 0, 0], speed: 2.1 },
+      { id: 'ei-2', kind: 'flyer', pos: [-19.5, 6.2, -41], patrolOffset: [0, 0.9, 0], speed: 2.1 },
       { id: 'ei-3', kind: 'chomper', pos: [-19.5, 4.3, -41], patrolOffset: [2.2, 0, 0], speed: 2.3 },
-      { id: 'ei-4', kind: 'brute', pos: [-48, 6.7, -55], patrolOffset: [2.8, 0, 0], speed: 1.8 },
-      { id: 'ei-5', kind: 'spiky', pos: [-48, 7.1, -69], patrolOffset: [2.0, 0, 0], speed: 2.2 },
-      { id: 'ei-6', kind: 'hopper', pos: [-48, 8.1, -82], patrolOffset: [2.6, 0, 0], speed: 2.4 },
+      { id: 'ei-4', kind: 'guardian', pos: [-48, 6.7, -55], patrolOffset: [2.6, 0, 0], speed: 1.8 },
+      { id: 'ei-5', kind: 'chaser', pos: [-48, 7.1, -69], patrolOffset: [0, 0, 2.4], speed: 2.5 },
+      { id: 'ei-6', kind: 'shooter', pos: [-48, 8.1, -82], patrolOffset: [0, 0, 0], speed: 1.0 },
       { id: 'ei-7', kind: 'spiky', pos: [-48, 8.1, -84.5], patrolOffset: [2.6, 0, 0], speed: 2.4 },
     ],
     lasers: [
@@ -408,20 +497,20 @@ export const LEVELS: LevelDef[] = [
   },
 
   // =========================================================================
-  // NIVEL 4: TEMPLO DEL MONO (Disfraz Traje de Mono + Escalada Vertical + 2D)
+  // NIVEL 4: TEMPLO DEL MONO (Escalada + Ruedas Mayas + Ídolo Solar Kukul)
   // =========================================================================
   {
     index: 3,
     id: 'monkey-temple',
     name: 'Templo del Mono',
-    subtitle: 'Ponte el Traje de Mono para trepar muros antiguos hacia la cima',
+    subtitle: 'Traje de Mono, escalada vertical y batalla contra Ídolo Solar Kukul',
     theme: {
       biome: 'temple',
       skyTop: '#56b8a6',
       skyHorizon: '#f3f4c8',
       fogColor: '#d9ebb8',
-      fogNear: 72,
-      fogFar: 225,
+      fogNear: 74,
+      fogFar: 240,
       keyLightColor: 0xfff5d4,
       keyLightIntensity: 2.4,
       hemiSkyColor: 0xb7ecc8,
@@ -434,28 +523,42 @@ export const LEVELS: LevelDef[] = [
     },
     spawn: [0, 1.5, 0],
     monkeySuitPos: [0, 1.0, -3.5],
-    goalPos: [-16, 24.1, -84],
+    switches: [
+      { id: 'sw-m1', pos: [-19, 16.2, -68], message: '¡Altar de Jade revelado!', coins: 5 },
+    ],
+    relics: [
+      { id: 'rel-m1', name: 'Reliquia del Tótem', pos: [14.5, 17.2, -37] },
+      { id: 'rel-m2', name: 'Reliquia Esmeralda', pos: [-7.5, 14.5, -37] },
+      { id: 'rel-m3', name: 'Reliquia de Jade', pos: [-26, 17.4, -68] },
+    ],
+    windZones: [
+      { id: 'wz-m1', pos: [0, 8.9, -37], radius: 1.9, height: 6.2, liftSpeed: 11.4 },
+    ],
+    boss: {
+      name: 'Ídolo Solar Kukul',
+      style: 'temple',
+      pos: [-16, 23.4, -89],
+      arenaCenter: [-16, 23.4, -88],
+      arenaRadius: 8.6,
+      maxHp: 4,
+    },
+    goalPos: [-16, 23.4, -95],
     climbWalls: [
-      // Wall 1: climb +Z face from m-base1 (z=-28) up to y=8.8
       { id: 'cw-1', pos: [0, 5.2, -30], size: [5.8, 7.2, 4.0], face: 'pz' },
-      // Wall 2: climb +X face from m-pre-cw2 (x=-3.5) up to y=15.7
       { id: 'cw-2', pos: [-5.5, 12.2, -49], size: [4.0, 7.0, 5.8], face: 'px' },
-      // Wall 3: climb +Z face from m-tower-base (z=-72) up to y=23.2
       { id: 'cw-3', pos: [-16, 19.6, -74], size: [6.2, 7.2, 4.0], face: 'pz' },
-      // Secret side climb wall for Mini-Bot 2
       { id: 'cw-secret', pos: [6.5, 12.0, -37], size: [4.0, 6.4, 4.8], face: 'nx' },
     ],
     platforms: [
-      { id: 'm-start', pos: [0, 0, 0], size: [10, 2, 10], kind: 'solid', style: 'temple' },
+      { id: 'm-start', pos: [0, 0, 0], size: [10, 2, 10], kind: 'solid', style: 'temple', shape: 'organic' },
       { id: 'm-step1', pos: [0, 0.6, -11.5], size: [7.5, 1.4, 7.5], kind: 'solid', style: 'temple' },
       { id: 'm-base1', pos: [0, 1.0, -24], size: [8, 1.6, 8], kind: 'solid', style: 'gold' },
 
-      // Top of cw-1 is y=8.8, z=-28..-32 -> step onto m-canopy1
       { id: 'm-canopy1', pos: [0, 8.2, -37], size: [8, 1.4, 8.5], kind: 'solid', style: 'temple' },
-      // Top of cw-secret is y=15.2, x=4.5..8.5, z=-37
+      { id: 'm-wind-altar', pos: [-7.5, 13.2, -37], size: [4.8, 1.1, 4.8], kind: 'solid', style: 'gold', shape: 'disc' },
+      { id: 'm-rot-totem', pos: [14.5, 15.6, -37], size: [5.6, 1.1, 5.6], kind: 'rotating', style: 'temple', rotSpeed: 1.0, shape: 'disc' },
       { id: 'm-pre-cw2', pos: [0, 8.2, -49], size: [7, 1.4, 7.5], kind: 'solid', style: 'tech' },
 
-      // Top of cw-2 is y=15.7, x=-3.5..-7.5, z=-49 -> 2D Vine Bridge leftwards to x=-16
       { id: 'm-2d-c1', pos: [-11.5, 15.0, -49], size: [4.8, 1.1, 3.8], kind: 'crumble', style: 'temple' },
       {
         id: 'm-2d-move',
@@ -466,10 +569,10 @@ export const LEVELS: LevelDef[] = [
         moveOffset: [0, 0, 2.2],
         moveSpeed: 1.7,
       },
-      { id: 'm-tower-base', pos: [-16, 15.4, -68], size: [8.5, 1.6, 8], kind: 'solid', style: 'gold' },
+      { id: 'm-tower-base', pos: [-16, 15.4, -68], size: [9.0, 1.6, 8], kind: 'solid', style: 'gold' },
+      { id: 'm-jade-bridge', pos: [-26, 16.0, -68], size: [6.0, 1.0, 4.4], kind: 'disappearing', style: 'crystal', cyclePeriod: 4.2, cyclePhase: 0, linkedSwitchId: 'sw-m1' },
 
-      // Top of cw-3 is y=23.2, z=-72..-76 -> Summit Arena
-      { id: 'm-summit', pos: [-16, 22.4, -84], size: [11, 1.8, 11], kind: 'solid', style: 'gold' },
+      { id: 'm-summit', pos: [-16, 22.4, -88], size: [20, 2.0, 20], kind: 'solid', style: 'temple', shape: 'organic' },
     ],
     zones2D: [
       {
@@ -500,21 +603,21 @@ export const LEVELS: LevelDef[] = [
       { pos: [-16, 17.2, -68] },
       { pos: [-16, 19.8, -71.5] },
       { pos: [-16, 22.2, -71.5] },
-      { pos: [-18, 24.4, -82] },
-      { pos: [-14, 24.4, -82] },
+      { pos: [-20, 24.4, -84] },
+      { pos: [-12, 24.4, -84] },
     ],
     miniBots: [
-      { id: 'mb-4-1', name: 'Astro Simio', pos: [0, 9.0, -49] },
-      { id: 'mb-4-2', name: 'Astro Lémur', pos: [6.5, 15.2, -37] },
-      { id: 'mb-4-3', name: 'Astro Totem', pos: [-13.5, 23.3, -84] },
+      { id: 'mb-4-1', name: 'Chispa Simio', pos: [0, 9.0, -49] },
+      { id: 'mb-4-2', name: 'Chispa Lémur', pos: [6.5, 15.2, -37] },
+      { id: 'mb-4-3', name: 'Chispa Tótem', pos: [-12.5, 23.4, -81] },
     ],
     enemies: [
       { id: 'em-1', kind: 'chomper', pos: [0, 1.3, -11.5], patrolOffset: [2.4, 0, 0], speed: 2.2 },
-      { id: 'em-2', kind: 'spiky', pos: [0, 1.8, -24], patrolOffset: [2.5, 0, 0], speed: 2.1 },
+      { id: 'em-2', kind: 'guardian', pos: [0, 1.8, -24], patrolOffset: [2.2, 0, 0], speed: 1.7 },
       { id: 'em-3', kind: 'hopper', pos: [0, 8.9, -37], patrolOffset: [2.4, 0, 0], speed: 2.3 },
-      { id: 'em-4', kind: 'chomper', pos: [0, 8.9, -49], patrolOffset: [2.0, 0, 0], speed: 2.3 },
-      { id: 'em-5', kind: 'spiky', pos: [-16, 16.2, -68], patrolOffset: [2.6, 0, 0], speed: 2.3 },
-      { id: 'em-6', kind: 'brute', pos: [-16, 23.3, -82], patrolOffset: [3.2, 0, 0], speed: 1.9 },
+      { id: 'em-4', kind: 'chaser', pos: [0, 8.9, -49], patrolOffset: [2.0, 0, 0], speed: 2.6 },
+      { id: 'em-5', kind: 'shooter', pos: [-16, 16.2, -68], patrolOffset: [0, 0, 0], speed: 1.0 },
+      { id: 'em-6', kind: 'flyer', pos: [-16, 17.4, -57], patrolOffset: [1.5, 0.8, 0], speed: 2.0 },
     ],
     lasers: [
       { pos: [0, 2.3, -24], length: 7.5, axis: 'x', period: 2.8, phase: 0.3 },
@@ -527,20 +630,20 @@ export const LEVELS: LevelDef[] = [
   },
 
   // =========================================================================
-  // NIVEL 5: CAÑÓN VOLCÁNICO (Basalto sobre Lava + Cohete Volcánico + Brutes)
+  // NIVEL 5: CAÑÓN VOLCÁNICO (Basalto sobre Magma + Cohete + Titán Magma-Core)
   // =========================================================================
   {
     index: 4,
     id: 'volcanic-canyon',
     name: 'Cañón Volcánico',
-    subtitle: 'Basalto sobre magma, cintas térmicas, Arco y Cohete en la caldera',
+    subtitle: 'Basalto sobre magma, géiseres térmicos, Cohete y Titán Magma-Core',
     theme: {
       biome: 'volcanic',
       skyTop: '#0d0407',
       skyHorizon: '#8a1515',
       fogColor: '#5c110d',
-      fogNear: 72,
-      fogFar: 245,
+      fogNear: 74,
+      fogFar: 255,
       keyLightColor: 0xffb36b,
       keyLightIntensity: 2.25,
       hemiSkyColor: 0xe64827,
@@ -554,9 +657,28 @@ export const LEVELS: LevelDef[] = [
     spawn: [0, 1.5, 0],
     bowPickupPos: [0, 1.0, -3.2],
     targets: [{ id: 't-v1', pos: [0, 4.4, -38], coins: 5 }],
-    goalPos: [0, 11.4, -240],
+    switches: [
+      { id: 'sw-v1', pos: [4.2, 9.2, -212], message: '¡Forja Volcánica Secreta desbloqueada!', coins: 5 },
+    ],
+    relics: [
+      { id: 'rel-v1', name: 'Reliquia Obsidiana', pos: [10.5, 4.6, -23.5] },
+      { id: 'rel-v2', name: 'Reliquia Géiser', pos: [0, 11.4, -86] },
+      { id: 'rel-v3', name: 'Reliquia Magma', pos: [12.5, 11.2, -212] },
+    ],
+    windZones: [
+      { id: 'wz-v1', pos: [0, 5.6, -86], radius: 2.1, height: 6.8, liftSpeed: 11.8 },
+    ],
+    boss: {
+      name: 'Titán Magma-Core',
+      style: 'volcanic',
+      pos: [0, 11.5, -245],
+      arenaCenter: [0, 11.5, -244],
+      arenaRadius: 9.2,
+      maxHp: 5,
+    },
+    goalPos: [0, 11.5, -252],
     platforms: [
-      { id: 'v-start', pos: [0, 0, 0], size: [10, 2, 10], kind: 'solid', style: 'volcanic' },
+      { id: 'v-start', pos: [0, 0, 0], size: [10, 2, 10], kind: 'solid', style: 'volcanic', shape: 'organic' },
       {
         id: 'v-conv1',
         pos: [0, 0.8, -11.5],
@@ -565,7 +687,8 @@ export const LEVELS: LevelDef[] = [
         style: 'volcanic',
         conveyorDir: [0, 3.6],
       },
-      { id: 'v-arena1', pos: [0, 1.4, -23.5], size: [9.5, 1.6, 9.5], kind: 'solid', style: 'volcanic' },
+      { id: 'v-arena1', pos: [0, 1.4, -23.5], size: [9.5, 1.6, 9.5], kind: 'solid', style: 'volcanic', shape: 'organic' },
+      { id: 'v-rot-side', pos: [10.5, 2.8, -23.5], size: [5.6, 1.1, 5.6], kind: 'rotating', style: 'volcanic', rotSpeed: 1.25, shape: 'disc' },
       { id: 'v-bridge-t', pos: [0, 2.2, -33.5], size: [4.8, 0.9, 6.2], kind: 'glass', style: 'crystal', linkedTargetId: 't-v1' },
 
       // 2D Volcanic Ridge along Z (x = 0, z = -42.5 -> -86)
@@ -585,8 +708,9 @@ export const LEVELS: LevelDef[] = [
       { id: 'v-launchpad', pos: [0, 4.7, -86], size: [10.5, 1.8, 11], kind: 'solid', style: 'gold' },
 
       { id: 'v-landing', pos: [0, 8.2, -212], size: [12, 2.0, 12], kind: 'solid', style: 'gold' },
+      { id: 'v-secret-forge', pos: [12.5, 9.6, -212], size: [6.4, 1.2, 6.0], kind: 'disappearing', style: 'volcanic', cyclePeriod: 4.0, cyclePhase: 0.2, linkedSwitchId: 'sw-v1' },
       { id: 'v-gauntlet', pos: [0, 9.2, -226], size: [8, 1.6, 9], kind: 'solid', style: 'volcanic' },
-      { id: 'v-goal', pos: [0, 10.5, -240], size: [11, 1.8, 11], kind: 'solid', style: 'gold' },
+      { id: 'v-goal', pos: [0, 10.5, -244], size: [22, 2.0, 22], kind: 'solid', style: 'volcanic', shape: 'organic' },
     ],
     zones2D: [
       {
@@ -629,6 +753,7 @@ export const LEVELS: LevelDef[] = [
     coins: [
       { pos: [0, 2.2, -11.5] },
       { pos: [0, 3.0, -23.5] },
+      { pos: [10.5, 4.2, -23.5] },
       { pos: [0, 3.6, -33.5] },
       { pos: [0, 7.2, -104] },
       { pos: [3.8, 8.4, -120] },
@@ -638,21 +763,21 @@ export const LEVELS: LevelDef[] = [
       { pos: [-3.6, 9.5, -184] },
       { pos: [0, 9.8, -198] },
       { pos: [0, 11.2, -226] },
-      { pos: [-2, 12.2, -237] },
-      { pos: [2, 12.2, -237] },
+      { pos: [-4, 12.2, -238] },
+      { pos: [4, 12.2, -238] },
     ],
     miniBots: [
-      { id: 'mb-5-1', name: 'Astro Magma', pos: [-3.2, 2.2, -24.5] },
-      { id: 'mb-5-2', name: 'Astro Basalto', pos: [0, 5.4, -76.5] },
-      { id: 'mb-5-3', name: 'Astro Fénix', pos: [3.4, 10.0, -226] },
+      { id: 'mb-5-1', name: 'Chispa Magma', pos: [-3.2, 2.2, -24.5] },
+      { id: 'mb-5-2', name: 'Chispa Basalto', pos: [0, 5.4, -76.5] },
+      { id: 'mb-5-3', name: 'Chispa Fénix', pos: [3.4, 10.0, -226] },
     ],
     enemies: [
       { id: 'ev-1', kind: 'spiky', pos: [0, 2.2, -23.5], patrolOffset: [2.8, 0, 0], speed: 2.3 },
       { id: 'ev-2', kind: 'chomper', pos: [0, 3.4, -42.5], patrolOffset: [0, 0, 2.0], speed: 2.3 },
-      { id: 'ev-3', kind: 'hopper', pos: [0, 5.3, -76.5], patrolOffset: [0, 0, 1.6], speed: 2.4 },
-      { id: 'ev-4', kind: 'brute', pos: [0, 9.2, -212], patrolOffset: [3.4, 0, 0], speed: 2.0 },
-      { id: 'ev-5', kind: 'spiky', pos: [0, 10.0, -226], patrolOffset: [2.5, 0, 0], speed: 2.5 },
-      { id: 'ev-6', kind: 'brute', pos: [0, 11.4, -238], patrolOffset: [3.2, 0, 0], speed: 2.1 },
+      { id: 'ev-3', kind: 'flyer', pos: [0, 6.8, -60], patrolOffset: [0, 0.8, 0], speed: 2.2 },
+      { id: 'ev-4', kind: 'guardian', pos: [0, 9.2, -212], patrolOffset: [2.8, 0, 0], speed: 1.9 },
+      { id: 'ev-5', kind: 'shooter', pos: [0, 10.0, -226], patrolOffset: [0, 0, 0], speed: 1.0 },
+      { id: 'ev-6', kind: 'chaser', pos: [0, 11.5, -236], patrolOffset: [3.4, 0, 0], speed: 2.7 },
     ],
     lasers: [
       { pos: [0, 2.7, -23.5], length: 8.6, axis: 'x', period: 2.5, phase: 0.1 },
@@ -665,20 +790,20 @@ export const LEVELS: LevelDef[] = [
   },
 
   // =========================================================================
-  // NIVEL 6: CIUDADELA NEBULOSA (Desafío Final + JEFE FINAL: TITÁN KRAXUS)
+  // NIVEL 6: CIUDADELA NEBULOSA (Desafío Final + Titán Kraxus Fase 2)
   // =========================================================================
   {
     index: 5,
     id: 'nebula-citadel',
     name: 'Ciudadela Nebulosa',
-    subtitle: 'Tramo estelar extremo y batalla final contra Titán Kraxus',
+    subtitle: 'Plataformas astrales, reliquias ocultas y duelo final contra Titán Kraxus',
     theme: {
       biome: 'nebula',
       skyTop: '#063366',
       skyHorizon: '#6ee7e7',
       fogColor: '#3aa8c7',
       fogNear: 78,
-      fogFar: 255,
+      fogFar: 265,
       keyLightColor: 0xdff8ff,
       keyLightIntensity: 2.35,
       hemiSkyColor: 0x5eead4,
@@ -692,12 +817,24 @@ export const LEVELS: LevelDef[] = [
     spawn: [0, 1.5, 0],
     bowPickupPos: [0, 1.0, -3.2],
     targets: [{ id: 't-n1', pos: [0, 7.8, -68], coins: 5 }],
+    switches: [
+      { id: 'sw-n1', pos: [3.8, 3.6, -36], message: '¡Pasarela Astral Secreta revelada!', coins: 5 },
+    ],
+    relics: [
+      { id: 'rel-n1', name: 'Reliquia Pulsar', pos: [14, 5.4, -36] },
+      { id: 'rel-n2', name: 'Reliquia Cometa', pos: [39.5, 15.2, -78] },
+      { id: 'rel-n3', name: 'Reliquia Corona', pos: [-11, 13.0, -117] },
+    ],
+    windZones: [
+      { id: 'wz-n1', pos: [39.5, 9.8, -78], radius: 2.0, height: 6.2, liftSpeed: 11.6 },
+    ],
     boss: {
       name: 'Titán Kraxus',
+      style: 'nebula',
       pos: [0, 12.0, -142],
       arenaCenter: [0, 12.0, -138],
       arenaRadius: 12.5,
-      maxHp: 5,
+      maxHp: 6,
     },
     goalPos: [0, 12.0, -149],
     platforms: [
@@ -713,6 +850,8 @@ export const LEVELS: LevelDef[] = [
         moveSpeed: 1.85,
       },
       { id: 'n-arena1', pos: [0, 2.8, -36], size: [9.5, 1.6, 9.5], kind: 'solid', style: 'nebula' },
+      { id: 'n-secret-bridge', pos: [9.5, 3.8, -36], size: [9.5, 0.9, 4.2], kind: 'glass', style: 'crystal', linkedSwitchId: 'sw-n1' },
+      { id: 'n-secret-plat', pos: [14, 4.4, -36], size: [4.8, 1.2, 4.8], kind: 'solid', style: 'gold', shape: 'disc' },
       {
         id: 'n-conv1',
         pos: [0, 3.8, -48.5],
@@ -745,13 +884,14 @@ export const LEVELS: LevelDef[] = [
         id: 'n-app-2',
         pos: [23, 10.4, -98],
         size: [6.5, 1.4, 6.5],
-        kind: 'moving',
-        style: 'tech',
-        moveOffset: [2.8, 0, 0],
-        moveSpeed: 1.65,
+        kind: 'rotating',
+        style: 'nebula',
+        rotSpeed: 1.2,
+        shape: 'disc',
       },
       { id: 'n-app-2b', pos: [12, 10.6, -108], size: [6.5, 1.4, 6.5], kind: 'solid', style: 'nebula' },
       { id: 'n-app-3', pos: [0, 10.8, -117], size: [8, 1.6, 8], kind: 'solid', style: 'gold' },
+      { id: 'n-app-side', pos: [-11, 11.4, -117], size: [5.4, 1.1, 5.4], kind: 'disappearing', style: 'crystal', cyclePeriod: 3.8, cyclePhase: 0 },
 
       // GRAND BOSS ARENA (28x28)
       { id: 'n-boss-arena', pos: [0, 11.0, -138], size: [28, 2.0, 28], kind: 'solid', style: 'nebula' },
@@ -776,6 +916,7 @@ export const LEVELS: LevelDef[] = [
       { pos: [0, 2.4, -12] },
       { pos: [0, 3.4, -23.5] },
       { pos: [0, 4.4, -36] },
+      { pos: [9.5, 5.2, -36] },
       { pos: [0, 5.4, -48.5] },
       { pos: [0, 7.0, -69] },
       { pos: [6, 7.7, -78] },
@@ -790,17 +931,17 @@ export const LEVELS: LevelDef[] = [
       { pos: [7, 13.0, -138] },
     ],
     miniBots: [
-      { id: 'mb-6-1', name: 'Astro Pulsar', pos: [-3.2, 3.6, -37] },
-      { id: 'mb-6-2', name: 'Astro Cometa', pos: [32, 9.3, -78] },
-      { id: 'mb-6-3', name: 'Astro Corona', pos: [12, 11.3, -108] },
+      { id: 'mb-6-1', name: 'Chispa Pulsar', pos: [-3.2, 3.6, -37] },
+      { id: 'mb-6-2', name: 'Chispa Cometa', pos: [32, 9.3, -78] },
+      { id: 'mb-6-3', name: 'Chispa Corona', pos: [12, 11.3, -108] },
     ],
     enemies: [
       { id: 'en-1', kind: 'spiky', pos: [0, 1.7, -12], patrolOffset: [2.1, 0, 0], speed: 2.3 },
-      { id: 'en-2', kind: 'brute', pos: [0, 3.6, -36], patrolOffset: [3.0, 0, 0], speed: 2.0 },
-      { id: 'en-3', kind: 'hopper', pos: [0, 5.6, -60], patrolOffset: [2.4, 0, 0], speed: 2.4 },
+      { id: 'en-2', kind: 'guardian', pos: [0, 3.6, -36], patrolOffset: [2.8, 0, 0], speed: 1.9 },
+      { id: 'en-3', kind: 'shooter', pos: [0, 5.6, -60], patrolOffset: [0, 0, 0], speed: 1.0 },
       { id: 'en-4', kind: 'chomper', pos: [6, 6.9, -78], patrolOffset: [2.6, 0, 0], speed: 2.5 },
-      { id: 'en-5', kind: 'spiky', pos: [32, 9.3, -78], patrolOffset: [2.2, 0, 0], speed: 2.4 },
-      { id: 'en-6', kind: 'brute', pos: [12, 11.3, -108], patrolOffset: [2.0, 0, 0], speed: 2.1 },
+      { id: 'en-5', kind: 'flyer', pos: [15, 9.2, -78], patrolOffset: [0, 0.9, 0], speed: 2.2 },
+      { id: 'en-6', kind: 'chaser', pos: [12, 11.3, -108], patrolOffset: [2.2, 0, 0], speed: 2.7 },
     ],
     lasers: [
       { pos: [0, 4.1, -36], length: 8.6, axis: 'x', period: 2.4, phase: 0 },
@@ -819,7 +960,7 @@ export const LEVELS: LevelDef[] = [
     index: 6,
     id: 'paris-sky',
     name: 'Cielos de París',
-    subtitle: 'Salta de la Torre Eiffel en ala delta entre monedas y aros',
+    subtitle: 'Salta de la Torre Eiffel en ala delta entre monedas, reliquias y aros',
     theme: {
       biome: 'paris',
       skyTop: '#5dbdf7',
@@ -838,6 +979,17 @@ export const LEVELS: LevelDef[] = [
       hazardEmissive: 0x6c75a8,
     },
     spawn: [0, 32.0, 1.2],
+    switches: [
+      { id: 'sw-p1', pos: [5.5, 4.5, -352], message: '¡Mirador Dorado de los Campos Elíseos activado!', coins: 6 },
+    ],
+    relics: [
+      { id: 'rel-p1', name: 'Reliquia Eiffel', pos: [0, 33.4, 2.7] },
+      { id: 'rel-p2', name: 'Reliquia Aérea', pos: [5.2, 23.0, -124] },
+      { id: 'rel-p3', name: 'Reliquia del Arco', pos: [-11.5, 6.2, -358] },
+    ],
+    windZones: [
+      { id: 'wz-p1', pos: [-6.5, 4.5, -358], radius: 1.8, height: 5.5, liftSpeed: 10.5 },
+    ],
     goalPos: [0, 4.5, -366.5],
     gliderSection: {
       launchpadPos: [0, 32.0, -5.8],
@@ -863,10 +1015,9 @@ export const LEVELS: LevelDef[] = [
       ],
     },
     platforms: [
-      // Invisible collision surface matching the visible Eiffel Tower summit deck & launch catwalk
       { id: 'p-eiffel-top', pos: [0, 31.75, -1.6], size: [5.2, 0.5, 10.6], kind: 'solid', style: 'paris', invisible: true },
-      // Champs-Élysées / Arc de Triomphe Landing Plaza
       { id: 'p-paris-plaza', pos: [0, 3.6, -357], size: [18.0, 1.8, 32.0], kind: 'solid', style: 'paris' },
+      { id: 'p-paris-balcony', pos: [-11.5, 4.6, -358], size: [5.4, 1.1, 5.4], kind: 'solid', style: 'gold', linkedSwitchId: 'sw-p1', shape: 'disc' },
     ],
     zones2D: [],
     jumpPads: [],
@@ -876,11 +1027,9 @@ export const LEVELS: LevelDef[] = [
       { id: 'pc3', pos: [5.5, 4.5, -361], coins: 4 },
     ],
     coins: [
-      // Eiffel Summit Catwalk Trail
       { pos: [-1.4, 33.0, 0.2] },
       { pos: [0, 33.0, -2.2] },
       { pos: [0, 33.0, -4.0] },
-      // Sky Coin Ribbons Guiding Smoothly Through Every Aerial Circle
       { pos: [-1.4, 29.7, -34] },
       { pos: [-2.8, 29.0, -44] },
       { pos: [-4.0, 28.3, -54] },
@@ -912,7 +1061,6 @@ export const LEVELS: LevelDef[] = [
       { pos: [-1.2, 8.2, -314] },
       { pos: [0, 7.5, -324] },
       { pos: [0, 6.2, -335] },
-      // Plaza Coins leading to Arc de Triomphe
       { pos: [-3.2, 5.5, -350] },
       { pos: [3.2, 5.5, -350] },
       { pos: [0, 5.5, -358] },
@@ -924,6 +1072,7 @@ export const LEVELS: LevelDef[] = [
     ],
     enemies: [
       { id: 'ep-1', kind: 'chomper', pos: [0, 4.5, -356], patrolOffset: [3.2, 0, 0], speed: 2.2 },
+      { id: 'ep-2', kind: 'flyer', pos: [0, 7.4, -360], patrolOffset: [3.2, 0.7, 0], speed: 2.0 },
     ],
     lasers: [],
     checkpoints: [
@@ -945,7 +1094,7 @@ export const LEVELS: LevelDef[] = [
       skyHorizon: '#cde8f6',
       fogColor: '#bfe3ee',
       fogNear: 75,
-      fogFar: 250,
+      fogFar: 255,
       keyLightColor: 0xfff7e6,
       keyLightIntensity: 2.4,
       hemiSkyColor: 0x99d6f5,
@@ -957,6 +1106,14 @@ export const LEVELS: LevelDef[] = [
       hazardEmissive: 0x0369a1,
     },
     spawn: [0, 1.1, 4.2],
+    switches: [
+      { id: 'sw-r1', pos: [-4.8, 1.0, -306], message: '¡Isleta Secreta del Lago activada!', coins: 5 },
+    ],
+    relics: [
+      { id: 'rel-r1', name: 'Reliquia del Embarcadero', pos: [-3.6, 2.0, 3.0] },
+      { id: 'rel-r2', name: 'Reliquia del Rápido', pos: [getRiverCenterX(-148) - 3.4, 2.1, -148] },
+      { id: 'rel-r3', name: 'Reliquia del Loto', pos: [-13.5, 2.2, -306] },
+    ],
     goalPos: [0, 1.4, -322],
     boatSection: {
       dockPos: [0, 0.05, -7.8],
@@ -1001,11 +1158,10 @@ export const LEVELS: LevelDef[] = [
       ],
     },
     platforms: [
-      // Upstream Timber Dock
       { id: 'p-rapids-dock', pos: [0, 0.3, 1.0], size: [9.5, 1.4, 12.0], kind: 'solid', style: 'river' },
-      // Calm Lake Pier & Sanctuary Island
       { id: 'p-lake-pier', pos: [0, 0.3, -306], size: [14.0, 1.4, 28.0], kind: 'solid', style: 'river' },
-      { id: 'p-lake-island', pos: [0, 0.6, -322], size: [14.0, 1.6, 14.0], kind: 'solid', style: 'jungle' },
+      { id: 'p-lake-secret', pos: [-13.5, 0.6, -306], size: [6.5, 1.2, 6.5], kind: 'rotating', style: 'jungle', rotSpeed: 0.9, linkedSwitchId: 'sw-r1', shape: 'disc' },
+      { id: 'p-lake-island', pos: [0, 0.6, -322], size: [14.0, 1.6, 14.0], kind: 'solid', style: 'jungle', shape: 'organic' },
     ],
     zones2D: [],
     jumpPads: [],
@@ -1015,10 +1171,8 @@ export const LEVELS: LevelDef[] = [
       { id: 'rc3', pos: [4.2, 1.0, -311], coins: 4 },
     ],
     coins: [
-      // Upstream Dock
       { pos: [0, 1.9, 1.0] },
       { pos: [0, 1.9, -2.5] },
-      // Safe Slalom Channels Following the Winding River Curves
       { pos: [getRiverCenterX(-20), 1.2, -20] },
       { pos: [getRiverCenterX(-26) + 2.4, 1.2, -26] },
       { pos: [getRiverCenterX(-38) - 2.4, 1.2, -38] },
@@ -1037,12 +1191,10 @@ export const LEVELS: LevelDef[] = [
       { pos: [getRiverCenterX(-228) + 2.6, 1.2, -228] },
       { pos: [getRiverCenterX(-244) - 3.2, 1.2, -244] },
       { pos: [getRiverCenterX(-260) + 2.4, 1.2, -260] },
-      // Calm Lake Serene Welcome Coins
       { pos: [-2.5, 1.2, -276] },
       { pos: [0, 1.2, -280] },
       { pos: [2.5, 1.2, -284] },
       { pos: [0, 1.2, -288] },
-      // Lake Pier & Sanctuary Island
       { pos: [-2.5, 2.0, -300] },
       { pos: [2.5, 2.0, -300] },
       { pos: [0, 2.2, -314] },
@@ -1052,7 +1204,9 @@ export const LEVELS: LevelDef[] = [
       { id: 'mb-8-2', name: 'Nilo', pos: [-4.5, 1.0, -304] },
       { id: 'mb-8-3', name: 'Boreal', pos: [4.5, 1.0, -304] },
     ],
-    enemies: [],
+    enemies: [
+      { id: 'er-1', kind: 'guardian', pos: [0, 1.4, -317], patrolOffset: [2.6, 0, 0], speed: 1.5 },
+    ],
     lasers: [],
     checkpoints: [
       { id: 'cp-r1', pos: [0, 1.0, -296] },

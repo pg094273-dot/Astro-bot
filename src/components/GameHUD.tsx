@@ -49,8 +49,8 @@ export const GameHUD: React.FC<GameHUDProps> = ({
           : hud.isClimbing
             ? 'Cruceta / Stick Trepar y Lateral · OK / A / Espacio Saltar del muro'
             : hud.hasBow
-              ? 'Cruceta / Mando Mover · OK / A Saltar · 2×OK / X / B Girar y Arco · Volver Pausa'
-              : 'Cruceta / Mando Mover · OK / A Saltar/Planear · 2×OK / X Girar · Volver Pausa';
+              ? 'Cruceta / Mando Mover · OK / A Saltar (×2 Doble salto) · 2×OK / X / B Girar y Arco · Volver Pausa'
+              : 'Cruceta / Mando Mover · OK / A Saltar (×2 Doble salto) y Planear · 2×OK / X Girar · Volver Pausa';
 
   return (
     <div className="pointer-events-none fixed inset-0 z-10 flex flex-col justify-between p-4 pt-[max(1rem,env(safe-area-inset-top))] pb-[max(1rem,env(safe-area-inset-bottom))] pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] sm:p-6">
@@ -168,6 +168,18 @@ export const GameHUD: React.FC<GameHUDProps> = ({
 
             <span className="text-white/25" aria-hidden="true">·</span>
 
+            <div className="flex items-center gap-1.5" title="Reliquias Estelares">
+              <svg width="17" height="17" viewBox="0 0 24 24" fill="none">
+                <polygon points="12,2 19,9 12,22 5,9" fill="#38bdf8" stroke="#bae6fd" strokeWidth="1.4" />
+                <polygon points="12,5 16,9.5 12,17 8,9.5" fill="#e0f2fe" opacity="0.7" />
+              </svg>
+              <span className="font-mono-num text-sm font-bold text-cyan-300">
+                {hud.relicsCollected}/{hud.totalRelics}
+              </span>
+            </div>
+
+            <span className="text-white/25" aria-hidden="true">·</span>
+
             <div className="flex items-center gap-1.5" title="Monedas estelares">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
                 <circle cx="12" cy="12" r="9" fill="#facc15" stroke="#ca8a04" strokeWidth="1.5" />
@@ -223,10 +235,17 @@ export const GameHUD: React.FC<GameHUDProps> = ({
       {/* Final Boss Health Bar */}
       {hud.boss && (
         <div className="mx-auto mt-2 flex w-full max-w-md flex-col gap-1.5 rounded-xl border border-rose-500/40 bg-[#140714]/88 px-4 py-2.5 text-white shadow-xl">
-          <div className="flex items-center justify-between">
-            <span className="font-display text-xs font-bold tracking-wider text-rose-300 uppercase">
-              Jefe Final · {hud.boss.name}
-            </span>
+          <div className="flex items-center justify-between gap-2">
+            <div className="flex items-center gap-2">
+              <span className="font-display text-xs font-bold tracking-wider text-rose-300 uppercase">
+                Jefe Final · {hud.boss.name}
+              </span>
+              {hud.boss.phase > 1 && (
+                <span className="rounded bg-rose-500/30 px-1.5 py-0.5 font-mono-num text-[10px] font-bold text-rose-200 uppercase">
+                  Fase {hud.boss.phase}
+                </span>
+              )}
+            </div>
             <span className="font-mono-num text-xs font-bold text-amber-300">
               {hud.boss.hp}/{hud.boss.maxHp}
             </span>

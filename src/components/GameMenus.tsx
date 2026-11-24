@@ -14,6 +14,8 @@ interface GameMenusProps {
     totalCoins: number;
     bots: number;
     totalBots: number;
+    relics: number;
+    totalRelics: number;
     time: number;
   } | null;
   onStartGame: (levelIdx: number) => void;
@@ -74,13 +76,12 @@ export const GameMenus: React.FC<GameMenusProps> = ({
                   <stop offset="100%" stopColor="#38bdf8" />
                 </linearGradient>
               </defs>
-              {/* Visor emblem mark */}
-              <rect x="4" y="14" width="66" height="54" rx="22" fill="#f8fafc" />
-              <rect x="13" y="25" width="48" height="32" rx="14" fill="#091124" />
-              <ellipse cx="28" cy="41" rx="5.5" ry="7.5" fill="#38bdf8" />
-              <ellipse cx="46" cy="41" rx="5.5" ry="7.5" fill="#38bdf8" />
-              <path d="M37 14 L37 4" stroke="#38bdf8" strokeWidth="4" strokeLinecap="round" />
-              <circle cx="37" cy="4" r="4" fill="#38bdf8" />
+              {/* Original Nova Explorer orbital helmet & crest emblem */}
+              <ellipse cx="40" cy="46" rx="34" ry="12" fill="none" stroke="#38bdf8" strokeWidth="2.5" opacity="0.65" transform="rotate(-16 40 46)" />
+              <polygon points="40,10 66,28 60,64 20,64 14,28" fill="#0f172a" stroke="#e2e8f0" strokeWidth="3" strokeLinejoin="round" />
+              <polygon points="22,33 58,33 53,51 27,51" fill="#0ea5e9" opacity="0.9" />
+              <polygon points="27,37 53,37 50,45 30,45" fill="#bae6fd" />
+              <polygon points="40,3 44,12 53,12 46,18 48,26 40,21 32,26 34,18 27,12 36,12" fill="#facc15" />
               {/* Wordmark */}
               <text
                 x="86"
@@ -141,10 +142,12 @@ export const GameMenus: React.FC<GameMenusProps> = ({
                     )}
                   </div>
                   <p className="line-clamp-1 text-xs text-slate-300">{lvl.subtitle}</p>
-                  <div className="mt-1 flex items-center gap-2 font-mono-num text-xs text-sky-300">
+                  <div className="mt-1 flex flex-wrap items-center gap-1.5 font-mono-num text-[11px] text-sky-300">
                     <span>Bots {stats ? stats.bestBots : 0}/{lvl.miniBots.length}</span>
                     <span className="text-white/25" aria-hidden="true">·</span>
-                    <span className="text-amber-300">Monedas {stats ? stats.bestCoins : 0}</span>
+                    <span className="text-cyan-300">Reliq. {stats?.bestRelics ?? 0}/{lvl.relics?.length ?? 0}</span>
+                    <span className="text-white/25" aria-hidden="true">·</span>
+                    <span className="text-amber-300">Mon. {stats ? stats.bestCoins : 0}</span>
                   </div>
                 </button>
               );
@@ -251,11 +254,17 @@ export const GameMenus: React.FC<GameMenusProps> = ({
           </h2>
         </div>
 
-        <div className="grid grid-cols-3 gap-3 rounded-xl border border-white/10 bg-slate-900/75 p-4 text-center">
+        <div className="grid grid-cols-2 gap-3 rounded-xl border border-white/10 bg-slate-900/75 p-4 text-center sm:grid-cols-4">
           <div>
             <p className="text-xs text-slate-400">Mini-Bots</p>
             <p className="mt-1 font-mono-num text-xl font-bold text-sky-300">
               {victoryStats?.bots ?? hud.botsRescued}/{victoryStats?.totalBots ?? hud.totalBots}
+            </p>
+          </div>
+          <div>
+            <p className="text-xs text-slate-400">Reliquias</p>
+            <p className="mt-1 font-mono-num text-xl font-bold text-cyan-300">
+              {victoryStats?.relics ?? hud.relicsCollected}/{victoryStats?.totalRelics ?? hud.totalRelics}
             </p>
           </div>
           <div>

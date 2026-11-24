@@ -34,6 +34,19 @@ import {
   RocketVehicleRig,
 } from './models';
 import {
+  buildStyledPlatformMesh,
+  createEnemyProjectileMesh,
+  createRelicMesh,
+  createSwitchMesh,
+  createWindZoneMesh,
+} from './platformBuilder';
+import {
+  AmbientMoteSystem,
+  applyWaterSurfaceShader,
+  applyWindSwayShader,
+  createBiomeAmbientParticles,
+} from './shaders';
+import {
   createProceduralTextures,
   disposeProceduralTextures,
   ProceduralTextures,
@@ -67,6 +80,10 @@ interface PlatformRuntime {
   halfSize: THREE.Vector3;
   crumbleState: 'idle' | 'shaking' | 'fallen';
   crumbleTimer: number;
+  disappearState: 'solid' | 'warning' | 'hidden';
+  rotAngle: number;
+  prevRotAngle: number;
+  activated: boolean;
   visible: boolean;
 }
 
@@ -105,6 +122,10 @@ interface EnemyRuntime {
   jawUpper?: THREE.Mesh;
   windupKey?: THREE.Group;
   springGroup?: THREE.Group;
+  wingL?: THREE.Mesh;
+  wingR?: THREE.Mesh;
+  turretHead?: THREE.Group;
+  shieldMesh?: THREE.Mesh;
   basePos: THREE.Vector3;
   pos: THREE.Vector3;
   patrolOffset: THREE.Vector3;
@@ -114,6 +135,7 @@ interface EnemyRuntime {
   hitFlash: number;
   alive: boolean;
   hopPhase: number;
+  shootTimer: number;
 }
 
 interface ClimbWallRuntime {
@@ -131,6 +153,7 @@ interface BossRuntime {
   arenaRadius: number;
   hp: number;
   maxHp: number;
+  phase: number;
   alive: boolean;
   active: boolean;
   invulnTimer: number;
@@ -217,6 +240,46 @@ interface Particle {
   color: THREE.Color;
 }
 
+interface SwitchRuntime {
+  id: string;
+  group: THREE.Group;
+  buttonMesh: THREE.Mesh;
+  buttonMat: THREE.MeshStandardMaterial;
+  ringMat: THREE.MeshStandardMaterial;
+  pos: THREE.Vector3;
+  message?: string;
+  coins: number;
+  activated: boolean;
+}
+
+interface RelicRuntime {
+  id: string;
+  name: string;
+  group: THREE.Group;
+  core: THREE.Mesh;
+  halo: THREE.Mesh;
+  baseY: number;
+  pos: THREE.Vector3;
+  collected: boolean;
+  phase: number;
+}
+
+interface WindZoneRuntime {
+  group: THREE.Group;
+  swirls: THREE.Mesh[];
+  pos: THREE.Vector3;
+  radius: number;
+  height: number;
+  liftSpeed: number;
+}
+
+interface EnemyProjectileRuntime {
+  mesh: THREE.Mesh;
+  pos: THREE.Vector3;
+  vel: THREE.Vector3;
+  life: number;
+}
+
 export class GameEngine {
   private container: HTMLElement;
   private onHudUpdate: (hud: HudSnapshot) => void;
@@ -226,6 +289,8 @@ export class GameEngine {
     totalCoins: number;
     bots: number;
     totalBots: number;
+    relics: number;
+    totalRelics: number;
     time: number;
   }) => void;
   private onContextLostChange?: (lost: boolean) => void;
@@ -243,6 +308,8 @@ export class GameEngine {
   private skyMesh: THREE.Mesh;
   private hazardSeaMesh: THREE.Mesh | null = null;
   private hazardSeaTex: THREE.CanvasTexture | null = null;
+  private shaderTimeUniform = { value: 0 };
+  private ambientMotes: AmbientMoteSystem | null = null;
 
   private levelGroup = new THREE.Group();
   private playerRig: AstroBotRig;
@@ -266,6 +333,10 @@ export class GameEngine {
   private checkpoints: CheckpointRuntime[] = [];
   private targets: ArcheryTargetRuntime[] = [];
   private arrows: ArrowRuntime[] = [];
+  private switches: SwitchRuntime[] = [];
+  private relics: RelicRuntime[] = [];
+  private windZones: WindZoneRuntime[] = [];
+  private enemyProjectiles: EnemyProjectileRuntime[] = [];
   private bowPickup: { group: THREE.Group; bow: THREE.Group; pos: THREE.Vector3; collected: boolean } | null = null;
   private monkeyPickup: { group: THREE.Group; suit: THREE.Group; pos: THREE.Vector3; collected: boolean } | null = null;
   private bossRuntime: BossRuntime | null = null;
@@ -334,6 +405,8 @@ export class GameEngine {
   private standingPlatform: PlatformRuntime | null = null;
   private coyoteTimer = 0;
   private jumpBufferTimer = 0;
+  private hasDoubleJump = true;
+  private doubleJumpFlipTimer = 0;
   private hoverFuel = 1;
   private isHovering = false;
   private botRocketCharges = 0;
@@ -358,6 +431,7 @@ export class GameEngine {
   private coinsCollected = 0;
   private totalLevelCoins = 0;
   private botsRescued = 0;
+  private relicsCollected = 0;
   private hitstopTimer = 0;
   private shakeIntensity = 0;
   private bannerText: string | null = null;
@@ -367,6 +441,7 @@ export class GameEngine {
   // Camera & pointer state
   private camYaw = 0;
   private camPitch = 0.42;
+  private camDynamicFov = 56;
   private camCurrentPos = new THREE.Vector3(0, 6, 10);
   private camLookTarget = new THREE.Vector3(0, 2, 0);
   private draggingCam = false;
@@ -407,6 +482,8 @@ export class GameEngine {
         totalCoins: number;
         bots: number;
         totalBots: number;
+        relics: number;
+        totalRelics: number;
         time: number;
       }) => void;
       onContextLostChange?: (lost: boolean) => void;
@@ -681,6 +758,7 @@ export class GameEngine {
               !this.grounded &&
               !this.isClimbing &&
               this.coyoteTimer <= 0 &&
+              !this.hasDoubleJump &&
               this.botRocketCharges > 0 &&
               this.botRocketTimer <= 0 &&
               this.playerVel.y < -2.2 &&
@@ -689,9 +767,11 @@ export class GameEngine {
               this.activateBotRocketRescue();
             } else {
               this.jumpBufferTimer = 0.14;
-              if (isDoubleTapOk || isMidAirOk) {
+              if (isDoubleTapOk) {
                 this.triggerSpin();
                 if (this.hasBow) this.shootArrow();
+              } else if (isMidAirOk && !this.hasDoubleJump) {
+                this.triggerSpin();
               }
             }
           }
@@ -830,6 +910,7 @@ export class GameEngine {
           !this.grounded &&
           !this.isClimbing &&
           this.coyoteTimer <= 0 &&
+          !this.hasDoubleJump &&
           this.botRocketCharges > 0 &&
           this.botRocketTimer <= 0 &&
           this.playerVel.y < -2.2 &&
@@ -958,6 +1039,11 @@ export class GameEngine {
 
   private clearLevelGroup() {
     soundEngine.stopHover();
+    if (this.ambientMotes) {
+      this.scene.remove(this.ambientMotes.points);
+      this.ambientMotes.dispose();
+      this.ambientMotes = null;
+    }
     const disposeObject = (obj: THREE.Object3D) => {
       if ((obj as THREE.Mesh).geometry) (obj as THREE.Mesh).geometry.dispose();
       const mat = (obj as THREE.Mesh).material;
@@ -979,6 +1065,10 @@ export class GameEngine {
     this.checkpoints = [];
     this.targets = [];
     this.arrows = [];
+    this.switches = [];
+    this.relics = [];
+    this.windZones = [];
+    this.enemyProjectiles = [];
     this.bowPickup = null;
     this.monkeyPickup = null;
     this.bossRuntime = null;
@@ -1173,6 +1263,10 @@ export class GameEngine {
       const leafMidMat = new THREE.MeshStandardMaterial({ color: 0x357020, roughness: 0.82 });
       const leafDeepMat = new THREE.MeshStandardMaterial({ color: 0x224d16, roughness: 0.85 });
       const lianaMat = new THREE.MeshStandardMaterial({ color: 0x437523, roughness: 0.76 });
+      applyWindSwayShader(leafSunMat, this.shaderTimeUniform, 0.22, 1.9);
+      applyWindSwayShader(leafMidMat, this.shaderTimeUniform, 0.2, 1.7);
+      applyWindSwayShader(leafDeepMat, this.shaderTimeUniform, 0.16, 1.6);
+      applyWindSwayShader(lianaMat, this.shaderTimeUniform, 0.26, 1.4);
 
       const foliageClusterGeo = this.createDisplacedRockGeometry(2.35, 3.7);
       const heroTreeSpots: [number, number, number, number][] = [
@@ -1592,6 +1686,8 @@ export class GameEngine {
       });
       const palmFrondUpper = new THREE.MeshStandardMaterial({ color: 0x5c7d22, roughness: 0.76 });
       const palmFrondLower = new THREE.MeshStandardMaterial({ color: 0x878c28, roughness: 0.82 });
+      applyWindSwayShader(palmFrondUpper, this.shaderTimeUniform, 0.24, 2.0);
+      applyWindSwayShader(palmFrondLower, this.shaderTimeUniform, 0.22, 1.85);
       const desertStoneGeo = this.createDisplacedRockGeometry(0.7, 9.1);
       const warmStoneMat = new THREE.MeshStandardMaterial({
         map: this.textures.desertSandstone,
@@ -1865,6 +1961,8 @@ export class GameEngine {
       });
       const leafEmerald = new THREE.MeshStandardMaterial({ color: 0x3b8526, roughness: 0.78 });
       const leafLime = new THREE.MeshStandardMaterial({ color: 0x62a832, roughness: 0.76 });
+      applyWindSwayShader(leafEmerald, this.shaderTimeUniform, 0.22, 1.85);
+      applyWindSwayShader(leafLime, this.shaderTimeUniform, 0.24, 2.0);
       const templeClusterGeo = this.createDisplacedRockGeometry(2.1, 4.3);
 
       const tPalmSpots: [number, number, number, number][] = [
@@ -2399,6 +2497,7 @@ export class GameEngine {
       const trunkMat = new THREE.MeshStandardMaterial({ color: 0x854d2b, roughness: 0.9 });
       const foliageGeo = this.createDisplacedRockGeometry(2.1, 3.7);
       const foliageMat = new THREE.MeshStandardMaterial({ color: 0x5c8c26, roughness: 0.85 });
+      applyWindSwayShader(foliageMat, this.shaderTimeUniform, 0.18, 1.65);
 
       const tTrunks = new THREE.InstancedMesh(trunkGeo, trunkMat, treeCount);
       const tFoliage = new THREE.InstancedMesh(foliageGeo, foliageMat, treeCount);
@@ -2551,6 +2650,14 @@ export class GameEngine {
         roughness: 0.14,
         metalness: 0.22,
       });
+      applyWaterSurfaceShader(rapidsMat, this.shaderTimeUniform, {
+        waveAmp: 0.2,
+        waveFreq: 0.42,
+        speed: 4.5,
+        fresnelColor: 0xbae6fd,
+        fresnelStrength: 0.52,
+        foamStrength: 0.34,
+      });
       const rapidsMesh = new THREE.Mesh(riverGeo, rapidsMat);
       this.levelGroup.add(rapidsMesh);
 
@@ -2580,7 +2687,15 @@ export class GameEngine {
         metalness: 0.28,
         envMapIntensity: 1.4,
       });
-      const calmLakePlane = new THREE.Mesh(new THREE.PlaneGeometry(220, 120), lakeMat);
+      applyWaterSurfaceShader(lakeMat, this.shaderTimeUniform, {
+        waveAmp: 0.05,
+        waveFreq: 0.26,
+        speed: 1.8,
+        fresnelColor: 0xe0f2fe,
+        fresnelStrength: 0.6,
+        foamStrength: 0.1,
+      });
+      const calmLakePlane = new THREE.Mesh(new THREE.PlaneGeometry(220, 120, 24, 24), lakeMat);
       calmLakePlane.rotation.x = -Math.PI / 2;
       calmLakePlane.position.set(0, -0.02, -330);
       this.levelGroup.add(calmLakePlane);
@@ -2662,6 +2777,9 @@ export class GameEngine {
       const leafMidMat = new THREE.MeshStandardMaterial({ color: 0x387822, roughness: 0.82 });
       const leafDeepMat = new THREE.MeshStandardMaterial({ color: 0x224d16, roughness: 0.85 });
       const lianaMat = new THREE.MeshStandardMaterial({ color: 0x4b8728, roughness: 0.76 });
+      applyWindSwayShader(leafSunMat, this.shaderTimeUniform, 0.24, 2.1);
+      applyWindSwayShader(leafMidMat, this.shaderTimeUniform, 0.2, 1.9);
+      applyWindSwayShader(lianaMat, this.shaderTimeUniform, 0.28, 1.5);
       const foliageClusterGeo = this.createDisplacedRockGeometry(2.25, 3.7);
 
       const heroBankZ = [-18, -38, -58, -78, -98, -118, -138, -158, -178, -198, -218, -238, -258, -288, -312];
@@ -2881,7 +2999,18 @@ export class GameEngine {
                     : this.textures.skyNebula;
     skyMat.needsUpdate = true;
 
-    const seaGeo = new THREE.PlaneGeometry(520, 520);
+    const animatedWaterBiome =
+      theme.biome === 'jungle' ||
+      theme.biome === 'ice' ||
+      theme.biome === 'volcanic' ||
+      theme.biome === 'paris' ||
+      theme.biome === 'rapids';
+    const seaGeo = new THREE.PlaneGeometry(
+      520,
+      520,
+      animatedWaterBiome ? 42 : 1,
+      animatedWaterBiome ? 42 : 1
+    );
     const seaTex =
       theme.biome === 'jungle'
         ? this.textures.lagoonSurface
@@ -2940,56 +3069,49 @@ export class GameEngine {
       emissive: theme.biome === 'volcanic' ? 0xff6a00 : theme.biome === 'nebula' ? 0xffb703 : 0x000000,
       emissiveIntensity: theme.biome === 'volcanic' ? 1.55 : theme.biome === 'nebula' ? 1.2 : 0,
     });
+    if (animatedWaterBiome) {
+      applyWaterSurfaceShader(seaMat, this.shaderTimeUniform, {
+        waveAmp: theme.biome === 'volcanic' ? 0.28 : theme.biome === 'ice' ? 0.08 : 0.14,
+        waveFreq: theme.biome === 'volcanic' ? 0.12 : 0.16,
+        speed: theme.biome === 'volcanic' ? 1.6 : 2.1,
+        fresnelColor:
+          theme.biome === 'volcanic'
+            ? 0xfb923c
+            : theme.biome === 'ice'
+              ? 0xe0f2fe
+              : 0x7dd3fc,
+        fresnelStrength: theme.biome === 'volcanic' ? 0.36 : 0.56,
+        foamStrength: theme.biome === 'volcanic' ? 0.08 : 0.22,
+      });
+    }
     this.hazardSeaMesh = new THREE.Mesh(seaGeo, seaMat);
     this.hazardSeaMesh.rotation.x = -Math.PI / 2;
     this.hazardSeaMesh.position.set(0, theme.hazardFloorY, -95);
     this.levelGroup.add(this.hazardSeaMesh);
 
+    this.ambientMotes = createBiomeAmbientParticles(theme.biome, this.isSoftwareGl ? 70 : 160);
+    this.scene.add(this.ambientMotes.points);
+
     this.buildBiomeScenery(level);
 
-    // Platforms (including target-linked holographic bridges)
+    // Platforms (styled organic/beveled geometry + rotating, disappearing, elevator, target/switch bridges)
     for (const pDef of level.platforms) {
-      const mat = this.createPlatformMaterial(pDef);
-      const startsInactive = Boolean(pDef.linkedTargetId);
-      if (startsInactive) {
-        const list = Array.isArray(mat) ? mat : [mat];
+      const startsInactive = Boolean(pDef.linkedTargetId || pDef.linkedSwitchId);
+      const mesh = buildStyledPlatformMesh(
+        pDef,
+        this.textures,
+        (d) => this.createPlatformMaterial(d),
+        this.isSoftwareGl
+      );
+      if (startsInactive || pDef.kind === 'disappearing') {
+        const list = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
         for (const m of list) {
           m.transparent = true;
-          m.opacity = 0.16;
+          if (startsInactive) m.opacity = 0.16;
         }
       }
-      const geo = new THREE.BoxGeometry(pDef.size[0], pDef.size[1], pDef.size[2]);
-      const mesh = new THREE.Mesh(geo, mat);
-      mesh.position.set(pDef.pos[0], pDef.pos[1], pDef.pos[2]);
-      if (pDef.invisible) {
-        mesh.visible = false;
+      if (startsInactive) {
         mesh.castShadow = false;
-        mesh.receiveShadow = false;
-      } else {
-        mesh.castShadow = !this.isSoftwareGl && !startsInactive;
-        mesh.receiveShadow = true;
-      }
-
-      if (pDef.kind === 'crumble' || pDef.kind === 'conveyor' || pDef.kind === 'moving' || pDef.kind === 'ice') {
-        const trimColor =
-          pDef.kind === 'crumble'
-            ? 0xf97316
-            : pDef.kind === 'conveyor'
-              ? 0x22d3ee
-              : pDef.kind === 'ice'
-                ? 0xe0f2fe
-                : 0x38bdf8;
-        const trim = new THREE.Mesh(
-          new THREE.BoxGeometry(pDef.size[0] + 0.08, 0.14, pDef.size[2] + 0.08),
-          new THREE.MeshStandardMaterial({
-            color: trimColor,
-            emissive: trimColor,
-            emissiveIntensity: pDef.kind === 'ice' ? 0.25 : 0.7,
-            roughness: 0.25,
-          })
-        );
-        trim.position.y = pDef.size[1] / 2 - 0.12;
-        mesh.add(trim);
       }
 
       this.levelGroup.add(mesh);
@@ -3002,6 +3124,10 @@ export class GameEngine {
         halfSize: new THREE.Vector3(pDef.size[0] / 2, pDef.size[1] / 2, pDef.size[2] / 2),
         crumbleState: 'idle',
         crumbleTimer: 0,
+        disappearState: 'solid',
+        rotAngle: 0,
+        prevRotAngle: 0,
+        activated: !startsInactive,
         visible: !startsInactive,
       });
     }
@@ -3283,6 +3409,61 @@ export class GameEngine {
       });
     });
 
+    // Switches, Cosmic Relics, and Thermal Wind Zones
+    if (level.switches) {
+      for (const sw of level.switches) {
+        const sm = createSwitchMesh();
+        sm.group.position.set(...sw.pos);
+        this.levelGroup.add(sm.group);
+        this.switches.push({
+          id: sw.id,
+          group: sm.group,
+          buttonMesh: sm.buttonMesh,
+          buttonMat: sm.buttonMat,
+          ringMat: sm.ringMat,
+          pos: new THREE.Vector3(...sw.pos),
+          message: sw.message,
+          coins: sw.coins ?? 5,
+          activated: false,
+        });
+      }
+    }
+
+    if (level.relics) {
+      level.relics.forEach((rel, idx) => {
+        const rm = createRelicMesh();
+        rm.group.position.set(...rel.pos);
+        this.levelGroup.add(rm.group);
+        this.relics.push({
+          id: rel.id,
+          name: rel.name,
+          group: rm.group,
+          core: rm.core,
+          halo: rm.halo,
+          baseY: rel.pos[1],
+          pos: new THREE.Vector3(...rel.pos),
+          collected: false,
+          phase: idx * 0.9,
+        });
+      });
+    }
+
+    if (level.windZones) {
+      for (const wz of level.windZones) {
+        const wm = createWindZoneMesh(wz.radius, wz.height);
+        wm.group.position.set(...wz.pos);
+        this.levelGroup.add(wm.group);
+        this.windZones.push({
+          group: wm.group,
+          swirls: wm.swirls,
+          pos: new THREE.Vector3(...wz.pos),
+          radius: wz.radius,
+          height: wz.height,
+          liftSpeed: wz.liftSpeed ?? 11.5,
+        });
+      }
+    }
+
     // Enemies
     level.enemies.forEach((en, idx) => {
       const rig = createEnemyMesh(en.kind);
@@ -3296,21 +3477,26 @@ export class GameEngine {
         jawUpper: rig.jawUpper,
         windupKey: rig.windupKey,
         springGroup: rig.springGroup,
+        wingL: rig.wingL,
+        wingR: rig.wingR,
+        turretHead: rig.turretHead,
+        shieldMesh: rig.shieldMesh,
         basePos: new THREE.Vector3(...en.pos),
         pos: new THREE.Vector3(...en.pos),
         patrolOffset: new THREE.Vector3(...en.patrolOffset),
         speed: en.speed,
         phase: idx * 1.1,
-        hp: en.kind === 'brute' ? 2 : 1,
+        hp: en.kind === 'brute' || en.kind === 'guardian' ? 2 : 1,
         hitFlash: 0,
         alive: true,
         hopPhase: 0,
+        shootTimer: 0.9 + (idx % 3) * 0.45,
       });
     });
 
-    // Final Boss ("Titán Kraxus")
+    // Biome Boss
     if (level.boss) {
-      const bRig = createBossMesh();
+      const bRig = createBossMesh(level.boss.style);
       bRig.root.position.set(...level.boss.pos);
       this.levelGroup.add(bRig.root);
       this.bossRuntime = {
@@ -3321,6 +3507,7 @@ export class GameEngine {
         arenaRadius: level.boss.arenaRadius,
         hp: level.boss.maxHp,
         maxHp: level.boss.maxHp,
+        phase: 1,
         alive: true,
         active: false,
         invulnTimer: 0,
@@ -3407,6 +3594,8 @@ export class GameEngine {
     this.playerSquash.set(1, 1, 1);
     this.grounded = false;
     this.standingPlatform = null;
+    this.hasDoubleJump = true;
+    this.doubleJumpFlipTimer = 0;
     this.hoverFuel = 1;
     this.isHovering = false;
     this.botRocketCharges = 0;
@@ -3418,12 +3607,14 @@ export class GameEngine {
     this.health = this.maxHealth;
     this.coinsCollected = 0;
     this.botsRescued = 0;
+    this.relicsCollected = 0;
     this.levelTime = 0;
     this.checkpointActive = false;
     this.active2DZone = null;
     this.perspectiveMode = '3D';
     this.camYaw = 0;
     this.camPitch = 0.42;
+    this.camDynamicFov = 56;
     this.camCurrentPos.set(this.playerPos.x, this.playerPos.y + 5.2, this.playerPos.z + 9.5);
     this.camLookTarget.copy(this.playerPos).add(_vec3A.set(0, 1.0, 0));
 
@@ -3456,6 +3647,7 @@ export class GameEngine {
         map: this.textures.jungleGrass,
         bumpMap: this.textures.grassBump,
         bumpScale: 0.09,
+        roughnessMap: this.textures.stoneRoughness,
         roughness: 0.86,
         metalness: 0.02,
       });
@@ -3463,6 +3655,7 @@ export class GameEngine {
         map: this.textures.jungleSide,
         bumpMap: this.textures.jungleSideBump,
         bumpScale: 0.15,
+        roughnessMap: this.textures.stoneRoughness,
         roughness: 0.9,
         metalness: 0.02,
       });
@@ -3474,6 +3667,7 @@ export class GameEngine {
         map: this.textures.desertSandstone,
         bumpMap: this.textures.sandBump,
         bumpScale: 0.09,
+        roughnessMap: this.textures.stoneRoughness,
         roughness: 0.88,
         metalness: 0.03,
       });
@@ -3481,6 +3675,7 @@ export class GameEngine {
         map: this.textures.desertSide,
         bumpMap: this.textures.stoneBump,
         bumpScale: 0.16,
+        roughnessMap: this.textures.stoneRoughness,
         roughness: 0.9,
         metalness: 0.04,
       });
@@ -3492,6 +3687,7 @@ export class GameEngine {
         map: this.textures.templeTop,
         bumpMap: this.textures.stoneBump,
         bumpScale: 0.12,
+        roughnessMap: this.textures.stoneRoughness,
         roughness: 0.86,
         metalness: 0.03,
       });
@@ -3499,6 +3695,7 @@ export class GameEngine {
         map: this.textures.templeSide,
         bumpMap: this.textures.stoneBump,
         bumpScale: 0.16,
+        roughnessMap: this.textures.stoneRoughness,
         roughness: 0.88,
         metalness: 0.03,
       });
@@ -3513,6 +3710,7 @@ export class GameEngine {
         emissiveIntensity: 1.45,
         bumpMap: this.textures.basaltBump,
         bumpScale: 0.16,
+        roughnessMap: this.textures.stoneRoughness,
         roughness: 0.84,
         metalness: 0.16,
       });
@@ -3523,6 +3721,7 @@ export class GameEngine {
         emissiveIntensity: 1.55,
         bumpMap: this.textures.basaltBump,
         bumpScale: 0.2,
+        roughnessMap: this.textures.stoneRoughness,
         roughness: 0.86,
         metalness: 0.18,
       });
@@ -3533,6 +3732,7 @@ export class GameEngine {
         map: this.textures.nebulaDeck,
         bumpMap: this.textures.nebulaBump,
         bumpScale: 0.1,
+        roughnessMap: this.textures.metalRoughness,
         roughness: 0.28,
         metalness: 0.52,
       });
@@ -3540,6 +3740,7 @@ export class GameEngine {
         map: this.textures.nebulaSide,
         bumpMap: this.textures.stoneBump,
         bumpScale: 0.16,
+        roughnessMap: this.textures.stoneRoughness,
         roughness: 0.82,
         metalness: 0.18,
       });
@@ -3550,6 +3751,7 @@ export class GameEngine {
         map: this.textures.iceCrystal,
         bumpMap: this.textures.iceBump,
         bumpScale: 0.08,
+        roughnessMap: this.textures.iceRoughness,
         roughness: 0.18,
         metalness: 0.08,
         clearcoat: 0.9,
@@ -3559,6 +3761,7 @@ export class GameEngine {
         map: this.textures.iceSide,
         bumpMap: this.textures.iceBump,
         bumpScale: 0.14,
+        roughnessMap: this.textures.iceRoughness,
         roughness: 0.22,
         metalness: 0.1,
         clearcoat: 0.85,
@@ -3570,6 +3773,7 @@ export class GameEngine {
         map: this.textures.parisStone,
         bumpMap: this.textures.stoneBump,
         bumpScale: 0.09,
+        roughnessMap: this.textures.stoneRoughness,
         roughness: 0.78,
         metalness: 0.05,
       });
@@ -3579,13 +3783,33 @@ export class GameEngine {
         map: this.textures.riverTimber,
         bumpMap: this.textures.barkBump,
         bumpScale: 0.08,
+        roughnessMap: this.textures.woodRoughness,
         roughness: 0.8,
         metalness: 0.04,
       });
     }
-    if (style === 'crystal') return new THREE.MeshStandardMaterial({ map: this.textures.crystalCircuit, roughness: 0.28, metalness: 0.52 });
-    if (style === 'gold') return new THREE.MeshStandardMaterial({ map: this.textures.goldTrim, roughness: 0.22, metalness: 0.85 });
-    return new THREE.MeshStandardMaterial({ map: this.textures.techGrid, roughness: 0.34, metalness: 0.25 });
+    if (style === 'crystal') {
+      return new THREE.MeshStandardMaterial({
+        map: this.textures.crystalCircuit,
+        roughnessMap: this.textures.metalRoughness,
+        roughness: 0.28,
+        metalness: 0.52,
+      });
+    }
+    if (style === 'gold') {
+      return new THREE.MeshStandardMaterial({
+        map: this.textures.goldTrim,
+        roughnessMap: this.textures.metalRoughness,
+        roughness: 0.22,
+        metalness: 0.85,
+      });
+    }
+    return new THREE.MeshStandardMaterial({
+      map: this.textures.techGrid,
+      roughnessMap: this.textures.metalRoughness,
+      roughness: 0.34,
+      metalness: 0.25,
+    });
   }
 
   private spawnBurst(x: number, y: number, z: number, hexColor: number, count: number, speed: number) {
@@ -3604,6 +3828,15 @@ export class GameEngine {
         p.size = 0.65 + Math.random() * 0.7;
         p.color.setHex(hexColor);
         spawned++;
+      }
+    }
+  }
+
+  private setPlatformOpacity(mesh: THREE.Mesh, opacity: number) {
+    const mats = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
+    for (const mat of mats) {
+      if ('opacity' in mat) {
+        (mat as THREE.MeshStandardMaterial).opacity = opacity;
       }
     }
   }
@@ -3716,6 +3949,7 @@ export class GameEngine {
             !this.grounded &&
             !this.isClimbing &&
             this.coyoteTimer <= 0 &&
+            !this.hasDoubleJump &&
             this.botRocketCharges > 0 &&
             this.botRocketTimer <= 0 &&
             this.playerVel.y < -2.2 &&
@@ -3752,6 +3986,7 @@ export class GameEngine {
 
     this.pollGamepad();
     this.totalTime += dt;
+    this.shaderTimeUniform.value = this.totalTime;
     if (this.shakeIntensity > 0) this.shakeIntensity = Math.max(0, this.shakeIntensity - dt * 1.8);
 
     if (this.hitstopTimer > 0) {
@@ -3762,6 +3997,7 @@ export class GameEngine {
 
     this.updateParticles(dt);
     this.updateCamera(dt);
+    this.ambientMotes?.update(this.totalTime, this.playerPos);
 
     // Keep sky dome & infinite sea centered beneath camera/player
     this.skyMesh.position.copy(this.camera.position);
@@ -3798,6 +4034,8 @@ export class GameEngine {
   private stepSimulation(dt: number) {
     for (const p of this.platforms) {
       p.prevPos.copy(p.pos);
+      p.prevRotAngle = p.rotAngle;
+
       if (p.def.kind === 'moving' && p.def.moveOffset) {
         const speed = p.def.moveSpeed ?? 1.5;
         const phase = p.def.movePhase ?? 0;
@@ -3808,6 +4046,41 @@ export class GameEngine {
           p.basePos.z + p.def.moveOffset[2] * s
         );
         p.mesh.position.copy(p.pos);
+      } else if (p.def.kind === 'elevator' && p.def.moveOffset && p.activated) {
+        const speed = p.def.moveSpeed ?? 1.1;
+        const phase = p.def.movePhase ?? 0;
+        const s = 0.5 - 0.5 * Math.cos(this.totalTime * speed + phase);
+        p.pos.set(
+          p.basePos.x + p.def.moveOffset[0] * s,
+          p.basePos.y + p.def.moveOffset[1] * s,
+          p.basePos.z + p.def.moveOffset[2] * s
+        );
+        p.mesh.position.copy(p.pos);
+      } else if (p.def.kind === 'rotating') {
+        const rotSpeed = p.def.rotSpeed ?? 1.0;
+        p.rotAngle += rotSpeed * dt;
+        p.mesh.rotation.y = p.rotAngle;
+      } else if (p.def.kind === 'disappearing' && p.activated) {
+        const period = p.def.cyclePeriod ?? 4.6;
+        const phase = p.def.cyclePhase ?? 0;
+        const cycle = ((((this.totalTime + phase) % period) + period) % period) / period;
+        if (cycle < 0.52) {
+          p.disappearState = 'solid';
+          p.visible = true;
+          this.setPlatformOpacity(p.mesh, 1.0);
+          p.mesh.castShadow = !this.isSoftwareGl;
+        } else if (cycle < 0.72) {
+          p.disappearState = 'warning';
+          p.visible = true;
+          const blink = Math.floor(this.totalTime * 16) % 2 === 0 ? 0.92 : 0.35;
+          this.setPlatformOpacity(p.mesh, blink);
+          p.mesh.castShadow = !this.isSoftwareGl;
+        } else {
+          p.disappearState = 'hidden';
+          p.visible = false;
+          this.setPlatformOpacity(p.mesh, 0.14);
+          p.mesh.castShadow = false;
+        }
       } else if (p.def.kind === 'crumble') {
         if (p.crumbleState === 'shaking') {
           p.crumbleTimer -= dt;
@@ -3858,6 +4131,27 @@ export class GameEngine {
       if (c.collected) continue;
       c.mesh.rotation.y += dt * 2.6;
       c.mesh.position.y = c.baseY + Math.sin(this.totalTime * 3.0 + c.phase) * 0.14;
+    }
+    for (const sw of this.switches) {
+      if (!sw.activated) {
+        sw.buttonMesh.position.y = 0.28 + Math.sin(this.totalTime * 4.5) * 0.04;
+      }
+    }
+    for (const rel of this.relics) {
+      if (rel.collected) continue;
+      rel.core.rotation.y += dt * 1.9;
+      rel.core.rotation.x = Math.sin(this.totalTime * 1.4 + rel.phase) * 0.25;
+      rel.halo.rotation.z -= dt * 2.4;
+      rel.group.position.y = rel.baseY + Math.sin(this.totalTime * 2.6 + rel.phase) * 0.18;
+    }
+    for (const wz of this.windZones) {
+      wz.swirls.forEach((swirl, idx) => {
+        swirl.rotation.z += dt * (1.8 + idx * 0.35);
+        swirl.position.y += dt * 2.6;
+        if (swirl.position.y > wz.height) {
+          swirl.position.y -= wz.height;
+        }
+      });
     }
     for (const jp of this.jumpPads) {
       if (jp.bounceAnim > 0) {
@@ -3966,8 +4260,9 @@ export class GameEngine {
     this.invulnTimer = Math.max(0, this.invulnTimer - dt);
     this.bowCooldown = Math.max(0, this.bowCooldown - dt);
 
-    // Step Active Arrows
+    // Step Active Arrows & Enemy Projectiles
     this.stepArrows(dt);
+    this.stepEnemyProjectiles(dt);
 
     // ROCKET FLIGHT MODE
     if (this.rocketState === 'flying' && this.rocketRig) {
@@ -4180,6 +4475,19 @@ export class GameEngine {
       this.playerPos.y += this.standingPlatform.pos.y - this.standingPlatform.prevPos.y;
       this.playerPos.z += this.standingPlatform.pos.z - this.standingPlatform.prevPos.z;
 
+      if (this.standingPlatform.def.kind === 'rotating') {
+        const dAng = this.standingPlatform.rotAngle - this.standingPlatform.prevRotAngle;
+        if (Math.abs(dAng) > 1e-6) {
+          const rx = this.playerPos.x - this.standingPlatform.pos.x;
+          const rz = this.playerPos.z - this.standingPlatform.pos.z;
+          const cosA = Math.cos(dAng);
+          const sinA = Math.sin(dAng);
+          this.playerPos.x = this.standingPlatform.pos.x + (rx * cosA + rz * sinA);
+          this.playerPos.z = this.standingPlatform.pos.z + (-rx * sinA + rz * cosA);
+          this.playerYaw += dAng;
+        }
+      }
+
       if (this.standingPlatform.def.kind === 'conveyor' && this.standingPlatform.def.conveyorDir) {
         this.playerPos.x += this.standingPlatform.def.conveyorDir[0] * dt;
         this.playerPos.z += this.standingPlatform.def.conveyorDir[1] * dt;
@@ -4188,6 +4496,7 @@ export class GameEngine {
 
     if (this.grounded) {
       this.coyoteTimer = 0.12;
+      this.hasDoubleJump = true;
       this.hoverFuel = Math.min(1, this.hoverFuel + dt * 2.8);
     } else {
       this.coyoteTimer = Math.max(0, this.coyoteTimer - dt);
@@ -4211,6 +4520,7 @@ export class GameEngine {
       this.isHovering = false;
       this.grounded = false;
       this.standingPlatform = null;
+      this.hasDoubleJump = true;
       this.hoverFuel = 1;
       this.playerVel.set(0, 0, 0);
 
@@ -4306,6 +4616,14 @@ export class GameEngine {
         this.playerSquash.set(0.78, 1.32, 0.78);
         soundEngine.playJump();
         this.spawnBurst(this.playerPos.x, this.playerPos.y + 0.1, this.playerPos.z, 0xe0f2fe, 8, 2.6);
+      } else if (this.jumpBufferTimer > 0 && !this.grounded && this.hasDoubleJump && this.botRocketTimer <= 0) {
+        this.hasDoubleJump = false;
+        this.playerVel.y = 11.4;
+        this.doubleJumpFlipTimer = 0.38;
+        this.jumpBufferTimer = 0;
+        this.playerSquash.set(0.8, 1.25, 0.8);
+        soundEngine.playDoubleJump();
+        this.spawnBurst(this.playerPos.x, this.playerPos.y + 0.15, this.playerPos.z, 0x38bdf8, 12, 3.6);
       }
 
       const jumpHeld =
@@ -4334,15 +4652,39 @@ export class GameEngine {
           this.pushHud(true);
         }
       } else {
-        if (!this.grounded && jumpHeld && this.playerVel.y < 1.8 && this.hoverFuel > 0) {
-          this.isHovering = true;
-          this.hoverFuel = Math.max(0, this.hoverFuel - dt * 1.08);
-          this.playerVel.y = THREE.MathUtils.damp(this.playerVel.y, -0.65, 14, dt);
-          soundEngine.startHover();
-        } else {
-          if (this.isHovering) soundEngine.stopHover();
-          this.isHovering = false;
-          this.playerVel.y -= 31.0 * dt;
+        let inWindZone = false;
+        for (const wz of this.windZones) {
+          const wdx = this.playerPos.x - wz.pos.x;
+          const wdz = this.playerPos.z - wz.pos.z;
+          if (
+            wdx * wdx + wdz * wdz <= wz.radius * wz.radius &&
+            this.playerPos.y >= wz.pos.y - 0.5 &&
+            this.playerPos.y <= wz.pos.y + wz.height + 0.6
+          ) {
+            inWindZone = true;
+            if (this.isHovering) soundEngine.stopHover();
+            this.isHovering = false;
+            this.playerVel.y = THREE.MathUtils.damp(this.playerVel.y, wz.liftSpeed, 7.5, dt);
+            this.hoverFuel = Math.min(1, this.hoverFuel + dt * 1.4);
+            this.hasDoubleJump = true;
+            if (Math.random() < 0.25) {
+              this.spawnBurst(this.playerPos.x, this.playerPos.y + 0.2, this.playerPos.z, 0xbae6fd, 1, 2.2);
+            }
+            break;
+          }
+        }
+
+        if (!inWindZone) {
+          if (!this.grounded && jumpHeld && this.playerVel.y < 1.8 && this.hoverFuel > 0) {
+            this.isHovering = true;
+            this.hoverFuel = Math.max(0, this.hoverFuel - dt * 1.08);
+            this.playerVel.y = THREE.MathUtils.damp(this.playerVel.y, -0.65, 14, dt);
+            soundEngine.startHover();
+          } else {
+            if (this.isHovering) soundEngine.stopHover();
+            this.isHovering = false;
+            this.playerVel.y -= 31.0 * dt;
+          }
         }
 
         // Auto-deploy a rescued Mini-Bot as an emergency rocket booster when falling near the hazard floor
@@ -4374,12 +4716,46 @@ export class GameEngine {
 
       for (const p of this.platforms) {
         if (!p.visible) continue;
+        const topY = p.pos.y + p.halfSize.y;
+        const botY = p.pos.y - p.halfSize.y;
+        const isDisc = p.def.kind === 'rotating' || p.def.shape === 'disc';
+
+        if (isDisc) {
+          const rad = Math.max(p.halfSize.x, p.halfSize.z);
+          const dx = this.playerPos.x - p.pos.x;
+          const dz = this.playerPos.z - p.pos.z;
+          const distSq = dx * dx + dz * dz;
+
+          if (distSq <= rad * rad && topY <= this.playerPos.y + 0.15 && topY > bestGroundShadowY) {
+            bestGroundShadowY = topY;
+          }
+
+          const outerR = rad + playerRadius;
+          if (distSq > outerR * outerR) continue;
+
+          if (this.playerVel.y <= 0 && prevY >= topY - 0.35 && this.playerPos.y <= topY + 0.08) {
+            this.playerPos.y = topY;
+            if (!this.grounded && this.playerVel.y < -4.2) {
+              this.playerSquash.set(1.26, 0.74, 1.26);
+              soundEngine.playLand(Math.abs(this.playerVel.y));
+            }
+            this.playerVel.y = 0;
+            landedPlatform = p;
+          } else if (this.playerVel.y > 0 && prevY + playerHeight <= botY + 0.2 && this.playerPos.y + playerHeight >= botY) {
+            this.playerPos.y = botY - playerHeight;
+            this.playerVel.y = -1;
+          } else if (this.playerPos.y < topY - 0.15 && this.playerPos.y + playerHeight > botY + 0.15) {
+            const d = Math.sqrt(distSq) || 0.001;
+            this.playerPos.x = p.pos.x + (dx / d) * outerR;
+            this.playerPos.z = p.pos.z + (dz / d) * outerR;
+          }
+          continue;
+        }
+
         const minX = p.pos.x - p.halfSize.x - playerRadius;
         const maxX = p.pos.x + p.halfSize.x + playerRadius;
         const minZ = p.pos.z - p.halfSize.z - playerRadius;
         const maxZ = p.pos.z + p.halfSize.z + playerRadius;
-        const topY = p.pos.y + p.halfSize.y;
-        const botY = p.pos.y - p.halfSize.y;
 
         if (
           this.playerPos.x >= p.pos.x - p.halfSize.x &&
@@ -4581,6 +4957,36 @@ export class GameEngine {
     }
 
     this.collectNearbyCoins(this.playerPos.x, this.playerPos.y + 0.7, this.playerPos.z, 1.15);
+    this.collectNearbyRelics(this.playerPos.x, this.playerPos.y + 0.75, this.playerPos.z, 1.75);
+
+    for (const sw of this.switches) {
+      if (sw.activated) continue;
+      const dx = this.playerPos.x - sw.pos.x;
+      const dz = this.playerPos.z - sw.pos.z;
+      const dy = this.playerPos.y - sw.pos.y;
+      if (dx * dx + dz * dz < 1.35 && dy > -0.4 && dy < 1.1) {
+        sw.activated = true;
+        sw.buttonMesh.position.y = 0.12;
+        sw.buttonMat.color.setHex(0x22c55e);
+        sw.buttonMat.emissive.setHex(0x16a34a);
+        sw.ringMat.color.setHex(0x4ade80);
+        sw.ringMat.emissive.setHex(0x22c55e);
+        this.coinsCollected += sw.coins;
+        soundEngine.playSwitch();
+        this.spawnBurst(sw.pos.x, sw.pos.y + 0.4, sw.pos.z, 0x4ade80, 20, 5.5);
+        for (const p of this.platforms) {
+          if (p.def.linkedSwitchId === sw.id) {
+            p.activated = true;
+            p.visible = true;
+            this.setPlatformOpacity(p.mesh, p.def.kind === 'glass' ? 0.72 : 1.0);
+            p.mesh.castShadow = !this.isSoftwareGl;
+            this.spawnBurst(p.pos.x, p.pos.y + 0.5, p.pos.z, 0x38bdf8, 16, 4.8);
+          }
+        }
+        this.showBanner(sw.message ?? '¡Interruptor activado!', 3.0);
+        this.pushHud(true);
+      }
+    }
 
     for (const mb of this.miniBots) {
       if (mb.rescued) continue;
@@ -4622,43 +5028,114 @@ export class GameEngine {
       if (!en.alive) continue;
       const t = this.totalTime * en.speed + en.phase;
       const s = Math.sin(t);
-      en.pos.set(
-        en.basePos.x + en.patrolOffset.x * s,
-        en.basePos.y + en.patrolOffset.y * s,
-        en.basePos.z + en.patrolOffset.z * s
-      );
 
-      if (en.kind === 'hopper') {
-        en.hopPhase += dt * 4.2;
-        const cycle = (en.hopPhase % Math.PI) / Math.PI;
-        if (cycle < 0.25 && en.springGroup) {
-          en.springGroup.scale.set(1.18, 0.72, 1.18);
-          en.pos.y = en.basePos.y;
+      if (en.kind === 'chaser') {
+        const pDx = this.playerPos.x - en.pos.x;
+        const pDz = this.playerPos.z - en.pos.z;
+        const bDist = Math.hypot(this.playerPos.x - en.basePos.x, this.playerPos.z - en.basePos.z);
+        if (bDist < 12.5 && Math.abs(this.playerPos.y - en.basePos.y) < 3.2) {
+          const pDist = Math.hypot(pDx, pDz) || 1;
+          const chaseSpd = 4.6 * dt;
+          en.pos.x += (pDx / pDist) * chaseSpd;
+          en.pos.z += (pDz / pDist) * chaseSpd;
+          const offX = en.pos.x - en.basePos.x;
+          const offZ = en.pos.z - en.basePos.z;
+          const offLen = Math.hypot(offX, offZ);
+          if (offLen > 6.5) {
+            en.pos.x = en.basePos.x + (offX / offLen) * 6.5;
+            en.pos.z = en.basePos.z + (offZ / offLen) * 6.5;
+          }
+          en.group.rotation.y = Math.atan2(pDx, pDz);
         } else {
-          if (en.springGroup) en.springGroup.scale.set(0.95, 1.08, 0.95);
-          en.pos.y = en.basePos.y + Math.sin(((cycle - 0.25) / 0.75) * Math.PI) * 1.25;
+          en.pos.x = THREE.MathUtils.damp(en.pos.x, en.basePos.x + en.patrolOffset.x * s, 4, dt);
+          en.pos.z = THREE.MathUtils.damp(en.pos.z, en.basePos.z + en.patrolOffset.z * s, 4, dt);
+          en.pos.y = en.basePos.y;
+          en.group.rotation.y = Math.atan2(en.patrolOffset.x * Math.cos(t), en.patrolOffset.z * Math.cos(t));
         }
-      } else if (en.kind === 'chomper') {
-        if (en.jawUpper) {
-          en.jawUpper.rotation.x = -0.15 - Math.abs(Math.sin(this.totalTime * 7.5)) * 0.28;
+      } else {
+        en.pos.set(
+          en.basePos.x + en.patrolOffset.x * s,
+          en.basePos.y + en.patrolOffset.y * s,
+          en.basePos.z + en.patrolOffset.z * s
+        );
+
+        if (en.kind === 'hopper') {
+          en.hopPhase += dt * 4.2;
+          const cycle = (en.hopPhase % Math.PI) / Math.PI;
+          if (cycle < 0.25 && en.springGroup) {
+            en.springGroup.scale.set(1.18, 0.72, 1.18);
+            en.pos.y = en.basePos.y;
+          } else {
+            if (en.springGroup) en.springGroup.scale.set(0.95, 1.08, 0.95);
+            en.pos.y = en.basePos.y + Math.sin(((cycle - 0.25) / 0.75) * Math.PI) * 1.25;
+          }
+        } else if (en.kind === 'chomper') {
+          if (en.jawUpper) {
+            en.jawUpper.rotation.x = -0.15 - Math.abs(Math.sin(this.totalTime * 7.5)) * 0.28;
+          }
+          if (en.windupKey) {
+            en.windupKey.rotation.y += dt * 5.0;
+          }
+        } else if (en.kind === 'flyer') {
+          en.pos.y += Math.sin(this.totalTime * 4.4 + en.phase) * 0.38;
+          if (en.wingL && en.wingR) {
+            const flap = Math.sin(this.totalTime * 14.5 + en.phase) * 0.55;
+            en.wingL.rotation.z = flap;
+            en.wingR.rotation.z = -flap;
+          }
+        } else if (en.kind === 'shooter') {
+          const sDx = this.playerPos.x - en.pos.x;
+          const sDz = this.playerPos.z - en.pos.z;
+          const sDistSq = sDx * sDx + sDz * sDz;
+          if (sDistSq < 18 * 18 && Math.abs(this.playerPos.y - en.pos.y) < 5.2) {
+            const targetYaw = Math.atan2(sDx, sDz);
+            en.group.rotation.y = targetYaw;
+            if (en.turretHead) en.turretHead.rotation.y = Math.sin(this.totalTime * 2) * 0.08;
+            en.shootTimer -= dt;
+            if (en.shootTimer <= 0) {
+              en.shootTimer = 2.25;
+              const pMesh = createEnemyProjectileMesh();
+              const spawnP = new THREE.Vector3(
+                en.pos.x + Math.sin(targetYaw) * 0.75,
+                en.pos.y + 1.05,
+                en.pos.z + Math.cos(targetYaw) * 0.75
+              );
+              pMesh.position.copy(spawnP);
+              this.levelGroup.add(pMesh);
+              const dir = new THREE.Vector3(
+                this.playerPos.x - spawnP.x,
+                this.playerPos.y + 0.75 - spawnP.y,
+                this.playerPos.z - spawnP.z
+              ).normalize();
+              this.enemyProjectiles.push({
+                mesh: pMesh,
+                pos: spawnP,
+                vel: dir.multiplyScalar(11.2),
+                life: 3.2,
+              });
+              soundEngine.playEnemyShoot();
+              this.spawnBurst(spawnP.x, spawnP.y, spawnP.z, 0xf43f5e, 6, 2.5);
+            }
+          }
         }
-        if (en.windupKey) {
-          en.windupKey.rotation.y += dt * 5.0;
+
+        if (en.kind !== 'shooter') {
+          if (Math.abs(en.patrolOffset.z) > Math.abs(en.patrolOffset.x)) {
+            en.group.rotation.y = Math.cos(t) >= 0 ? 0 : Math.PI;
+          } else {
+            en.group.rotation.y = Math.cos(t) >= 0 ? Math.PI / 2 : -Math.PI / 2;
+          }
         }
       }
 
       en.group.position.copy(en.pos);
-      if (Math.abs(en.patrolOffset.z) > Math.abs(en.patrolOffset.x)) {
-        en.group.rotation.y = Math.cos(t) >= 0 ? 0 : Math.PI;
-      } else {
-        en.group.rotation.y = Math.cos(t) >= 0 ? Math.PI / 2 : -Math.PI / 2;
-      }
 
       const dx = this.playerPos.x - en.pos.x;
       const dz = this.playerPos.z - en.pos.z;
       const horizDistSq = dx * dx + dz * dz;
       const dy = this.playerPos.y - en.pos.y;
-      const hitRadiusSq = en.kind === 'brute' ? 1.35 : 0.85;
+      const isLarge = en.kind === 'brute' || en.kind === 'guardian';
+      const hitRadiusSq = isLarge ? 1.35 : 0.85;
 
       if (en.hitFlash > 0) {
         en.hitFlash -= dt;
@@ -4671,11 +5148,22 @@ export class GameEngine {
         this.damageEnemy(en);
         continue;
       }
-      if (this.spinTimer > 0 && en.kind !== 'spiky' && horizDistSq < (en.kind === 'brute' ? 2.6 : 2.1) && Math.abs(dy) < 1.3) {
+      if (this.spinTimer > 0 && en.kind !== 'spiky' && horizDistSq < (isLarge ? 2.6 : 2.1) && Math.abs(dy) < 1.3) {
+        if (en.kind === 'guardian') {
+          const dLen = Math.hypot(dx, dz) || 1;
+          const fwdX = Math.sin(en.group.rotation.y);
+          const fwdZ = Math.cos(en.group.rotation.y);
+          if ((dx * fwdX + dz * fwdZ) / dLen > 0.35) {
+            this.spawnBurst(en.pos.x + fwdX * 0.7, en.pos.y + 0.75, en.pos.z + fwdZ * 0.7, 0x38bdf8, 10, 4.2);
+            this.playerVel.set((dx / dLen) * 6.5, 4.0, (dz / dLen) * 6.5);
+            soundEngine.playEnemyHit();
+            continue;
+          }
+        }
         this.damageEnemy(en);
         continue;
       }
-      if (this.playerVel.y < -0.5 && horizDistSq < (en.kind === 'brute' ? 1.35 : 0.9) && dy > 0.35 && dy < (en.kind === 'brute' ? 1.55 : 1.15)) {
+      if (this.playerVel.y < -0.5 && horizDistSq < (isLarge ? 1.35 : 0.9) && dy > 0.35 && dy < (isLarge ? 1.55 : 1.15)) {
         if (en.kind === 'spiky') {
           this.damagePlayer(dx, dz);
         } else {
@@ -4684,12 +5172,12 @@ export class GameEngine {
         }
         continue;
       }
-      if (horizDistSq < (en.kind === 'brute' ? 1.05 : 0.72) && Math.abs(dy) < (en.kind === 'brute' ? 1.3 : 0.95)) {
+      if (horizDistSq < (isLarge ? 1.05 : 0.72) && Math.abs(dy) < (isLarge ? 1.3 : 0.95)) {
         this.damagePlayer(dx, dz);
       }
     }
 
-    // FINAL BOSS ("Titán Kraxus") AI & Combat
+    // FINAL BOSS AI & Combat
     if (this.bossRuntime && this.bossRuntime.alive) {
       this.stepBoss(dt);
     }
@@ -4731,6 +5219,8 @@ export class GameEngine {
           totalCoins: this.totalLevelCoins,
           bots: this.botsRescued,
           totalBots: this.currentLevel.miniBots.length,
+          relics: this.relicsCollected,
+          totalRelics: this.relics.length,
           time: this.levelTime,
         });
         return;
@@ -4771,8 +5261,9 @@ export class GameEngine {
             // Activate linked platforms
             for (const p of this.platforms) {
               if (p.def.linkedTargetId === tg.id) {
+                p.activated = true;
                 p.visible = true;
-                (p.mesh.material as THREE.MeshStandardMaterial).opacity = 0.82;
+                this.setPlatformOpacity(p.mesh, p.def.kind === 'glass' ? 0.72 : 0.9);
                 p.mesh.castShadow = !this.isSoftwareGl;
                 this.spawnBurst(p.pos.x, p.pos.y + 0.5, p.pos.z, 0x38bdf8, 18, 5.0);
               }
@@ -4785,14 +5276,26 @@ export class GameEngine {
         }
       }
 
-      // Hit Enemies (even Spiky!)
+      // Hit Enemies (even Spiky! Guardians block frontal arrows)
       if (!remove) {
         for (const en of this.enemies) {
           if (!en.alive) continue;
           const dx = ar.pos.x - en.pos.x;
           const dy = ar.pos.y - (en.pos.y + 0.65);
           const dz = ar.pos.z - en.pos.z;
-          if (dx * dx + dy * dy + dz * dz < (en.kind === 'brute' ? 1.55 : 1.05)) {
+          const isLarge = en.kind === 'brute' || en.kind === 'guardian';
+          if (dx * dx + dy * dy + dz * dz < (isLarge ? 1.55 : 1.05)) {
+            if (en.kind === 'guardian') {
+              const dLen = Math.hypot(dx, dz) || 1;
+              const fwdX = Math.sin(en.group.rotation.y);
+              const fwdZ = Math.cos(en.group.rotation.y);
+              if ((dx * fwdX + dz * fwdZ) / dLen > 0.35) {
+                this.spawnBurst(ar.pos.x, ar.pos.y, ar.pos.z, 0x38bdf8, 10, 4.0);
+                soundEngine.playEnemyHit();
+                remove = true;
+                break;
+              }
+            }
             this.damageEnemy(en);
             remove = true;
             break;
@@ -4906,6 +5409,7 @@ export class GameEngine {
     this.contactShadowMesh.visible = false;
 
     this.collectNearbyCoins(this.rocketPos.x, this.rocketPos.y + 0.6, this.rocketPos.z, 6.2);
+    this.collectNearbyRelics(this.rocketPos.x, this.rocketPos.y + 0.6, this.rocketPos.z, 8.0);
 
     for (const rg of this.boostRings) {
       if (rg.passed) continue;
@@ -5005,6 +5509,7 @@ export class GameEngine {
     this.contactShadowMesh.visible = false;
 
     this.collectNearbyCoins(this.gliderPos.x, this.gliderPos.y + 0.6, this.gliderPos.z, 12.5);
+    this.collectNearbyRelics(this.gliderPos.x, this.gliderPos.y + 0.6, this.gliderPos.z, 14.0);
 
     for (const rg of this.boostRings) {
       if (rg.passed) continue;
@@ -5118,6 +5623,7 @@ export class GameEngine {
     this.contactShadowMesh.visible = false;
 
     this.collectNearbyCoins(this.boatPos.x, this.boatPos.y + 0.8, this.boatPos.z, 7.2);
+    this.collectNearbyRelics(this.boatPos.x, this.boatPos.y + 0.9, this.boatPos.z, 9.0);
 
     // Hazard checks: jagged river rocks & patrolling/ambush crocodiles (can jump over hazards!)
     if (this.boatJumpY < 0.85) {
@@ -5189,6 +5695,54 @@ export class GameEngine {
     }
   }
 
+  private collectNearbyRelics(px: number, py: number, pz: number, radiusSq: number) {
+    for (const rel of this.relics) {
+      if (rel.collected) continue;
+      const dx = px - rel.pos.x;
+      const dy = py - rel.pos.y;
+      const dz = pz - rel.pos.z;
+      if (dx * dx + dy * dy + dz * dz < radiusSq) {
+        rel.collected = true;
+        rel.group.visible = false;
+        this.relicsCollected++;
+        this.coinsCollected += 5;
+        soundEngine.playRelic();
+        this.spawnBurst(rel.pos.x, rel.pos.y + 0.2, rel.pos.z, 0x38bdf8, 22, 6.2);
+        this.spawnBurst(rel.pos.x, rel.pos.y + 0.2, rel.pos.z, 0xfacc15, 14, 5.2);
+        this.showBanner(`¡Reliquia Estelar: ${rel.name}! (+5 Monedas)`, 3.2);
+        this.pushHud(true);
+      }
+    }
+  }
+
+  private stepEnemyProjectiles(dt: number) {
+    for (let i = this.enemyProjectiles.length - 1; i >= 0; i--) {
+      const ep = this.enemyProjectiles[i];
+      ep.life -= dt;
+      ep.pos.addScaledVector(ep.vel, dt);
+      ep.mesh.position.copy(ep.pos);
+      ep.mesh.rotation.y += dt * 8;
+
+      let remove = ep.life <= 0;
+      if (!remove) {
+        const dx = this.playerPos.x - ep.pos.x;
+        const dy = this.playerPos.y + 0.7 - ep.pos.y;
+        const dz = this.playerPos.z - ep.pos.z;
+        if (dx * dx + dy * dy + dz * dz < 0.85) {
+          this.damagePlayer(ep.vel.x, ep.vel.z);
+          remove = true;
+        }
+      }
+
+      if (remove) {
+        this.levelGroup.remove(ep.mesh);
+        ep.mesh.geometry.dispose();
+        (ep.mesh.material as THREE.Material).dispose();
+        this.enemyProjectiles.splice(i, 1);
+      }
+    }
+  }
+
   private damageEnemy(en: EnemyRuntime) {
     if (en.hitFlash > 0) return;
     en.hp -= 1;
@@ -5236,8 +5790,16 @@ export class GameEngine {
       return;
     }
 
+    if (b.phase === 1 && b.hp <= Math.ceil(b.maxHp / 2)) {
+      b.phase = 2;
+      this.shakeIntensity = 0.5;
+      this.spawnBurst(b.pos.x, b.pos.y + 2.2, b.pos.z, 0xf43f5e, 30, 7.5);
+      this.showBanner(`¡${b.name} entra en Fase 2! ¡Esquiva sus ráfagas!`, 3.0);
+      this.pushHud(true);
+    }
+
     b.invulnTimer = Math.max(0, b.invulnTimer - dt);
-    b.rig.dorsalRing.rotation.z += dt * (b.state === 'charge' ? 5.5 : 2.2);
+    b.rig.dorsalRing.rotation.z += dt * (b.state === 'charge' ? 5.5 : b.phase === 2 ? 3.8 : 2.2);
     if (b.invulnTimer > 0) {
       b.rig.armorMat.emissive.setHex(Math.floor(b.invulnTimer * 24) % 2 === 0 ? 0xffffff : 0x000000);
       b.rig.armorMat.emissiveIntensity = 0.65;
@@ -5256,7 +5818,7 @@ export class GameEngine {
 
     if (b.state === 'chase') {
       b.rig.root.rotation.y = desiredYaw;
-      const spd = 3.8 + (b.maxHp - b.hp) * 0.45;
+      const spd = (b.phase === 2 ? 4.8 : 3.8) + (b.maxHp - b.hp) * 0.42;
       b.pos.x += (toPlayerX / dist) * spd * dt;
       b.pos.z += (toPlayerZ / dist) * spd * dt;
       const swing = Math.sin(this.totalTime * 7);
@@ -5265,11 +5827,11 @@ export class GameEngine {
       b.rig.leftArm.rotation.x = -swing * 0.5;
       b.rig.rightArm.rotation.x = swing * 0.5;
       b.rig.bodyGroup.position.y = Math.abs(swing) * 0.12;
-      b.rig.coreMat.color.setHex(0xfbbf24);
+      b.rig.coreMat.color.setHex(b.phase === 2 ? 0xf43f5e : 0xfbbf24);
 
       if (b.stateTimer <= 0) {
         b.state = 'windup';
-        b.stateTimer = 0.85;
+        b.stateTimer = b.phase === 2 ? 0.68 : 0.85;
       }
     } else if (b.state === 'windup') {
       b.rig.root.rotation.y = desiredYaw;
@@ -5284,12 +5846,28 @@ export class GameEngine {
         this.shakeIntensity = 0.45;
         soundEngine.playShockwave();
         this.spawnBurst(b.pos.x, b.pos.y + 0.4, b.pos.z, 0xff2a55, 22, 6.5);
+        if (b.phase === 2) {
+          soundEngine.playEnemyShoot();
+          for (let k = 0; k < 4; k++) {
+            const ang = desiredYaw + k * (Math.PI / 2);
+            const pMesh = createEnemyProjectileMesh();
+            const spawnP = new THREE.Vector3(b.pos.x + Math.sin(ang) * 1.4, b.pos.y + 0.9, b.pos.z + Math.cos(ang) * 1.4);
+            pMesh.position.copy(spawnP);
+            this.levelGroup.add(pMesh);
+            this.enemyProjectiles.push({
+              mesh: pMesh,
+              pos: spawnP,
+              vel: new THREE.Vector3(Math.sin(ang) * 9.2, 0, Math.cos(ang) * 9.2),
+              life: 3.0,
+            });
+          }
+        }
       }
     } else if (b.state === 'shockwave') {
       b.rig.bodyGroup.position.y = 0;
       b.rig.leftArm.rotation.x = -0.4;
       b.rig.rightArm.rotation.x = -0.4;
-      b.shockwaveRadius += 9.8 * dt;
+      b.shockwaveRadius += (b.phase === 2 ? 11.4 : 9.8) * dt;
       b.rig.shockwaveRing.visible = true;
       b.rig.shockwaveRing.scale.setScalar(b.shockwaveRadius);
       b.rig.shockwaveMat.opacity = Math.max(0, 1 - b.shockwaveRadius / 14);
@@ -5305,7 +5883,7 @@ export class GameEngine {
         b.rig.root.rotation.y = Math.atan2(b.chargeDir.x, b.chargeDir.z);
       }
     } else if (b.state === 'charge') {
-      const chargeSpeed = 10.6;
+      const chargeSpeed = b.phase === 2 ? 12.8 : 10.6;
       b.pos.x += b.chargeDir.x * chargeSpeed * dt;
       b.pos.z += b.chargeDir.z * chargeSpeed * dt;
       b.rig.leftArm.rotation.x = -1.4;
@@ -5313,7 +5891,7 @@ export class GameEngine {
       b.rig.bodyGroup.position.y = Math.abs(Math.sin(this.totalTime * 16)) * 0.16;
       if (b.stateTimer <= 0) {
         b.state = 'recover';
-        b.stateTimer = 1.6;
+        b.stateTimer = b.phase === 2 ? 1.3 : 1.6;
       }
     } else if (b.state === 'recover') {
       b.rig.bodyGroup.position.y = -0.35;
@@ -5322,7 +5900,7 @@ export class GameEngine {
       b.rig.coreMat.color.setHex(0x38bdf8);
       if (b.stateTimer <= 0) {
         b.state = 'chase';
-        b.stateTimer = 2.2;
+        b.stateTimer = b.phase === 2 ? 1.85 : 2.2;
       }
     }
 
@@ -5444,6 +6022,10 @@ export class GameEngine {
     this.playerSquash.z = THREE.MathUtils.damp(this.playerSquash.z, 1, 14, dt);
     rig.bodyGroup.scale.copy(this.playerSquash);
 
+    if (this.doubleJumpFlipTimer > 0) {
+      this.doubleJumpFlipTimer = Math.max(0, this.doubleJumpFlipTimer - dt);
+    }
+
     if (this.spinTimer > 0) {
       rig.bodyGroup.rotation.y += dt * 28;
       rig.spinRing.visible = true;
@@ -5460,6 +6042,7 @@ export class GameEngine {
     }
 
     if (this.phase === 'title') {
+      rig.bodyGroup.rotation.x = 0;
       rig.bodyGroup.rotation.y = Math.sin(this.totalTime * 0.7) * 0.35;
       rig.leftArm.rotation.x = -0.15;
       rig.rightArm.rotation.z = 2.4 + Math.sin(this.totalTime * 5.0) * 0.32;
@@ -5473,6 +6056,7 @@ export class GameEngine {
     } else {
       rig.rightArm.rotation.z = 0;
       if (this.isClimbing) {
+        rig.bodyGroup.rotation.x = 0;
         const climbMotion = Math.sin(this.playerPos.y * 5.5);
         rig.leftArm.rotation.x = -2.35 + climbMotion * 0.45;
         rig.rightArm.rotation.x = -2.35 - climbMotion * 0.45;
@@ -5481,6 +6065,15 @@ export class GameEngine {
         rig.bodyGroup.position.y = 0;
       } else {
         const runFactor = Math.min(1, groundSpeed / 8.5);
+        if (this.doubleJumpFlipTimer > 0) {
+          const flipP = 1 - this.doubleJumpFlipTimer / 0.38;
+          rig.bodyGroup.rotation.x = flipP * Math.PI * 2;
+        } else {
+          const targetLean = this.grounded
+            ? Math.min(0.16, groundSpeed * 0.017)
+            : THREE.MathUtils.clamp(-this.playerVel.y * 0.014, -0.16, 0.16);
+          rig.bodyGroup.rotation.x = THREE.MathUtils.damp(rig.bodyGroup.rotation.x, targetLean, 10, dt);
+        }
         const stride = Math.sin(this.totalTime * 15) * runFactor;
         if (this.grounded) {
           rig.leftLeg.rotation.x = stride * 0.85;
@@ -5558,6 +6151,18 @@ export class GameEngine {
   }
 
   private updateCamera(dt: number) {
+    const isVehicle =
+      this.rocketState === 'flying' || this.gliderState === 'flying' || this.boatState === 'sailing';
+    const isBoosting =
+      this.rocketBoostTimer > 0 || this.gliderBoostTimer > 0 || this.botRocketTimer > 0;
+    const groundSpd = Math.hypot(this.playerVel.x, this.playerVel.z);
+    const targetFov = isBoosting ? 63 : isVehicle ? 59 : groundSpd > 6.5 ? 58 : 55;
+    this.camDynamicFov = THREE.MathUtils.damp(this.camDynamicFov, targetFov, 6, dt);
+    if (Math.abs(this.camera.fov - this.camDynamicFov) > 0.05) {
+      this.camera.fov = this.camDynamicFov;
+      this.camera.updateProjectionMatrix();
+    }
+
     if (this.phase === 'title') {
       const angle = this.totalTime * 0.28;
       const dist = 6.2;
@@ -5626,14 +6231,55 @@ export class GameEngine {
 
     _vec3A.set(
       this.playerPos.x + Math.sin(this.camYaw) * horizDist,
-      this.playerPos.y + heightOffset,
+      Math.max(this.currentLevel.theme.hazardFloorY + 1.6, this.playerPos.y + heightOffset),
       this.playerPos.z + Math.cos(this.camYaw) * horizDist
     );
 
+    _vec3B.set(this.playerPos.x, this.playerPos.y + 1.15, this.playerPos.z);
+
+    // 3D wall/platform occlusion avoidance
+    if (!this.active2DZone) {
+      let minT = 1.0;
+      const steps = 6;
+      for (let s = 2; s <= steps; s++) {
+        const t = s / steps;
+        _vec3C.lerpVectors(_vec3B, _vec3A, t);
+        let blocked = false;
+        for (const p of this.platforms) {
+          if (!p.visible || p.def.kind === 'glass' || p.def.invisible) continue;
+          if (
+            Math.abs(_vec3C.x - p.pos.x) < p.halfSize.x + 0.35 &&
+            Math.abs(_vec3C.y - p.pos.y) < p.halfSize.y + 0.35 &&
+            Math.abs(_vec3C.z - p.pos.z) < p.halfSize.z + 0.35
+          ) {
+            blocked = true;
+            break;
+          }
+        }
+        if (!blocked) {
+          for (const cw of this.climbWalls) {
+            if (
+              Math.abs(_vec3C.x - cw.pos.x) < cw.halfSize.x + 0.35 &&
+              Math.abs(_vec3C.y - cw.pos.y) < cw.halfSize.y + 0.35 &&
+              Math.abs(_vec3C.z - cw.pos.z) < cw.halfSize.z + 0.35
+            ) {
+              blocked = true;
+              break;
+            }
+          }
+        }
+        if (blocked) {
+          minT = Math.max(0.32, (s - 1) / steps);
+          break;
+        }
+      }
+      if (minT < 1.0) {
+        _vec3A.lerpVectors(_vec3B, _vec3A, minT);
+      }
+    }
+
     const smoothFactor = 1 - Math.exp(-8.5 * dt);
     this.camCurrentPos.lerp(_vec3A, smoothFactor);
-
-    _vec3B.set(this.playerPos.x, this.playerPos.y + 1.15, this.playerPos.z);
     this.camLookTarget.lerp(_vec3B, 1 - Math.exp(-11 * dt));
 
     this.camera.position.copy(this.camCurrentPos);
@@ -5650,7 +6296,12 @@ export class GameEngine {
     this.lastHudPush = now;
     const bossHud =
       this.bossRuntime && this.bossRuntime.alive && this.bossRuntime.active
-        ? { name: this.bossRuntime.name, hp: this.bossRuntime.hp, maxHp: this.bossRuntime.maxHp }
+        ? {
+            name: this.bossRuntime.name,
+            hp: this.bossRuntime.hp,
+            maxHp: this.bossRuntime.maxHp,
+            phase: this.bossRuntime.phase,
+          }
         : null;
     this.onHudUpdate({
       phase: this.phase,
@@ -5668,6 +6319,8 @@ export class GameEngine {
       totalCoins: this.totalLevelCoins,
       botsRescued: this.botsRescued,
       totalBots: this.currentLevel.miniBots.length,
+      relicsCollected: this.relicsCollected,
+      totalRelics: this.relics.length,
       hoverFuel: this.hoverFuel,
       botRocketCharges: this.botRocketCharges,
       botRocketActive: this.botRocketTimer > 0,

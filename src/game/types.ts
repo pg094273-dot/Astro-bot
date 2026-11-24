@@ -2,22 +2,76 @@ export type GamePhase = 'title' | 'playing' | 'paused' | 'victory' | 'gameover';
 
 export type BiomeKind = 'jungle' | 'temple' | 'desert' | 'ice' | 'volcanic' | 'nebula' | 'paris' | 'rapids';
 
-export type PlatformKind = 'solid' | 'moving' | 'crumble' | 'glass' | 'conveyor' | 'ice';
+export type PlatformKind =
+  | 'solid'
+  | 'moving'
+  | 'crumble'
+  | 'glass'
+  | 'conveyor'
+  | 'ice'
+  | 'rotating'
+  | 'disappearing'
+  | 'elevator';
+
+export type PlatformStyle =
+  | 'jungle'
+  | 'temple'
+  | 'desert'
+  | 'ice'
+  | 'tech'
+  | 'gold'
+  | 'crystal'
+  | 'volcanic'
+  | 'nebula'
+  | 'paris'
+  | 'river';
 
 export interface PlatformDef {
   id: string;
   pos: [number, number, number];
   size: [number, number, number];
   kind: PlatformKind;
-  style?: 'jungle' | 'temple' | 'desert' | 'ice' | 'tech' | 'gold' | 'crystal' | 'volcanic' | 'nebula' | 'paris' | 'river';
+  style?: PlatformStyle;
   moveOffset?: [number, number, number];
   moveSpeed?: number;
   movePhase?: number;
   conveyorDir?: [number, number];
-  /** If set, platform starts inactive (wireframe outline) until the matching archery target is hit */
+  /** Angular rotation speed (rad/s) around Y for 'rotating' platforms */
+  rotSpeed?: number;
+  /** Cycle duration (seconds) for 'disappearing' platforms */
+  cyclePeriod?: number;
+  cyclePhase?: number;
+  /** If set, platform starts inactive (wireframe outline) until the matching archery target or switch is activated */
   linkedTargetId?: string;
+  /** If set, platform starts inactive/hidden until the matching switch is triggered */
+  linkedSwitchId?: string;
+  /** Visual hint for secret/organic shaping */
+  shape?: 'organic' | 'pillar' | 'bridge' | 'disc' | 'default';
   /** If true, collider is active without rendering a solid block mesh */
   invisible?: boolean;
+}
+
+export interface SwitchDef {
+  id: string;
+  pos: [number, number, number];
+  /** Optional label shown in banner when activated */
+  message?: string;
+  /** Optional coins awarded when triggered */
+  coins?: number;
+}
+
+export interface RelicDef {
+  id: string;
+  name: string;
+  pos: [number, number, number];
+}
+
+export interface WindZoneDef {
+  id: string;
+  pos: [number, number, number];
+  radius: number;
+  height: number;
+  liftSpeed?: number;
 }
 
 export interface ClimbWallDef {
@@ -55,7 +109,15 @@ export interface MiniBotDef {
   pos: [number, number, number];
 }
 
-export type EnemyKind = 'chomper' | 'spiky' | 'hopper' | 'brute';
+export type EnemyKind =
+  | 'chomper'
+  | 'spiky'
+  | 'hopper'
+  | 'brute'
+  | 'flyer'
+  | 'shooter'
+  | 'chaser'
+  | 'guardian';
 
 export interface EnemyDef {
   id: string;
@@ -65,8 +127,11 @@ export interface EnemyDef {
   speed: number;
 }
 
+export type BossStyle = 'jungle' | 'ice' | 'temple' | 'volcanic' | 'nebula';
+
 export interface BossDef {
   name: string;
+  style?: BossStyle;
   pos: [number, number, number];
   arenaCenter: [number, number, number];
   arenaRadius: number;
@@ -177,6 +242,9 @@ export interface LevelDef {
   monkeySuitPos?: [number, number, number];
   climbWalls?: ClimbWallDef[];
   targets?: ArcheryTargetDef[];
+  switches?: SwitchDef[];
+  relics?: RelicDef[];
+  windZones?: WindZoneDef[];
   boss?: BossDef;
   platforms: PlatformDef[];
   jumpPads: JumpPadDef[];
@@ -201,13 +269,15 @@ export interface HudSnapshot {
   hasBow: boolean;
   hasMonkeySuit: boolean;
   isClimbing: boolean;
-  boss: { name: string; hp: number; maxHp: number } | null;
+  boss: { name: string; hp: number; maxHp: number; phase: number } | null;
   health: number;
   maxHealth: number;
   coins: number;
   totalCoins: number;
   botsRescued: number;
   totalBots: number;
+  relicsCollected: number;
+  totalRelics: number;
   hoverFuel: number; // 0..1
   botRocketCharges: number;
   botRocketActive: boolean;
@@ -221,6 +291,7 @@ export interface HudSnapshot {
 export interface LevelProgress {
   bestCoins: number;
   bestBots: number;
+  bestRelics?: number;
   bestTime: number | null;
   completed: boolean;
 }

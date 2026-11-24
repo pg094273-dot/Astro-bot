@@ -40,6 +40,10 @@ export interface ProceduralTextures {
   nebulaSeaSurface: THREE.CanvasTexture;
   barkTexture: THREE.CanvasTexture;
   barkBump: THREE.CanvasTexture;
+  stoneRoughness: THREE.CanvasTexture;
+  metalRoughness: THREE.CanvasTexture;
+  woodRoughness: THREE.CanvasTexture;
+  iceRoughness: THREE.CanvasTexture;
   contactShadow: THREE.CanvasTexture;
   skyJungle: THREE.CanvasTexture;
   skyTemple: THREE.CanvasTexture;
@@ -98,7 +102,7 @@ function finalizeDataTexture(
 }
 
 export function createProceduralTextures(maxAnisotropy: number): ProceduralTextures {
-  // 1. Clean PlayStation-inspired white/silver hex-tech floor grid
+  // 1. Clean Orbital Explorer titanium-silver hex-tech floor grid
   const [techC, techCtx] = makeCanvas(256, 256);
   const techG = techCtx.createLinearGradient(0, 0, 256, 256);
   techG.addColorStop(0, '#f1f5f9');
@@ -1662,6 +1666,32 @@ export function createProceduralTextures(maxAnisotropy: number): ProceduralTextu
     ctx.fill();
   });
 
+  // PBR Roughness Data Maps (varying micro-specular response for stone, brushed metal, weathered wood, and polished ice)
+  const makeRoughnessMap = (baseVal: number, variance: number, streaks: boolean): THREE.CanvasTexture => {
+    const [rC, rCtx] = makeCanvas(256, 256);
+    const v0 = Math.round(baseVal * 255);
+    rCtx.fillStyle = `rgb(${v0},${v0},${v0})`;
+    rCtx.fillRect(0, 0, 256, 256);
+    for (let i = 0; i < 950; i++) {
+      const rx = (i * 137 + 13) % 256;
+      const ry = (i * 197 + 29) % 256;
+      const delta = (((i * 73) % 100) / 100 - 0.5) * 2 * variance;
+      const g = THREE.MathUtils.clamp(Math.round((baseVal + delta) * 255), 16, 245);
+      rCtx.fillStyle = `rgba(${g},${g},${g},0.48)`;
+      if (streaks) {
+        rCtx.fillRect(rx, ry, 18 + (i % 24), 2 + (i % 3));
+      } else {
+        rCtx.fillRect(rx, ry, 4 + (i % 9), 4 + (i % 7));
+      }
+    }
+    return finalizeDataTexture(rC, maxAnisotropy, 1, 1);
+  };
+
+  const stoneRoughness = makeRoughnessMap(0.84, 0.14, false);
+  const metalRoughness = makeRoughnessMap(0.28, 0.14, true);
+  const woodRoughness = makeRoughnessMap(0.74, 0.14, true);
+  const iceRoughness = makeRoughnessMap(0.14, 0.11, true);
+
   return {
     techGrid,
     jungleGrass,
@@ -1702,6 +1732,10 @@ export function createProceduralTextures(maxAnisotropy: number): ProceduralTextu
     nebulaSeaSurface,
     barkTexture,
     barkBump,
+    stoneRoughness,
+    metalRoughness,
+    woodRoughness,
+    iceRoughness,
     contactShadow,
     skyJungle,
     skyTemple,
