@@ -1489,15 +1489,38 @@ export function createClimbWallMesh(
   block.receiveShadow = true;
   group.add(block);
 
-  const cap = new THREE.Mesh(new THREE.BoxGeometry(w + 0.14, 0.26, d + 0.14), mossCapMat);
+  const cap = new THREE.Mesh(new THREE.BoxGeometry(w + 0.22, 0.3, d + 0.22), mossCapMat);
   cap.position.y = h / 2 - 0.1;
   cap.receiveShadow = true;
   group.add(cap);
 
-  // Staggered climbing handholds on active face
+  // Carved Mesoamerican stone side pilasters framing the climbing wall
+  const trimMat = new THREE.MeshStandardMaterial({
+    color: 0xd97706,
+    emissive: 0x78350f,
+    emissiveIntensity: 0.32,
+    metalness: 0.52,
+    roughness: 0.42,
+  });
   const isZ = face === 'pz' || face === 'nz';
   const sign = face === 'pz' || face === 'px' ? 1 : -1;
   const faceSpan = isZ ? w : d;
+  for (const side of [-1, 1]) {
+    const pilaster = new THREE.Mesh(
+      isZ ? new THREE.BoxGeometry(0.42, h + 0.12, 0.36) : new THREE.BoxGeometry(0.36, h + 0.12, 0.42),
+      wallMat
+    );
+    if (isZ) pilaster.position.set(side * (w / 2 - 0.12), 0, sign * (d / 2 + 0.04));
+    else pilaster.position.set(sign * (w / 2 + 0.04), 0, side * (d / 2 - 0.12));
+    group.add(pilaster);
+
+    const finial = new THREE.Mesh(new THREE.OctahedronGeometry(0.24, 0), trimMat);
+    if (isZ) finial.position.set(side * (w / 2 - 0.12), h / 2 + 0.18, sign * (d / 2 + 0.04));
+    else finial.position.set(sign * (w / 2 + 0.04), h / 2 + 0.18, side * (d / 2 - 0.12));
+    group.add(finial);
+  }
+
+  // Staggered climbing handholds on active face
   const rows = Math.max(3, Math.floor(h / 1.15));
   const cols = Math.max(2, Math.floor(faceSpan / 1.25));
   const gripGeo = isZ ? new THREE.BoxGeometry(0.55, 0.16, 0.18) : new THREE.BoxGeometry(0.18, 0.16, 0.55);
@@ -1508,9 +1531,9 @@ export function createClimbWallMesh(
       const offset = (c - (cols - 1) / 2) * 1.15 + ((r % 2) * 0.35 - 0.18);
       const grip = new THREE.Mesh(gripGeo, gripMat);
       if (isZ) {
-        grip.position.set(THREE.MathUtils.clamp(offset, -w / 2 + 0.45, w / 2 - 0.45), gy, sign * (d / 2 + 0.08));
+        grip.position.set(THREE.MathUtils.clamp(offset, -w / 2 + 0.55, w / 2 - 0.55), gy, sign * (d / 2 + 0.08));
       } else {
-        grip.position.set(sign * (w / 2 + 0.08), gy, THREE.MathUtils.clamp(offset, -d / 2 + 0.45, d / 2 - 0.45));
+        grip.position.set(sign * (w / 2 + 0.08), gy, THREE.MathUtils.clamp(offset, -d / 2 + 0.55, d / 2 - 0.55));
       }
       group.add(grip);
     }
@@ -1625,6 +1648,28 @@ export function createBossMesh(style: BossStyle = 'nebula'): BossRig {
   hornR.position.set(0.6, 0.68, 0.1);
   hornR.rotation.set(0.35, 0, -0.48);
   headGroup.add(hornL, hornR);
+
+  // Ancient Aztec/Maya Feathered Sun-Crown & Jade Crest for Ídolo Solar Kukul
+  if (style === 'temple') {
+    const featherMat = new THREE.MeshStandardMaterial({
+      color: 0x10b981,
+      emissive: 0x059669,
+      emissiveIntensity: 0.7,
+      roughness: 0.3,
+    });
+    const crestRing = new THREE.Mesh(new THREE.TorusGeometry(0.95, 0.09, 8, 24, Math.PI * 1.15), trimMat);
+    crestRing.rotation.z = -Math.PI * 0.075;
+    crestRing.position.set(0, 0.42, -0.18);
+    headGroup.add(crestRing);
+
+    for (let f = -3; f <= 3; f++) {
+      const ang = f * 0.28;
+      const ray = new THREE.Mesh(new THREE.ConeGeometry(0.14, 0.9, 6), f % 2 === 0 ? hornMat : featherMat);
+      ray.position.set(Math.sin(ang) * 1.25, 0.45 + Math.cos(ang) * 1.15, -0.2);
+      ray.rotation.z = -ang;
+      headGroup.add(ray);
+    }
+  }
 
   // Twin Heavy Claw Arms
   const makeBossArm = (side: number) => {

@@ -63,10 +63,15 @@ export function buildStyledPlatformMesh(
   const style = def.style ?? 'tech';
 
   // Use a sculpted composite Mesh as the primary entity (Engine still reads mesh.position & mesh.material cleanly)
-  const useDisc = def.kind === 'rotating' || def.shape === 'disc';
+  const useDisc = def.kind === 'rotating' || def.shape === 'disc' || def.shape === 'pillar';
   const mainGeo = useDisc
-    ? new THREE.CylinderGeometry(Math.max(w, d) * 0.5, Math.max(w, d) * 0.45, h, 24)
-    : createRoundedSlabGeometry(w, h, d, Math.min(0.24, Math.min(w, d) * 0.08));
+    ? new THREE.CylinderGeometry(
+        Math.max(w, d) * 0.5,
+        Math.max(w, d) * (def.shape === 'pillar' ? 0.48 : 0.45),
+        h,
+        def.shape === 'pillar' ? 14 : 24
+      )
+    : createRoundedSlabGeometry(w, h, d, Math.min(0.26, Math.min(w, d) * 0.09));
 
   // If baseMat is a 6-face BoxGeometry material array, adapt gracefully to Extrude/Cylinder (single or dual material)
   const resolvedMat = Array.isArray(baseMat)
@@ -93,8 +98,8 @@ export function buildStyledPlatformMesh(
     return mesh;
   }
 
-  // Tapered organic rocky/architectural under-skirt for floating islands & major platforms
-  if (w >= 4.2 && d >= 4.2 && def.kind !== 'glass' && def.kind !== 'disappearing') {
+  // Tapered organic rocky/architectural under-skirt & carved silhouettes
+  if ((w >= 2.6 && d >= 2.6) && def.kind !== 'glass' && def.kind !== 'disappearing') {
     const skirtMat = Array.isArray(baseMat)
       ? (baseMat[0] as THREE.MeshStandardMaterial).clone()
       : new THREE.MeshStandardMaterial({
@@ -118,11 +123,33 @@ export function buildStyledPlatformMesh(
 
     if (useDisc) {
       const r = Math.max(w, d) * 0.44;
-      const underCone = new THREE.Mesh(new THREE.CylinderGeometry(r * 0.94, r * 0.42, h * 1.4, 16), skirtMat);
-      underCone.position.y = -h * 0.9;
-      mesh.add(underCone);
+      if (def.shape === 'pillar') {
+        const colH = def.kind === 'crumble' ? 3.4 : 11.5;
+        const shaft = new THREE.Mesh(
+          new THREE.CylinderGeometry(r * 0.82, r * (def.kind === 'crumble' ? 0.46 : 0.94), colH, 12),
+          skirtMat
+        );
+        shaft.position.y = -h * 0.45 - colH * 0.5;
+        mesh.add(shaft);
 
-      // Rotating gear teeth & cyan directional arrow strips on top
+        const collarMat = new THREE.MeshStandardMaterial({
+          color: def.kind === 'crumble' ? 0xf59e0b : 0x3b7a1c,
+          emissive: def.kind === 'crumble' ? 0x78350f : 0x000000,
+          emissiveIntensity: def.kind === 'crumble' ? 0.45 : 0,
+          roughness: 0.55,
+          metalness: def.kind === 'crumble' ? 0.4 : 0.08,
+        });
+        const collar = new THREE.Mesh(new THREE.TorusGeometry(r * 1.02, 0.1, 7, 18), collarMat);
+        collar.rotation.x = Math.PI / 2;
+        collar.position.y = h * 0.34;
+        mesh.add(collar);
+      } else {
+        const underCone = new THREE.Mesh(new THREE.CylinderGeometry(r * 0.94, r * 0.42, h * 1.4, 16), skirtMat);
+        underCone.position.y = -h * 0.9;
+        mesh.add(underCone);
+      }
+
+      // Rotating Maya gear teeth & directional ring on rotating discs
       if (def.kind === 'rotating') {
         const ringMat = new THREE.MeshStandardMaterial({
           color: 0xf59e0b,
@@ -136,6 +163,11 @@ export function buildStyledPlatformMesh(
         outerRing.position.y = h * 0.48;
         mesh.add(outerRing);
 
+        const innerGlyph = new THREE.Mesh(new THREE.TorusGeometry(r * 0.52, 0.06, 6, 20), ringMat);
+        innerGlyph.rotation.x = Math.PI / 2;
+        innerGlyph.position.y = h * 0.5;
+        mesh.add(innerGlyph);
+
         for (let t = 0; t < 8; t++) {
           const ang = (t / 8) * Math.PI * 2;
           const cog = new THREE.Mesh(new THREE.BoxGeometry(0.42, h * 0.55, 0.35), ringMat);
@@ -144,8 +176,98 @@ export function buildStyledPlatformMesh(
           mesh.add(cog);
         }
       }
-    } else if (def.shape === 'organic' || style === 'jungle' || style === 'desert' || style === 'ice' || style === 'volcanic') {
-      const skirtH = Math.min(2.6, Math.max(1.1, h * 1.35));
+    } else if (def.shape === 'bridge') {
+      const alongZ = d >= w;
+      const span = alongZ ? d : w;
+      const width = alongZ ? w : d;
+      const railMat = new THREE.MeshStandardMaterial({
+        map: textures.barkTexture,
+        color: style === 'crystal' ? 0x38bdf8 : 0x85532c,
+        emissive: style === 'crystal' ? 0x0284c7 : 0x000000,
+        emissiveIntensity: style === 'crystal' ? 0.65 : 0,
+        roughness: 0.76,
+      });
+      const ropeMat = new THREE.MeshStandardMaterial({
+        color: style === 'crystal' ? 0x67e8f9 : 0xd6b174,
+        roughness: 0.72,
+      });
+      const postCount = Math.max(3, Math.floor(span / 2.6));
+      for (const side of [-1, 1]) {
+        const edge = side * (width * 0.46);
+        const railGeo = alongZ
+          ? new THREE.BoxGeometry(0.14, 0.14, span * 0.94)
+          : new THREE.BoxGeometry(span * 0.94, 0.14, 0.14);
+        const topRail = new THREE.Mesh(railGeo, ropeMat);
+        topRail.position.set(alongZ ? edge : 0, h * 0.5 + 0.78, alongZ ? 0 : edge);
+        mesh.add(topRail);
+
+        const midRail = new THREE.Mesh(railGeo, ropeMat);
+        midRail.position.set(alongZ ? edge : 0, h * 0.5 + 0.42, alongZ ? 0 : edge);
+        mesh.add(midRail);
+
+        for (let p = 0; p < postCount; p++) {
+          const tPos = -span * 0.44 + (p / Math.max(1, postCount - 1)) * span * 0.88;
+          const post = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.14, 0.96, 8), railMat);
+          post.position.set(alongZ ? edge : tPos, h * 0.5 + 0.45, alongZ ? tPos : edge);
+          post.castShadow = !isSoftwareGl;
+          mesh.add(post);
+        }
+      }
+      // Support beam ribs beneath bridge deck
+      const beam = new THREE.Mesh(
+        alongZ ? new THREE.BoxGeometry(width * 0.82, 0.45, span * 0.92) : new THREE.BoxGeometry(span * 0.92, 0.45, width * 0.82),
+        skirtMat
+      );
+      beam.position.y = -h * 0.45 - 0.18;
+      mesh.add(beam);
+    } else if (def.shape === 'ruin') {
+      // Stepped Mesoamerican plinth + carved stone corner bollards
+      const plinth = new THREE.Mesh(
+        createRoundedSlabGeometry(w + 0.45, h * 0.55, d + 0.45, 0.18),
+        skirtMat
+      );
+      plinth.position.y = -h * 0.35;
+      mesh.add(plinth);
+
+      const underSkirt = new THREE.Mesh(
+        new THREE.CylinderGeometry(Math.min(w, d) * 0.44, Math.min(w, d) * 0.24, 2.4, 8),
+        skirtMat
+      );
+      underSkirt.scale.set(w / Math.min(w, d), 1, d / Math.min(w, d));
+      underSkirt.position.y = -h * 0.5 - 1.1;
+      underSkirt.rotation.y = Math.PI / 8;
+      mesh.add(underSkirt);
+
+      if (w >= 6 && d >= 6) {
+        const capMat = new THREE.MeshStandardMaterial({
+          color: 0xd97706,
+          emissive: 0x78350f,
+          emissiveIntensity: 0.35,
+          metalness: 0.6,
+          roughness: 0.35,
+        });
+        for (const sx of [-1, 1]) {
+          for (const sz of [-1, 1]) {
+            const bollard = new THREE.Mesh(new THREE.BoxGeometry(0.68, 0.85, 0.68), skirtMat);
+            bollard.position.set(sx * (w * 0.44), h * 0.5 + 0.4, sz * (d * 0.44));
+            bollard.castShadow = !isSoftwareGl;
+            mesh.add(bollard);
+
+            const cap = new THREE.Mesh(new THREE.OctahedronGeometry(0.24, 0), capMat);
+            cap.position.set(sx * (w * 0.44), h * 0.5 + 0.98, sz * (d * 0.44));
+            mesh.add(cap);
+          }
+        }
+      }
+    } else if (
+      def.shape === 'organic' ||
+      style === 'jungle' ||
+      style === 'desert' ||
+      style === 'ice' ||
+      style === 'volcanic' ||
+      style === 'temple'
+    ) {
+      const skirtH = Math.min(3.2, Math.max(1.2, h * 1.45));
       const skirtGeo = new THREE.CylinderGeometry(
         Math.min(w, d) * 0.46,
         Math.min(w, d) * 0.2,

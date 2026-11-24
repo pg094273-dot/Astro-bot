@@ -52,6 +52,7 @@ import {
   ProceduralTextures,
 } from './textures';
 import {
+  CameraDiscoveryZoneDef,
   CameraZone2DDef,
   ClimbWallDef,
   EnemyKind,
@@ -69,6 +70,7 @@ const _vec3B = new THREE.Vector3();
 const _vec3C = new THREE.Vector3();
 const _mat4 = new THREE.Matrix4();
 const _quat = new THREE.Quaternion();
+const _euler = new THREE.Euler();
 const _color = new THREE.Color();
 
 interface PlatformRuntime {
@@ -392,9 +394,17 @@ export class GameEngine {
   private riverRocks: RiverRockRuntime[] = [];
   private crocodiles: CrocodileRuntime[] = [];
 
-  // 2D/3D Camera Zone state
+  // 2D/3D Camera Zone & Discovery state
   private active2DZone: CameraZone2DDef | null = null;
+  private activeDiscoveryZone: CameraDiscoveryZoneDef | null = null;
+  private triggeredDiscoveryBanners = new Set<string>();
   private perspectiveMode: '3D' | '2D' | 'COHETE' | 'ALA DELTA' | 'BARCO' = '3D';
+
+  // Templo del Mono ambient jungle leaves, fireflies & waterfall mist pools
+  private templeLeafMesh: THREE.InstancedMesh | null = null;
+  private templeLeafStates: { x: number; y: number; z: number; fallSpeed: number; swayPhase: number; rotSpeed: number }[] = [];
+  private templeFireflyTime: { value: number } | null = null;
+  private templeWaterfallPools: THREE.Vector3[] = [];
 
   // Player state
   private playerPos = new THREE.Vector3(0, 1.5, 0);
@@ -1082,6 +1092,12 @@ export class GameEngine {
     this.rocketRig = null;
     this.gliderRig = null;
     this.boatRig = null;
+    this.templeLeafMesh = null;
+    this.templeLeafStates = [];
+    this.templeFireflyTime = null;
+    this.templeWaterfallPools = [];
+    this.activeDiscoveryZone = null;
+    this.triggeredDiscoveryBanners.clear();
   }
 
   private addHorizonMountainRing(
@@ -1867,11 +1883,38 @@ export class GameEngine {
       shrubInst.computeBoundingSphere();
       this.levelGroup.add(dRockInst, shrubInst);
     } else if (biome === 'temple') {
-      // Sunlit rainforest canopy horizon rings
-      this.addHorizonMountainRing(-8, -45, level.theme.hazardFloorY - 2, 115, 195, 44, 0x3b7a36, 0x8bc45a, 2.5, 0.9);
-      this.addHorizonMountainRing(-8, -45, level.theme.hazardFloorY - 1, 78, 125, 22, 0x1a4f26, 0x478a35, 1.4, 0.92);
+      // Sunlit emerald rainforest canopy & distant blue-jade mist mountain ridges
+      this.addHorizonMountainRing(0, -78, level.theme.hazardFloorY - 2, 130, 215, 54, 0x2b6e58, 0x99d99b, 2.5, 0.88);
+      this.addHorizonMountainRing(0, -78, level.theme.hazardFloorY - 1, 86, 138, 26, 0x174a2b, 0x4b943c, 1.4, 0.92);
 
-      // Monumental Stepped Aztec / Maya Stone Pyramid Temples (multi-part 3D groups)
+      // Sculpted Lush Mossy Riverbanks flanking the emerald river corridor (river runs freely between x = -27 and x = +25)
+      const bankGeo = new THREE.PlaneGeometry(58, 220, 14, 34);
+      bankGeo.rotateX(-Math.PI / 2);
+      const bPos = bankGeo.attributes.position;
+      for (let i = 0; i < bPos.count; i++) {
+        const vx = bPos.getX(i);
+        const vz = bPos.getZ(i);
+        const innerDist = Math.max(0, 29 - Math.abs(vx));
+        const h = Math.max(-0.4, innerDist * 0.24 + Math.sin(vz * 0.07 + vx * 0.11) * 1.4 + Math.cos(vx * 0.14) * 0.9);
+        bPos.setY(i, h);
+      }
+      bankGeo.computeVertexNormals();
+      const bankMat = new THREE.MeshStandardMaterial({
+        map: this.textures.jungleGrass,
+        bumpMap: this.textures.grassBump,
+        bumpScale: 0.12,
+        roughness: 0.88,
+      });
+      const bankL = new THREE.Mesh(bankGeo, bankMat);
+      bankL.position.set(-55, level.theme.hazardFloorY - 0.3, -82);
+      bankL.receiveShadow = true;
+      const bankR = new THREE.Mesh(bankGeo, bankMat);
+      bankR.position.set(53, level.theme.hazardFloorY - 0.3, -82);
+      bankR.rotation.y = Math.PI;
+      bankR.receiveShadow = true;
+      this.levelGroup.add(bankL, bankR);
+
+      // Temple Architectural Materials
       const tTopMat = new THREE.MeshStandardMaterial({
         map: this.textures.templeTop,
         bumpMap: this.textures.stoneBump,
@@ -1884,27 +1927,35 @@ export class GameEngine {
         bumpScale: 0.18,
         roughness: 0.88,
       });
-      const tDoorMat = new THREE.MeshStandardMaterial({ color: 0x1c140c, roughness: 0.95 });
+      const tDoorMat = new THREE.MeshStandardMaterial({ color: 0x16110a, roughness: 0.95 });
       const tMossMat = new THREE.MeshStandardMaterial({
         map: this.textures.jungleGrass,
         bumpMap: this.textures.grassBump,
         bumpScale: 0.08,
         roughness: 0.85,
       });
+      const tGoldMat = new THREE.MeshStandardMaterial({
+        color: 0xfbbf24,
+        emissive: 0x92400e,
+        emissiveIntensity: 0.45,
+        metalness: 0.82,
+        roughness: 0.24,
+      });
+      const jadeFlameMat = new THREE.MeshStandardMaterial({
+        color: 0x34d399,
+        emissive: 0x10b981,
+        emissiveIntensity: 2.3,
+        roughness: 0.2,
+      });
 
-      const templeSpots: [number, number, number, number, number][] = [
-        [-31, -11, -30, 1.05, 0.52],
-        [29, -11, -58, 1.12, -0.48],
-        [8, -11, -118, 1.38, 0.08],
-      ];
-      for (const [tx, ty, tz, sc, rotY] of templeSpots) {
+      // 1. MONUMENTAL STEPPED GRAND TEMPLE CITADEL & FLANKING SANCTUARIES
+      const buildPyramid = (tx: number, ty: number, tz: number, sc: number, rotY: number) => {
         const tg = new THREE.Group();
         tg.position.set(tx, ty, tz);
         tg.rotation.y = rotY;
-
-        for (let tier = 0; tier < 5; tier++) {
-          const w = (22 - tier * 3.5) * sc;
-          const h = 3.2 * sc;
+        for (let tier = 0; tier < 6; tier++) {
+          const w = (26 - tier * 3.6) * sc;
+          const h = 3.4 * sc;
           const tierMesh = new THREE.Mesh(
             new THREE.BoxGeometry(w, h, w),
             [tSideMat, tSideMat, tTopMat, tSideMat, tSideMat, tSideMat]
@@ -1912,39 +1963,169 @@ export class GameEngine {
           tierMesh.position.y = (tier + 0.5) * h;
           tg.add(tierMesh);
         }
+        const sanctum = new THREE.Mesh(new THREE.BoxGeometry(7.2 * sc, 4.6 * sc, 6.8 * sc), tSideMat);
+        sanctum.position.y = 22.6 * sc;
+        const doorway = new THREE.Mesh(new THREE.BoxGeometry(2.6 * sc, 3.1 * sc, 0.45 * sc), tDoorMat);
+        doorway.position.set(0, 22.0 * sc, 3.3 * sc);
+        const sunDisc = new THREE.Mesh(new THREE.TorusGeometry(1.7 * sc, 0.22 * sc, 8, 24), tGoldMat);
+        sunDisc.position.set(0, 25.8 * sc, 3.35 * sc);
+        tg.add(sanctum, doorway, sunDisc);
 
-        // Summit sanctuary & dark doorway
-        const sanctum = new THREE.Mesh(new THREE.BoxGeometry(6.8 * sc, 4.2 * sc, 6.4 * sc), tSideMat);
-        sanctum.position.y = 18.0 * sc;
-        const doorway = new THREE.Mesh(new THREE.BoxGeometry(2.4 * sc, 2.8 * sc, 0.4 * sc), tDoorMat);
-        doorway.position.set(0, 17.4 * sc, 3.1 * sc);
-        tg.add(sanctum, doorway);
-
-        // Grand central stone staircase + twin balustrades
-        for (let st = 0; st < 11; st++) {
-          const step = new THREE.Mesh(new THREE.BoxGeometry(4.2 * sc, 1.45 * sc, 2.2 * sc), tTopMat);
-          step.position.set(0, (st + 0.5) * 1.45 * sc, (11.5 - st * 0.82) * sc);
+        for (let st = 0; st < 12; st++) {
+          const step = new THREE.Mesh(new THREE.BoxGeometry(4.6 * sc, 1.55 * sc, 2.3 * sc), tTopMat);
+          step.position.set(0, (st + 0.5) * 1.55 * sc, (13.4 - st * 0.88) * sc);
           tg.add(step);
         }
-        const balL = new THREE.Mesh(new THREE.BoxGeometry(0.9 * sc, 1.5 * sc, 12.2 * sc), tSideMat);
-        balL.position.set(-2.45 * sc, 8.2 * sc, 7.3 * sc);
+        const balL = new THREE.Mesh(new THREE.BoxGeometry(0.95 * sc, 1.6 * sc, 14.5 * sc), tSideMat);
+        balL.position.set(-2.65 * sc, 9.5 * sc, 8.6 * sc);
         balL.rotation.x = -0.78;
         const balR = balL.clone();
-        balR.position.x = 2.45 * sc;
+        balR.position.x = 2.65 * sc;
         tg.add(balL, balR);
 
-        // Overgrown jungle moss bushes on temple terrace corners
-        for (let m = 0; m < 4; m++) {
-          const bush = new THREE.Mesh(this.createDisplacedRockGeometry(1.5 * sc, m + 1.2), tMossMat);
-          bush.position.set((m % 2 === 0 ? -1 : 1) * 7.2 * sc, 6.6 * sc, (m < 2 ? 1 : -1) * 6.8 * sc);
-          bush.scale.set(1.2, 0.65, 1.1);
+        for (let m = 0; m < 6; m++) {
+          const bush = new THREE.Mesh(this.createDisplacedRockGeometry(1.6 * sc, m + 1.4), tMossMat);
+          bush.position.set((m % 2 === 0 ? -1 : 1) * (8.5 - (m % 3) * 1.5) * sc, (6.8 + (m % 3) * 3.4) * sc, (m < 3 ? 1 : -1) * 7.2 * sc);
+          bush.scale.set(1.25, 0.62, 1.1);
           tg.add(bush);
         }
-
         this.levelGroup.add(tg);
+      };
+
+      // Colossal Citadel behind the Boss Summit + Flanking Valley Temples
+      buildPyramid(0, level.theme.hazardFloorY - 0.5, -172, 1.85, 0);
+      buildPyramid(-46, level.theme.hazardFloorY - 1, -68, 0.95, 0.42);
+      buildPyramid(44, level.theme.hazardFloorY - 1, -86, 1.05, -0.38);
+
+      // 2. PLAYABLE GRAND TEMPLE ENTRANCE ARCH & COLONNADE CORRIDOR (z = -92 to -124)
+      const gateArch = new THREE.Group();
+      gateArch.position.set(0, 0, -93.0);
+      for (const sx of [-1, 1]) {
+        const tower = new THREE.Mesh(new THREE.BoxGeometry(3.4, 24.5, 4.2), tSideMat);
+        tower.position.set(sx * 7.6, 8.5, 0);
+        tower.castShadow = !this.isSoftwareGl;
+        tower.receiveShadow = !this.isSoftwareGl;
+        gateArch.add(tower);
+
+        const cap = new THREE.Mesh(new THREE.BoxGeometry(4.2, 1.4, 5.0), tTopMat);
+        cap.position.set(sx * 7.6, 21.0, 0);
+        gateArch.add(cap);
+
+        const brazier = new THREE.Mesh(new THREE.CylinderGeometry(0.68, 0.45, 0.7, 10), tGoldMat);
+        brazier.position.set(sx * 5.2, 11.7, -0.8);
+        const flame = new THREE.Mesh(new THREE.ConeGeometry(0.42, 1.15, 7), jadeFlameMat);
+        flame.position.set(sx * 5.2, 12.6, -0.8);
+        gateArch.add(brazier, flame);
+      }
+      const gateLintel = new THREE.Mesh(new THREE.BoxGeometry(19.2, 2.8, 3.8), tSideMat);
+      gateLintel.position.set(0, 21.5, 0);
+      const gateCrest = new THREE.Mesh(new THREE.BoxGeometry(10.0, 2.2, 4.2), tGoldMat);
+      gateCrest.position.set(0, 23.8, 0);
+      const gateMedallion = new THREE.Mesh(new THREE.TorusGeometry(1.5, 0.24, 8, 22), jadeFlameMat);
+      gateMedallion.position.set(0, 21.5, 2.0);
+      gateArch.add(gateLintel, gateCrest, gateMedallion);
+      this.levelGroup.add(gateArch);
+
+      // Flanking Colonnade Pillars & Overhead Carved Lintels framing the Inner Temple Hall
+      for (const zPos of [-103.0, -113.0, -122.0]) {
+        for (const sx of [-1, 1]) {
+          const col = new THREE.Mesh(new THREE.CylinderGeometry(1.05, 1.25, 26, 10), tSideMat);
+          col.position.set(sx * 8.4, 9.5, zPos);
+          this.levelGroup.add(col);
+
+          const torchBowl = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.3, 0.45, 8), tGoldMat);
+          torchBowl.position.set(sx * 7.1, zPos === -103 ? 13.4 : 18.2, zPos);
+          const torchFire = new THREE.Mesh(new THREE.ConeGeometry(0.32, 0.85, 6), jadeFlameMat);
+          torchFire.position.set(sx * 7.1, (zPos === -103 ? 13.4 : 18.2) + 0.6, zPos);
+          this.levelGroup.add(torchBowl, torchFire);
+        }
+        const spanBeam = new THREE.Mesh(new THREE.BoxGeometry(19.6, 1.8, 2.2), tTopMat);
+        spanBeam.position.set(0, 25.4, zPos);
+        this.levelGroup.add(spanBeam);
       }
 
-      // Slender Tropical Palms & Twisted Reddish-Brown Hardwood Trees
+      // 3. SUNKEN RIVER RUIN ARCHWAYS emerging from the Emerald River
+      const ruinArchSpots: [number, number, number, number][] = [
+        [-12.5, level.theme.hazardFloorY - 0.8, -6.0, 0.45],
+        [12.5, level.theme.hazardFloorY - 0.8, -14.5, -0.4],
+        [-13.5, level.theme.hazardFloorY - 0.8, -63.0, 0.28],
+        [16.0, level.theme.hazardFloorY - 0.8, -86.0, -0.35],
+      ];
+      for (const [ax, ay, az, rotY] of ruinArchSpots) {
+        const arch = new THREE.Group();
+        arch.position.set(ax, ay, az);
+        arch.rotation.y = rotY;
+        const pL = new THREE.Mesh(new THREE.BoxGeometry(1.7, 9.2, 1.7), tSideMat);
+        pL.position.set(-3.4, 4.6, 0);
+        const pR = pL.clone();
+        pR.position.x = 3.4;
+        const lintel = new THREE.Mesh(new THREE.BoxGeometry(9.4, 1.5, 2.0), tTopMat);
+        lintel.position.set(0, 9.5, 0);
+        const mossCap = new THREE.Mesh(this.createDisplacedRockGeometry(1.3, ax + az), tMossMat);
+        mossCap.position.set(-2.0, 10.4, 0);
+        mossCap.scale.set(1.4, 0.55, 1.0);
+        arch.add(pL, pR, lintel, mossCap);
+        this.levelGroup.add(arch);
+      }
+
+      // 4. DRAMATIC CLIFFSIDE WATERFALLS WITH CARVED STONE SPOUTS & PLUNGE FOAM POOLS
+      const wfSpots: [number, number, number, number, number][] = [
+        [-29.0, 6.2, -37.5, 1.18, 1.0],
+        [27.5, 7.0, -47.5, -1.12, 1.05],
+        [-16.5, 13.5, -118.0, 0.35, 1.2],
+        [16.5, 13.5, -118.0, -0.35, 1.2],
+      ];
+      const cliffMat = new THREE.MeshStandardMaterial({
+        map: this.textures.climbStone,
+        bumpMap: this.textures.stoneBump,
+        bumpScale: 0.2,
+        roughness: 0.9,
+      });
+      const wfMat = new THREE.MeshPhysicalMaterial({
+        map: this.textures.waterfallSurface,
+        transparent: true,
+        opacity: 0.88,
+        roughness: 0.12,
+        clearcoat: 0.8,
+        side: THREE.DoubleSide,
+      });
+      const foamMat = new THREE.MeshBasicMaterial({ color: 0xe0f2fe, transparent: true, opacity: 0.62 });
+      const cliffRockGeo = this.createDisplacedRockGeometry(6.8, 5.1);
+
+      for (const [wx, wy, wz, rotY, sc] of wfSpots) {
+        const wg = new THREE.Group();
+        wg.position.set(wx, wy, wz);
+        wg.rotation.y = rotY;
+
+        const cliffL = new THREE.Mesh(cliffRockGeo, cliffMat);
+        cliffL.scale.set(0.9 * sc, 2.1 * sc, 0.82 * sc);
+        cliffL.position.set(-4.8 * sc, -1.5, -1.4);
+        const cliffR = new THREE.Mesh(cliffRockGeo, cliffMat);
+        cliffR.scale.set(0.9 * sc, 2.1 * sc, 0.82 * sc);
+        cliffR.position.set(4.8 * sc, -1.5, -1.4);
+        const cliffBack = new THREE.Mesh(cliffRockGeo, cliffMat);
+        cliffBack.scale.set(1.35 * sc, 2.2 * sc, 0.7 * sc);
+        cliffBack.position.set(0, -1.0, -3.2);
+
+        const spout = new THREE.Mesh(new THREE.BoxGeometry(5.6 * sc, 1.2, 2.6), tTopMat);
+        spout.position.set(0, 2.2 * sc, -0.5);
+
+        const dropH = wy - level.theme.hazardFloorY + 3.2;
+        const stream = new THREE.Mesh(new THREE.PlaneGeometry(5.2 * sc, dropH, 4, 8), wfMat);
+        stream.position.set(0, 2.2 * sc - dropH * 0.5, 0.55);
+        stream.rotation.x = -0.05;
+
+        const poolY = level.theme.hazardFloorY - wy + 0.14;
+        const foam = new THREE.Mesh(new THREE.RingGeometry(1.5 * sc, 5.2 * sc, 20), foamMat);
+        foam.rotation.x = -Math.PI / 2;
+        foam.position.set(0, poolY, 1.0);
+
+        wg.add(cliffL, cliffR, cliffBack, spout, stream, foam);
+        this.levelGroup.add(wg);
+        this.templeWaterfallPools.push(new THREE.Vector3(wx, level.theme.hazardFloorY + 0.3, wz));
+      }
+
+      // 5. DENSE 3-TIER RAINFOREST: BUTTRESS CEIBA CANOPY TREES, CURVED PALMS & DRAPED LIANAS
       const palmBarkMat = new THREE.MeshStandardMaterial({
         map: this.textures.barkTexture,
         bumpMap: this.textures.barkBump,
@@ -1955,93 +2136,155 @@ export class GameEngine {
       const redBarkMat = new THREE.MeshStandardMaterial({
         map: this.textures.barkTexture,
         bumpMap: this.textures.barkBump,
-        bumpScale: 0.16,
-        color: 0x7c3825,
+        bumpScale: 0.18,
+        color: 0x7a3723,
         roughness: 0.88,
       });
-      const leafEmerald = new THREE.MeshStandardMaterial({ color: 0x3b8526, roughness: 0.78 });
-      const leafLime = new THREE.MeshStandardMaterial({ color: 0x62a832, roughness: 0.76 });
-      applyWindSwayShader(leafEmerald, this.shaderTimeUniform, 0.22, 1.85);
-      applyWindSwayShader(leafLime, this.shaderTimeUniform, 0.24, 2.0);
-      const templeClusterGeo = this.createDisplacedRockGeometry(2.1, 4.3);
+      const leafSun = new THREE.MeshStandardMaterial({ color: 0x62ab33, roughness: 0.75 });
+      const leafEmerald = new THREE.MeshStandardMaterial({ color: 0x357d24, roughness: 0.8 });
+      const leafDeep = new THREE.MeshStandardMaterial({ color: 0x205218, roughness: 0.85 });
+      const lianaMat = new THREE.MeshStandardMaterial({ color: 0x468026, roughness: 0.78 });
+      applyWindSwayShader(leafSun, this.shaderTimeUniform, 0.24, 2.0);
+      applyWindSwayShader(leafEmerald, this.shaderTimeUniform, 0.21, 1.85);
+      applyWindSwayShader(leafDeep, this.shaderTimeUniform, 0.16, 1.65);
+      applyWindSwayShader(lianaMat, this.shaderTimeUniform, 0.28, 1.45);
+      const templeClusterGeo = this.createDisplacedRockGeometry(2.2, 4.3);
 
+      // Curved Tropical Palms on outer banks & river edge
       const tPalmSpots: [number, number, number, number][] = [
-        [-13, -4, -10, 1.1],
-        [13, -4, -18, 1.15],
-        [-15, -2, -40, 1.15],
-        [15, -2, -52, 1.12],
-        [-28, 3, -72, 1.18],
-        [0, 3, -78, 1.1],
+        [-14, level.theme.hazardFloorY, -2, 1.15],
+        [14, level.theme.hazardFloorY, -8, 1.18],
+        [-25, level.theme.hazardFloorY, -24, 1.15],
+        [23, level.theme.hazardFloorY, -34, 1.2],
+        [-31, level.theme.hazardFloorY + 1.0, -54, 1.22],
+        [25, level.theme.hazardFloorY + 0.5, -66, 1.15],
+        [-30, level.theme.hazardFloorY + 1.5, -86, 1.2],
+        [25, level.theme.hazardFloorY + 1.0, -108, 1.18],
       ];
       for (let i = 0; i < tPalmSpots.length; i++) {
         const [px, py, pz, sc] = tPalmSpots[i];
         const pg = new THREE.Group();
         pg.position.set(px, py, pz);
-        const lean = (i % 2 === 0 ? 1 : -1) * 0.9 * sc;
+        const lean = (i % 2 === 0 ? 1 : -1) * 1.1 * sc;
         const pCurve = new THREE.CatmullRomCurve3([
-          new THREE.Vector3(0, 0, 0),
-          new THREE.Vector3(lean * 0.4, 5.5 * sc, 0.2 * sc),
-          new THREE.Vector3(lean, 11.2 * sc, -0.1 * sc),
+          new THREE.Vector3(0, -0.5, 0),
+          new THREE.Vector3(lean * 0.45, 5.5 * sc, 0.25 * sc),
+          new THREE.Vector3(lean, 11.4 * sc, -0.1 * sc),
         ]);
-        pg.add(new THREE.Mesh(new THREE.TubeGeometry(pCurve, 10, 0.34 * sc, 7, false), palmBarkMat));
+        pg.add(new THREE.Mesh(new THREE.TubeGeometry(pCurve, 10, 0.36 * sc, 7, false), palmBarkMat));
 
-        const crown = new THREE.Vector3(lean, 11.2 * sc, -0.1 * sc);
+        const crown = new THREE.Vector3(lean, 11.4 * sc, -0.1 * sc);
         for (let f = 0; f < 7; f++) {
-          const fAng = (f / 7) * Math.PI * 2 + i * 0.4;
+          const fAng = (f / 7) * Math.PI * 2 + i * 0.45;
           const fg = new THREE.Group();
           fg.position.copy(crown);
           fg.rotation.y = fAng;
-          const frond = new THREE.Mesh(new THREE.ConeGeometry(0.65 * sc, 4.2 * sc, 5), f % 2 === 0 ? leafEmerald : leafLime);
+          const frond = new THREE.Mesh(new THREE.ConeGeometry(0.68 * sc, 4.4 * sc, 5), f % 2 === 0 ? leafEmerald : leafSun);
           frond.scale.set(1.0, 1.0, 0.18);
           frond.rotation.z = -1.2;
-          frond.position.set(1.9 * sc, 0, 0);
+          frond.position.set(2.0 * sc, 0, 0);
           fg.add(frond);
           pg.add(fg);
         }
         this.levelGroup.add(pg);
       }
 
+      // Giant Buttress-Rooted Jungle Hardwood Trees + Draped Liana Canopy Arches
       const tHardwoodSpots: [number, number, number, number][] = [
-        [-14, -4, -22, 1.1],
-        [14, -4, -28, 1.08],
-        [-26, 4, -56, 1.15],
-        [-6, 4, -64, 1.05],
+        [-22, level.theme.hazardFloorY, -10, 1.15],
+        [22, level.theme.hazardFloorY, -16, 1.12],
+        [-28, level.theme.hazardFloorY + 0.5, -48, 1.25],
+        [24, level.theme.hazardFloorY + 0.5, -56, 1.22],
+        [-32, level.theme.hazardFloorY + 1.0, -76, 1.25],
+        [22, level.theme.hazardFloorY + 0.5, -88, 1.18],
+        [-24, level.theme.hazardFloorY + 0.5, -104, 1.15],
+        [24, level.theme.hazardFloorY + 0.5, -124, 1.2],
       ];
+      const crownTips: THREE.Vector3[] = [];
       for (let i = 0; i < tHardwoodSpots.length; i++) {
         const [hx, hy, hz, sc] = tHardwoodSpots[i];
         const hg = new THREE.Group();
         hg.position.set(hx, hy, hz);
         const tCurve = new THREE.CatmullRomCurve3([
-          new THREE.Vector3(0, 0, 0),
-          new THREE.Vector3(0.4 * sc, 4.2 * sc, -0.2 * sc),
-          new THREE.Vector3(-0.3 * sc, 8.6 * sc, 0.2 * sc),
+          new THREE.Vector3(0, -0.8, 0),
+          new THREE.Vector3(0.45 * sc, 4.8 * sc, -0.25 * sc),
+          new THREE.Vector3(-0.35 * sc, 10.4 * sc, 0.25 * sc),
         ]);
-        hg.add(new THREE.Mesh(new THREE.TubeGeometry(tCurve, 10, 0.65 * sc, 8, false), redBarkMat));
-        for (let c = 0; c < 3; c++) {
-          const cAng = (c / 3) * Math.PI * 2 + i;
-          const lobe = new THREE.Mesh(templeClusterGeo, c === 0 ? leafLime : leafEmerald);
-          lobe.position.set(Math.cos(cAng) * 1.9 * sc, (9.8 - c * 0.4) * sc, Math.sin(cAng) * 1.9 * sc);
-          lobe.scale.set(1.25 * sc, 0.75 * sc, 1.25 * sc);
+        hg.add(new THREE.Mesh(new THREE.TubeGeometry(tCurve, 11, 0.78 * sc, 8, false), redBarkMat));
+
+        for (let r = 0; r < 4; r++) {
+          const ang = (r / 4) * Math.PI * 2 + 0.4;
+          const rCurve = new THREE.CatmullRomCurve3([
+            new THREE.Vector3(Math.cos(ang) * 0.45 * sc, 2.4 * sc, Math.sin(ang) * 0.45 * sc),
+            new THREE.Vector3(Math.cos(ang) * 2.2 * sc, -0.4, Math.sin(ang) * 2.2 * sc),
+          ]);
+          hg.add(new THREE.Mesh(new THREE.TubeGeometry(rCurve, 5, 0.28 * sc, 6, false), redBarkMat));
+        }
+
+        for (let c = 0; c < 4; c++) {
+          const cAng = (c / 4) * Math.PI * 2 + i * 0.7;
+          const lobe = new THREE.Mesh(templeClusterGeo, c === 0 ? leafSun : c === 1 ? leafEmerald : leafDeep);
+          lobe.position.set(Math.cos(cAng) * 2.3 * sc, (11.6 - (c % 2) * 0.8) * sc, Math.sin(cAng) * 2.3 * sc);
+          lobe.scale.set(1.32 * sc, 0.74 * sc, 1.32 * sc);
           hg.add(lobe);
         }
+        const topCrown = new THREE.Mesh(templeClusterGeo, leafSun);
+        topCrown.position.set(0, 13.4 * sc, 0);
+        topCrown.scale.set(1.4 * sc, 0.76 * sc, 1.4 * sc);
+        hg.add(topCrown);
+
         this.levelGroup.add(hg);
+        crownTips.push(new THREE.Vector3(hx, hy + 14.2 * sc, hz));
       }
 
-      // Exotic Broad-Leaf Banana/Monstera Plants & Weathered Temple Ruin Stones on safe corners
+      // Overhead Draped Jungle Liana Arches across the valley
+      const vineLinks: [number, number][] = [
+        [0, 1],
+        [2, 3],
+        [4, 5],
+        [6, 7],
+      ];
+      for (const [a, b] of vineLinks) {
+        const pA = crownTips[a];
+        const pB = crownTips[b];
+        if (!pA || !pB) continue;
+        const mid = pA.clone().lerp(pB, 0.5);
+        mid.y += 4.5;
+        const vineCurve = new THREE.CatmullRomCurve3([pA, mid, pB]);
+        this.levelGroup.add(new THREE.Mesh(new THREE.TubeGeometry(vineCurve, 14, 0.11, 5, false), lianaMat));
+      }
+
+      // 6. NATURAL BOULDERS, FERNS & COLORFUL TROPICAL FLOWERS ON PLATFORM RIMS
       const templeDecorSpots: [number, number, number, number][] = [
-        [-3.9, 1.0, 3.8, 0.68],
-        [3.9, 1.0, 3.8, 0.65],
-        [-2.9, 1.3, -14.2, 0.6],
-        [2.9, 1.3, -8.8, 0.58],
-        [-2.8, 8.9, -40.2, 0.62],
-        [-20.2, 23.3, -87.8, 0.72],
-        [-11.8, 23.3, -87.8, 0.68],
+        [-4.5, 1.0, 4.4, 0.68],
+        [4.5, 1.0, 4.4, 0.65],
+        [-4.2, 1.6, -19.2, 0.6],
+        [4.2, 1.6, -25.8, 0.58],
+        [-3.6, 9.3, -37.2, 0.62],
+        [3.6, 9.3, -57.0, 0.62],
+        [-8.0, -3.5, -7.2, 0.9],
+        [-13.5, -3.5, -26.5, 0.92],
+        [-4.8, 11.3, -99.8, 0.68],
+        [4.8, 11.3, -99.8, 0.68],
+        [-9.2, 24.5, -133.5, 0.72],
+        [9.2, 24.5, -133.5, 0.72],
       ];
       const ruinRockGeo = this.createDisplacedRockGeometry(0.85, 6.2);
       const ruinInst = new THREE.InstancedMesh(ruinRockGeo, tTopMat, templeDecorSpots.length);
       const broadLeafGeo = new THREE.ConeGeometry(0.45, 2.0, 5);
       const broadLeafInst = new THREE.InstancedMesh(broadLeafGeo, leafEmerald, templeDecorSpots.length * 6);
+      const flowerPetalGeo = new THREE.ConeGeometry(0.24, 0.34, 6);
+      const flowerMat = new THREE.MeshStandardMaterial({
+        color: 0xffffff,
+        emissive: 0x3f1020,
+        emissiveIntensity: 0.35,
+        roughness: 0.45,
+      });
+      const flowerInst = new THREE.InstancedMesh(flowerPetalGeo, flowerMat, templeDecorSpots.length * 2);
+      const flowerColors = [0xf43f5e, 0xfacc15, 0xe879f9, 0xfb923c];
+
       let blIdx = 0;
+      let flwIdx = 0;
       for (let i = 0; i < templeDecorSpots.length; i++) {
         const [rx, ry, rz, rs] = templeDecorSpots[i];
         dummy.position.set(rx, ry + 0.25 * rs, rz);
@@ -2063,13 +2306,163 @@ export class GameEngine {
           broadLeafInst.setColorAt(blIdx, _color);
           blIdx++;
         }
+
+        for (let fl = 0; fl < 2; fl++) {
+          dummy.position.set(lx + (fl === 0 ? 0.3 : -0.35) * rs, ry + 0.95 * rs, lz + (fl === 0 ? 0.25 : -0.2) * rs);
+          dummy.rotation.set(Math.PI, i + fl, 0.2);
+          dummy.scale.set(rs * 1.1, rs * 1.1, rs * 1.1);
+          dummy.updateMatrix();
+          flowerInst.setMatrixAt(flwIdx, dummy.matrix);
+          _color.setHex(flowerColors[(i + fl) % flowerColors.length]);
+          flowerInst.setColorAt(flwIdx, _color);
+          flwIdx++;
+        }
       }
-      ruinInst.instanceMatrix.needsUpdate = true;
-      ruinInst.computeBoundingSphere();
-      broadLeafInst.instanceMatrix.needsUpdate = true;
-      if (broadLeafInst.instanceColor) broadLeafInst.instanceColor.needsUpdate = true;
-      broadLeafInst.computeBoundingSphere();
-      this.levelGroup.add(ruinInst, broadLeafInst);
+      for (const im of [ruinInst, broadLeafInst, flowerInst]) {
+        im.instanceMatrix.needsUpdate = true;
+        if (im.instanceColor) im.instanceColor.needsUpdate = true;
+        im.computeBoundingSphere();
+      }
+      this.levelGroup.add(ruinInst, broadLeafInst, flowerInst);
+
+      // 7. FLOATING WATER LILY PADS & LOTUS BLOOMS ON THE EMERALD RIVER
+      const padGeo = new THREE.CylinderGeometry(1.1, 1.1, 0.08, 12);
+      const padMat = new THREE.MeshStandardMaterial({ color: 0x22c55e, roughness: 0.72 });
+      const lotusGeo = new THREE.ConeGeometry(0.3, 0.34, 6);
+      const lotusMat = new THREE.MeshStandardMaterial({ color: 0xf472b6, emissive: 0xdb2777, emissiveIntensity: 0.42 });
+      const padSpots: [number, number][] = [
+        [-4.5, -5.5], [-10.5, -7.2], [5.8, -9.0], [9.2, -16.5], [-6.5, -18.5],
+        [-19.5, -15.0], [-23.0, -24.5], [15.5, -31.0], [-14.0, -40.5], [10.0, -46.0],
+        [-8.0, -58.0], [11.0, -68.0], [-14.0, -76.0], [12.0, -86.0], [-18.0, -94.0],
+        [16.0, -98.0], [-10.0, -108.0], [14.0, -114.0],
+      ];
+      const padInst = new THREE.InstancedMesh(padGeo, padMat, padSpots.length);
+      const lotusInst = new THREE.InstancedMesh(lotusGeo, lotusMat, padSpots.length);
+      for (let i = 0; i < padSpots.length; i++) {
+        const [lx, lz] = padSpots[i];
+        const sc = 0.78 + (i % 3) * 0.25;
+        dummy.position.set(lx, level.theme.hazardFloorY + 0.06, lz);
+        dummy.rotation.set(0, i * 0.85, 0);
+        dummy.scale.set(sc, 1, sc);
+        dummy.updateMatrix();
+        padInst.setMatrixAt(i, dummy.matrix);
+
+        dummy.position.set(lx + 0.15, level.theme.hazardFloorY + 0.24, lz);
+        dummy.rotation.set(Math.PI, i, 0);
+        dummy.scale.set(sc, sc, sc);
+        dummy.updateMatrix();
+        lotusInst.setMatrixAt(i, dummy.matrix);
+      }
+      padInst.instanceMatrix.needsUpdate = true;
+      lotusInst.instanceMatrix.needsUpdate = true;
+      padInst.computeBoundingSphere();
+      lotusInst.computeBoundingSphere();
+      this.levelGroup.add(padInst, lotusInst);
+
+      // 8. VOLUMETRIC-STYLE GOLDEN CANOPY SUNBEAMS
+      const beamMat = new THREE.MeshBasicMaterial({
+        color: 0xfef3c7,
+        transparent: true,
+        opacity: this.isSoftwareGl ? 0.045 : 0.065,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+      });
+      const beamGeo = new THREE.ConeGeometry(4.8, 36, 10, 1, true);
+      const beamCoords: [number, number, number][] = [
+        [-4, 14, -14],
+        [-14, 13, -36],
+        [8, 18, -50],
+        [-2, 20, -82],
+        [0, 26, -120],
+      ];
+      for (const [bx, by, bz] of beamCoords) {
+        const beam = new THREE.Mesh(beamGeo, beamMat);
+        beam.position.set(bx, by, bz);
+        beam.rotation.set(0.18, 0, -0.34);
+        this.levelGroup.add(beam);
+      }
+
+      // 9. FALLING FLUTTERING JUNGLE LEAVES (InstancedMesh animated in tick)
+      const leafCount = this.isSoftwareGl ? 28 : 64;
+      const fallLeafGeo = new THREE.PlaneGeometry(0.48, 0.24);
+      const fallLeafMat = new THREE.MeshStandardMaterial({
+        color: 0xffffff,
+        roughness: 0.65,
+        side: THREE.DoubleSide,
+      });
+      const fallLeaves = new THREE.InstancedMesh(fallLeafGeo, fallLeafMat, leafCount);
+      fallLeaves.frustumCulled = false;
+      fallLeaves.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+      this.templeLeafStates = [];
+      for (let i = 0; i < leafCount; i++) {
+        const lx = (Math.random() - 0.5) * 44;
+        const ly = Math.random() * 24 + 2;
+        const lz = -Math.random() * 145;
+        this.templeLeafStates.push({
+          x: lx,
+          y: ly,
+          z: lz,
+          fallSpeed: 0.9 + Math.random() * 0.9,
+          swayPhase: Math.random() * Math.PI * 2,
+          rotSpeed: 1.4 + Math.random() * 2.0,
+        });
+        _color.setHex(i % 3 === 0 ? 0x84cc16 : i % 3 === 1 ? 0x4ade80 : 0xfacc15);
+        fallLeaves.setColorAt(i, _color);
+      }
+      if (fallLeaves.instanceColor) fallLeaves.instanceColor.needsUpdate = true;
+      fallLeaves.computeBoundingSphere();
+      this.templeLeafMesh = fallLeaves;
+      this.levelGroup.add(fallLeaves);
+
+      // 10. LUMINOUS JUNGLE FIREFLIES (Custom Additive Shader Points)
+      const ffCount = this.isSoftwareGl ? 36 : 84;
+      const ffPos = new Float32Array(ffCount * 3);
+      const ffPhase = new Float32Array(ffCount);
+      for (let i = 0; i < ffCount; i++) {
+        ffPos[i * 3] = (Math.random() - 0.5) * 50;
+        ffPos[i * 3 + 1] = level.theme.hazardFloorY + 1.2 + Math.random() * 22;
+        ffPos[i * 3 + 2] = -Math.random() * 142;
+        ffPhase[i] = Math.random() * Math.PI * 2;
+      }
+      const ffGeo = new THREE.BufferGeometry();
+      ffGeo.setAttribute('position', new THREE.BufferAttribute(ffPos, 3));
+      ffGeo.setAttribute('aPhase', new THREE.BufferAttribute(ffPhase, 1));
+      const ffTime = { value: 0 };
+      this.templeFireflyTime = ffTime;
+      const ffMat = new THREE.ShaderMaterial({
+        uniforms: { uTime: ffTime },
+        vertexShader: `
+          attribute float aPhase;
+          uniform float uTime;
+          varying float vGlow;
+          void main() {
+            vec3 p = position;
+            p.x += sin(uTime * 1.1 + aPhase) * 1.3;
+            p.y += cos(uTime * 1.5 + aPhase * 1.4) * 0.7;
+            p.z += sin(uTime * 0.9 + aPhase * 0.7) * 1.1;
+            vec4 mv = modelViewMatrix * vec4(p, 1.0);
+            gl_PointSize = clamp(120.0 / max(1.0, -mv.z), 3.0, 14.0);
+            vGlow = 0.4 + 0.6 * sin(uTime * 3.4 + aPhase * 2.1);
+            gl_Position = projectionMatrix * mv;
+          }
+        `,
+        fragmentShader: `
+          varying float vGlow;
+          void main() {
+            float d = length(gl_PointCoord - vec2(0.5));
+            if (d > 0.5) discard;
+            float alpha = smoothstep(0.5, 0.05, d) * vGlow;
+            gl_FragColor = vec4(0.68, 1.0, 0.42, alpha);
+          }
+        `,
+        transparent: true,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+      });
+      const ffPoints = new THREE.Points(ffGeo, ffMat);
+      ffPoints.frustumCulled = false;
+      this.levelGroup.add(ffPoints);
     } else if (biome === 'ice') {
       // Asymmetric Alaskan Arctic Fjord Mountain Horizons (snow-covered peaks + dark slate coastal cliffs)
       this.addHorizonMountainRing(-24, -55, level.theme.hazardFloorY - 2, 110, 200, 62, 0x6eaee0, 0xf8fcff, 5.2, 0.72);
@@ -3001,6 +3394,7 @@ export class GameEngine {
 
     const animatedWaterBiome =
       theme.biome === 'jungle' ||
+      theme.biome === 'temple' ||
       theme.biome === 'ice' ||
       theme.biome === 'volcanic' ||
       theme.biome === 'paris' ||
@@ -3012,54 +3406,58 @@ export class GameEngine {
       animatedWaterBiome ? 42 : 1
     );
     const seaTex =
-      theme.biome === 'jungle'
+      theme.biome === 'jungle' || theme.biome === 'temple'
         ? this.textures.lagoonSurface
-        : theme.biome === 'temple'
-          ? this.textures.templeFloorSurface
-          : theme.biome === 'desert'
-            ? this.textures.sandOceanSurface
-            : theme.biome === 'ice'
-              ? this.textures.iceSeaSurface
-              : theme.biome === 'volcanic'
-                ? this.textures.lavaSurface
-                : theme.biome === 'paris'
-                  ? this.textures.seineWaterSurface
-                  : theme.biome === 'rapids'
-                    ? this.textures.calmLakeSurface
-                    : this.textures.nebulaSeaSurface;
+        : theme.biome === 'desert'
+          ? this.textures.sandOceanSurface
+          : theme.biome === 'ice'
+            ? this.textures.iceSeaSurface
+            : theme.biome === 'volcanic'
+              ? this.textures.lavaSurface
+              : theme.biome === 'paris'
+                ? this.textures.seineWaterSurface
+                : theme.biome === 'rapids'
+                  ? this.textures.calmLakeSurface
+                  : this.textures.nebulaSeaSurface;
     this.hazardSeaTex = seaTex;
     const seaMat = new THREE.MeshStandardMaterial({
       map: seaTex,
       bumpMap:
-        theme.biome === 'jungle' || theme.biome === 'ice'
+        theme.biome === 'jungle' || theme.biome === 'temple' || theme.biome === 'ice'
           ? this.textures.waterBump
           : theme.biome === 'desert'
             ? this.textures.sandBump
-            : theme.biome === 'temple'
-              ? this.textures.grassBump
-              : theme.biome === 'nebula'
-                ? this.textures.stoneBump
-                : undefined,
+            : theme.biome === 'nebula'
+              ? this.textures.stoneBump
+              : undefined,
       bumpScale:
-        theme.biome === 'jungle' || theme.biome === 'nebula'
+        theme.biome === 'jungle' || theme.biome === 'temple' || theme.biome === 'nebula'
           ? 0.14
           : theme.biome === 'desert'
             ? 0.18
-            : theme.biome === 'ice' || theme.biome === 'temple'
+            : theme.biome === 'ice'
               ? 0.08
               : 0,
       roughness:
-        theme.biome === 'desert' || theme.biome === 'temple'
+        theme.biome === 'desert'
           ? 0.88
           : theme.biome === 'ice'
             ? 0.08
-            : theme.biome === 'jungle'
-              ? 0.12
+            : theme.biome === 'jungle' || theme.biome === 'temple'
+              ? 0.11
               : theme.biome === 'nebula'
                 ? 0.78
                 : 0.35,
-      metalness: theme.biome === 'ice' ? 0.35 : theme.biome === 'jungle' ? 0.26 : theme.biome === 'nebula' ? 0.12 : 0.06,
-      envMapIntensity: theme.biome === 'ice' ? 1.5 : theme.biome === 'jungle' ? 1.35 : 0.9,
+      metalness:
+        theme.biome === 'ice'
+          ? 0.35
+          : theme.biome === 'jungle' || theme.biome === 'temple'
+            ? 0.28
+            : theme.biome === 'nebula'
+              ? 0.12
+              : 0.06,
+      envMapIntensity:
+        theme.biome === 'ice' ? 1.5 : theme.biome === 'jungle' || theme.biome === 'temple' ? 1.45 : 0.9,
       emissiveMap:
         theme.biome === 'volcanic'
           ? this.textures.lavaEmissive
@@ -3079,7 +3477,9 @@ export class GameEngine {
             ? 0xfb923c
             : theme.biome === 'ice'
               ? 0xe0f2fe
-              : 0x7dd3fc,
+              : theme.biome === 'temple'
+                ? 0xa7f3d0
+                : 0x7dd3fc,
         fresnelStrength: theme.biome === 'volcanic' ? 0.36 : 0.56,
         foamStrength: theme.biome === 'volcanic' ? 0.08 : 0.22,
       });
@@ -4007,8 +4407,15 @@ export class GameEngine {
     }
     if (this.hazardSeaTex) {
       const biome = this.currentLevel.theme.biome;
-      if (biome === 'jungle' || biome === 'ice' || biome === 'volcanic' || biome === 'paris' || biome === 'rapids') {
-        const spd = biome === 'volcanic' ? 0.028 : 0.015;
+      if (
+        biome === 'jungle' ||
+        biome === 'temple' ||
+        biome === 'ice' ||
+        biome === 'volcanic' ||
+        biome === 'paris' ||
+        biome === 'rapids'
+      ) {
+        const spd = biome === 'volcanic' ? 0.028 : biome === 'temple' ? 0.019 : 0.015;
         this.hazardSeaTex.offset.x = (this.totalTime * spd) % 1;
         this.hazardSeaTex.offset.y = (this.totalTime * spd * 0.7) % 1;
         if (biome === 'volcanic') {
@@ -4018,11 +4425,55 @@ export class GameEngine {
         this.hazardSeaTex.offset.set(0, 0);
       }
     }
-    if (this.currentLevel.theme.biome === 'jungle') {
-      this.textures.waterfallSurface.offset.y = (this.totalTime * 0.75) % 1;
+    if (this.currentLevel.theme.biome === 'jungle' || this.currentLevel.theme.biome === 'temple') {
+      this.textures.waterfallSurface.offset.y = (this.totalTime * 0.78) % 1;
     }
     if (this.currentLevel.theme.biome === 'rapids') {
       this.textures.rapidsWaterSurface.offset.y = (this.totalTime * 1.45) % 1;
+    }
+
+    // Animate Templo del Mono falling fluttering leaves, luminous fireflies & waterfall plunge spray
+    if (this.templeFireflyTime) {
+      this.templeFireflyTime.value = this.totalTime;
+    }
+    if (this.templeLeafMesh && this.templeLeafStates.length > 0) {
+      for (let i = 0; i < this.templeLeafStates.length; i++) {
+        const lf = this.templeLeafStates[i];
+        lf.y -= lf.fallSpeed * dt;
+        lf.x += Math.sin(this.totalTime * 1.8 + lf.swayPhase) * 0.85 * dt;
+        lf.z += Math.cos(this.totalTime * 1.4 + lf.swayPhase) * 0.55 * dt;
+        if (lf.y < this.currentLevel.theme.hazardFloorY + 0.3) {
+          lf.y = this.playerPos.y + 14 + Math.random() * 8;
+          lf.x = this.playerPos.x + (Math.random() - 0.5) * 38;
+          lf.z = this.playerPos.z + (Math.random() - 0.5) * 44;
+        }
+        _vec3A.set(lf.x, lf.y, lf.z);
+        _euler.set(
+          Math.sin(this.totalTime * lf.rotSpeed + lf.swayPhase) * 0.8,
+          this.totalTime * lf.rotSpeed * 0.6 + lf.swayPhase,
+          Math.cos(this.totalTime * lf.rotSpeed + lf.swayPhase) * 0.9
+        );
+        _quat.setFromEuler(_euler);
+        _vec3B.set(1, 1, 1);
+        _mat4.compose(_vec3A, _quat, _vec3B);
+        this.templeLeafMesh.setMatrixAt(i, _mat4);
+      }
+      this.templeLeafMesh.instanceMatrix.needsUpdate = true;
+    }
+    if (this.templeWaterfallPools.length > 0 && Math.random() < 0.32) {
+      for (const wp of this.templeWaterfallPools) {
+        if (wp.distanceToSquared(this.playerPos) < 42 * 42) {
+          this.spawnBurst(
+            wp.x + (Math.random() - 0.5) * 3.4,
+            wp.y + 0.15,
+            wp.z + (Math.random() - 0.5) * 3.4,
+            0xe0f2fe,
+            1,
+            2.6
+          );
+          break;
+        }
+      }
     }
 
     this.renderer.render(this.scene, this.camera);
@@ -4410,6 +4861,31 @@ export class GameEngine {
       this.pushHud(true);
     }
 
+    // CINEMATIC DISCOVERY ZONE DETECTION
+    let foundDiscovery: CameraDiscoveryZoneDef | null = null;
+    if (this.currentLevel.discoveryZones && !this.active2DZone) {
+      for (const dz of this.currentLevel.discoveryZones) {
+        if (
+          this.playerPos.x >= dz.min[0] &&
+          this.playerPos.x <= dz.max[0] &&
+          this.playerPos.y >= dz.min[1] &&
+          this.playerPos.y <= dz.max[1] &&
+          this.playerPos.z >= dz.min[2] &&
+          this.playerPos.z <= dz.max[2]
+        ) {
+          foundDiscovery = dz;
+          break;
+        }
+      }
+    }
+    if (foundDiscovery !== this.activeDiscoveryZone) {
+      this.activeDiscoveryZone = foundDiscovery;
+      if (foundDiscovery?.banner && !this.triggeredDiscoveryBanners.has(foundDiscovery.id)) {
+        this.triggeredDiscoveryBanners.add(foundDiscovery.id);
+        this.showBanner(foundDiscovery.banner, 3.2);
+      }
+    }
+
     if (this.perspectiveMode === '3D') {
       if (this.keysHeld.has('KeyQ') || this.keysHeld.has('__CAM_L__')) this.camYaw += dt * 2.1;
       if (this.keysHeld.has('KeyE') || this.keysHeld.has('__CAM_R__')) this.camYaw -= dt * 2.1;
@@ -4718,7 +5194,7 @@ export class GameEngine {
         if (!p.visible) continue;
         const topY = p.pos.y + p.halfSize.y;
         const botY = p.pos.y - p.halfSize.y;
-        const isDisc = p.def.kind === 'rotating' || p.def.shape === 'disc';
+        const isDisc = p.def.kind === 'rotating' || p.def.shape === 'disc' || p.def.shape === 'pillar';
 
         if (isDisc) {
           const rad = Math.max(p.halfSize.x, p.halfSize.z);
@@ -5790,16 +6266,22 @@ export class GameEngine {
       return;
     }
 
-    if (b.phase === 1 && b.hp <= Math.ceil(b.maxHp / 2)) {
+    if (b.phase === 1 && b.hp <= Math.ceil(b.maxHp * 0.66)) {
       b.phase = 2;
       this.shakeIntensity = 0.5;
       this.spawnBurst(b.pos.x, b.pos.y + 2.2, b.pos.z, 0xf43f5e, 30, 7.5);
       this.showBanner(`¡${b.name} entra en Fase 2! ¡Esquiva sus ráfagas!`, 3.0);
       this.pushHud(true);
+    } else if (b.phase === 2 && b.maxHp >= 6 && b.hp <= 1) {
+      b.phase = 3;
+      this.shakeIntensity = 0.65;
+      this.spawnBurst(b.pos.x, b.pos.y + 2.4, b.pos.z, 0xfacc15, 38, 8.5);
+      this.showBanner(`¡${b.name} desata su Furia Solar (Fase 3)!`, 3.2);
+      this.pushHud(true);
     }
 
     b.invulnTimer = Math.max(0, b.invulnTimer - dt);
-    b.rig.dorsalRing.rotation.z += dt * (b.state === 'charge' ? 5.5 : b.phase === 2 ? 3.8 : 2.2);
+    b.rig.dorsalRing.rotation.z += dt * (b.state === 'charge' ? 6.2 : b.phase === 3 ? 5.2 : b.phase === 2 ? 3.8 : 2.2);
     if (b.invulnTimer > 0) {
       b.rig.armorMat.emissive.setHex(Math.floor(b.invulnTimer * 24) % 2 === 0 ? 0xffffff : 0x000000);
       b.rig.armorMat.emissiveIntensity = 0.65;
@@ -5818,7 +6300,7 @@ export class GameEngine {
 
     if (b.state === 'chase') {
       b.rig.root.rotation.y = desiredYaw;
-      const spd = (b.phase === 2 ? 4.8 : 3.8) + (b.maxHp - b.hp) * 0.42;
+      const spd = (b.phase === 3 ? 5.5 : b.phase === 2 ? 4.8 : 3.8) + (b.maxHp - b.hp) * 0.36;
       b.pos.x += (toPlayerX / dist) * spd * dt;
       b.pos.z += (toPlayerZ / dist) * spd * dt;
       const swing = Math.sin(this.totalTime * 7);
@@ -5827,11 +6309,11 @@ export class GameEngine {
       b.rig.leftArm.rotation.x = -swing * 0.5;
       b.rig.rightArm.rotation.x = swing * 0.5;
       b.rig.bodyGroup.position.y = Math.abs(swing) * 0.12;
-      b.rig.coreMat.color.setHex(b.phase === 2 ? 0xf43f5e : 0xfbbf24);
+      b.rig.coreMat.color.setHex(b.phase === 3 ? 0xfacc15 : b.phase === 2 ? 0xf43f5e : 0xfbbf24);
 
       if (b.stateTimer <= 0) {
         b.state = 'windup';
-        b.stateTimer = b.phase === 2 ? 0.68 : 0.85;
+        b.stateTimer = b.phase === 3 ? 0.55 : b.phase === 2 ? 0.68 : 0.85;
       }
     } else if (b.state === 'windup') {
       b.rig.root.rotation.y = desiredYaw;
@@ -5841,23 +6323,25 @@ export class GameEngine {
       b.rig.coreMat.color.setHex(0xff2a55);
       if (b.stateTimer <= 0) {
         b.state = 'shockwave';
-        b.stateTimer = 1.4;
+        b.stateTimer = b.phase === 3 ? 1.25 : 1.4;
         b.shockwaveRadius = 1.4;
         this.shakeIntensity = 0.45;
         soundEngine.playShockwave();
         this.spawnBurst(b.pos.x, b.pos.y + 0.4, b.pos.z, 0xff2a55, 22, 6.5);
-        if (b.phase === 2) {
+        if (b.phase >= 2) {
           soundEngine.playEnemyShoot();
-          for (let k = 0; k < 4; k++) {
-            const ang = desiredYaw + k * (Math.PI / 2);
-            const pMesh = createEnemyProjectileMesh();
+          const orbCount = b.phase === 3 ? 8 : 4;
+          const orbSpeed = b.phase === 3 ? 10.6 : 9.2;
+          for (let k = 0; k < orbCount; k++) {
+            const ang = desiredYaw + k * ((Math.PI * 2) / orbCount);
+            const pMesh = createEnemyProjectileMesh(b.phase === 3 ? 0xfacc15 : 0xf43f5e);
             const spawnP = new THREE.Vector3(b.pos.x + Math.sin(ang) * 1.4, b.pos.y + 0.9, b.pos.z + Math.cos(ang) * 1.4);
             pMesh.position.copy(spawnP);
             this.levelGroup.add(pMesh);
             this.enemyProjectiles.push({
               mesh: pMesh,
               pos: spawnP,
-              vel: new THREE.Vector3(Math.sin(ang) * 9.2, 0, Math.cos(ang) * 9.2),
+              vel: new THREE.Vector3(Math.sin(ang) * orbSpeed, 0, Math.cos(ang) * orbSpeed),
               life: 3.0,
             });
           }
@@ -5867,7 +6351,7 @@ export class GameEngine {
       b.rig.bodyGroup.position.y = 0;
       b.rig.leftArm.rotation.x = -0.4;
       b.rig.rightArm.rotation.x = -0.4;
-      b.shockwaveRadius += (b.phase === 2 ? 11.4 : 9.8) * dt;
+      b.shockwaveRadius += (b.phase === 3 ? 12.6 : b.phase === 2 ? 11.4 : 9.8) * dt;
       b.rig.shockwaveRing.visible = true;
       b.rig.shockwaveRing.scale.setScalar(b.shockwaveRadius);
       b.rig.shockwaveMat.opacity = Math.max(0, 1 - b.shockwaveRadius / 14);
@@ -5878,12 +6362,12 @@ export class GameEngine {
       }
       if (b.stateTimer <= 0) {
         b.state = 'charge';
-        b.stateTimer = 1.05;
+        b.stateTimer = b.phase === 3 ? 1.18 : 1.05;
         b.chargeDir.set(toPlayerX / dist, 0, toPlayerZ / dist);
         b.rig.root.rotation.y = Math.atan2(b.chargeDir.x, b.chargeDir.z);
       }
     } else if (b.state === 'charge') {
-      const chargeSpeed = b.phase === 2 ? 12.8 : 10.6;
+      const chargeSpeed = b.phase === 3 ? 14.2 : b.phase === 2 ? 12.8 : 10.6;
       b.pos.x += b.chargeDir.x * chargeSpeed * dt;
       b.pos.z += b.chargeDir.z * chargeSpeed * dt;
       b.rig.leftArm.rotation.x = -1.4;
@@ -5891,7 +6375,7 @@ export class GameEngine {
       b.rig.bodyGroup.position.y = Math.abs(Math.sin(this.totalTime * 16)) * 0.16;
       if (b.stateTimer <= 0) {
         b.state = 'recover';
-        b.stateTimer = b.phase === 2 ? 1.3 : 1.6;
+        b.stateTimer = b.phase === 3 ? 1.15 : b.phase === 2 ? 1.3 : 1.6;
       }
     } else if (b.state === 'recover') {
       b.rig.bodyGroup.position.y = -0.35;
@@ -5900,7 +6384,7 @@ export class GameEngine {
       b.rig.coreMat.color.setHex(0x38bdf8);
       if (b.stateTimer <= 0) {
         b.state = 'chase';
-        b.stateTimer = b.phase === 2 ? 1.85 : 2.2;
+        b.stateTimer = b.phase === 3 ? 1.45 : b.phase === 2 ? 1.85 : 2.2;
       }
     }
 
@@ -5997,6 +6481,18 @@ export class GameEngine {
   }
 
   private handleFallDamage() {
+    const biome = this.currentLevel.theme.biome;
+    if (biome === 'temple' || biome === 'jungle' || biome === 'rapids') {
+      soundEngine.playSplash();
+      this.spawnBurst(
+        this.playerPos.x,
+        this.currentLevel.theme.hazardFloorY + 0.25,
+        this.playerPos.z,
+        0xe0f2fe,
+        22,
+        5.8
+      );
+    }
     soundEngine.playHurt();
     this.health = Math.max(0, this.health - 1);
     if (this.health <= 0) {
@@ -6156,8 +6652,10 @@ export class GameEngine {
     const isBoosting =
       this.rocketBoostTimer > 0 || this.gliderBoostTimer > 0 || this.botRocketTimer > 0;
     const groundSpd = Math.hypot(this.playerVel.x, this.playerVel.z);
-    const targetFov = isBoosting ? 63 : isVehicle ? 59 : groundSpd > 6.5 ? 58 : 55;
-    this.camDynamicFov = THREE.MathUtils.damp(this.camDynamicFov, targetFov, 6, dt);
+    const isBossActive = Boolean(this.bossRuntime?.alive && this.bossRuntime.active);
+    const dz = !this.active2DZone ? this.activeDiscoveryZone : null;
+    const baseFov = isBoosting ? 63 : isVehicle ? 59 : isBossActive ? 60 : dz?.fov ? dz.fov : groundSpd > 6.5 ? 58 : 55;
+    this.camDynamicFov = THREE.MathUtils.damp(this.camDynamicFov, baseFov, 6, dt);
     if (Math.abs(this.camera.fov - this.camDynamicFov) > 0.05) {
       this.camera.fov = this.camDynamicFov;
       this.camera.updateProjectionMatrix();
@@ -6225,17 +6723,27 @@ export class GameEngine {
       return;
     }
 
-    const dist = this.active2DZone ? 13.5 : 9.6;
-    const horizDist = dist * Math.cos(this.camPitch);
-    const heightOffset = dist * Math.sin(this.camPitch) + (this.active2DZone ? 1.8 : 1.2);
+    const dist = this.active2DZone ? 13.5 : isBossActive ? 11.4 : dz?.dist ?? 9.6;
+    const effPitch = this.active2DZone ? this.camPitch : isBossActive ? 0.46 : dz?.pitch ?? this.camPitch;
+    const effYaw = this.camYaw + (dz?.yawOffset ?? 0);
+    const horizDist = dist * Math.cos(effPitch);
+    const heightOffset = dist * Math.sin(effPitch) + (this.active2DZone ? 1.8 : isBossActive ? 1.6 : 1.2);
 
     _vec3A.set(
-      this.playerPos.x + Math.sin(this.camYaw) * horizDist,
+      this.playerPos.x + Math.sin(effYaw) * horizDist,
       Math.max(this.currentLevel.theme.hazardFloorY + 1.6, this.playerPos.y + heightOffset),
-      this.playerPos.z + Math.cos(this.camYaw) * horizDist
+      this.playerPos.z + Math.cos(effYaw) * horizDist
     );
 
-    _vec3B.set(this.playerPos.x, this.playerPos.y + 1.15, this.playerPos.z);
+    if (isBossActive && this.bossRuntime) {
+      _vec3B.set(
+        THREE.MathUtils.lerp(this.playerPos.x, this.bossRuntime.pos.x, 0.25),
+        this.playerPos.y + 1.3,
+        THREE.MathUtils.lerp(this.playerPos.z, this.bossRuntime.pos.z, 0.25)
+      );
+    } else {
+      _vec3B.set(this.playerPos.x, this.playerPos.y + (dz ? 1.45 : 1.15), this.playerPos.z);
+    }
 
     // 3D wall/platform occlusion avoidance
     if (!this.active2DZone) {

@@ -45,8 +45,8 @@ export interface PlatformDef {
   linkedTargetId?: string;
   /** If set, platform starts inactive/hidden until the matching switch is triggered */
   linkedSwitchId?: string;
-  /** Visual hint for secret/organic shaping */
-  shape?: 'organic' | 'pillar' | 'bridge' | 'disc' | 'default';
+  /** Visual hint for secret/organic/architectural shaping */
+  shape?: 'organic' | 'pillar' | 'bridge' | 'disc' | 'ruin' | 'arch' | 'default';
   /** If true, collider is active without rendering a solid block mesh */
   invisible?: boolean;
 }
@@ -230,6 +230,17 @@ export interface LevelTheme {
   hazardEmissive: number;
 }
 
+export interface CameraDiscoveryZoneDef {
+  id: string;
+  min: [number, number, number];
+  max: [number, number, number];
+  yawOffset?: number;
+  pitch?: number;
+  dist?: number;
+  fov?: number;
+  banner?: string;
+}
+
 export interface LevelDef {
   index: number;
   id: string;
@@ -245,6 +256,7 @@ export interface LevelDef {
   switches?: SwitchDef[];
   relics?: RelicDef[];
   windZones?: WindZoneDef[];
+  discoveryZones?: CameraDiscoveryZoneDef[];
   boss?: BossDef;
   platforms: PlatformDef[];
   jumpPads: JumpPadDef[];
