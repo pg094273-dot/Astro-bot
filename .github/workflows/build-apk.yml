@@ -60,13 +60,14 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: android-tv-latest
-          name: Astro Nova 3D — Android TV APK
+          name: Astro Nova 3D v2.0 — Android TV APK
           body: |
-            Instalador **APK** listo para **Android TV / Google TV**.
+            Instalador **APK (v2.0)** listo para **Android TV / Google TV**, actualizado con el rediseño completo de **Templo del Mono** (3 rutas, río con cascadas, Prueba de los Antiguos y jefe final Ídolo Solar Kukul).
 
             ### Cómo instalar en tu Android TV:
             1. Descarga `astro-nova-3d-android-tv.apk` (directamente con la app **Downloader** de Android TV usando la URL del archivo, o desde un PC hacia un pendrive USB).
             2. Activa **"Instalar aplicaciones desconocidas"** en los Ajustes de tu Android TV.
-            3. Abre el APK e instálalo. Aparecerá en la pantalla principal de Android TV con su banner y soporte para mando Bluetooth o control remoto.
+            3. Abre el APK e instálalo (si ya tenías la versión anterior, se actualizará conservando tu progreso). Aparecerá en la pantalla principal de Android TV con su banner y soporte para mando Bluetooth o control remoto.
           files: astro-nova-3d-android-tv.apk
+          overwrite_files: true
           make_latest: true

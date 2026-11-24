@@ -7,7 +7,7 @@ Juego de plataformas 3D/2D estilo **Astro Bot** para **Android TV**, navegador y
   1. **Selva Esmeralda** — Ruinas flotantes, cascadas y **Arco Estelar**.
   2. **Dunas del Desierto** — Cañón arenoso con transición al **Cohete Astro** manejable.
   3. **Glaciar Aurora** — Plataformas de hielo deslizante, acantilados 2D y dianas estelares.
-  4. **Templo del Mono** — Pirámide azteca con **Traje de Mono** para trepar muros.
+  4. **Templo del Mono** — Selva profunda, río dinámico con cascadas, 3 rutas (principal, elevada y secreta), **Traje de Mono**, **Prueba de los Antiguos** y jefe final **Ídolo Solar Kukul**.
   5. **Cañón Volcánico** — Ríos de lava, plataformas inestables y minas ígneas.
   6. **Ciudadela Nebulosa** — Batalla contra el **Jefe Final Megabot** en un planeta alienígena.
   7. **Cielos de París** — Salto en **Ala Delta** desde la **Torre Eiffel**, recogiendo monedas y atravesando aros sobre el Sena hasta el **Arco del Triunfo**.
