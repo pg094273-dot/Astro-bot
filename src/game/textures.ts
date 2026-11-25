@@ -7,6 +7,9 @@ export interface ProceduralTextures {
   jungleDirt: THREE.CanvasTexture;
   grassBump: THREE.CanvasTexture;
   jungleSideBump: THREE.CanvasTexture;
+  jungleRuinStone: THREE.CanvasTexture;
+  jungleRuinBump: THREE.CanvasTexture;
+  jungleLeafTex: THREE.CanvasTexture;
   desertSandstone: THREE.CanvasTexture;
   desertSide: THREE.CanvasTexture;
   desertDirt: THREE.CanvasTexture;
@@ -720,6 +723,101 @@ export function createProceduralTextures(maxAnisotropy: number): ProceduralTextu
     csCtx.fillRect((i * 61) % 256, (i * 97) % 256, 6, 4);
   }
   const climbStone = finalizeColorTexture(csC, maxAnisotropy, 2, 3);
+
+  // 7b. Selva Esmeralda Eroded Ancient Limestone Ruins + Relief Bump + Botanical Veined Leaf Texture
+  const [jrC, jrCtx] = makeCanvas(512, 512);
+  const [jrbC, jrbCtx] = makeCanvas(512, 512);
+  const jrGrad = jrCtx.createLinearGradient(0, 0, 512, 512);
+  jrGrad.addColorStop(0, '#96937e');
+  jrGrad.addColorStop(0.5, '#7c7b67');
+  jrGrad.addColorStop(1, '#60634e');
+  jrCtx.fillStyle = jrGrad;
+  jrCtx.fillRect(0, 0, 512, 512);
+  jrbCtx.fillStyle = '#888888';
+  jrbCtx.fillRect(0, 0, 512, 512);
+
+  // Carved cyclopean ashlar stone courses + chiselled spiral/step-fret glyphs
+  for (let row = 0; row < 8; row++) {
+    const y = row * 64;
+    const offset = (row % 2) * 64;
+    jrCtx.strokeStyle = 'rgba(32, 38, 22, 0.72)';
+    jrCtx.lineWidth = 5;
+    jrbCtx.strokeStyle = '#222222';
+    jrbCtx.lineWidth = 6;
+    for (const ctxTarget of [jrCtx, jrbCtx]) {
+      ctxTarget.beginPath();
+      ctxTarget.moveTo(0, y);
+      ctxTarget.lineTo(512, y);
+      ctxTarget.stroke();
+    }
+    for (let x = offset; x < 512; x += 128) {
+      for (const ctxTarget of [jrCtx, jrbCtx]) {
+        ctxTarget.beginPath();
+        ctxTarget.moveTo(x, y);
+        ctxTarget.lineTo(x, y + 64);
+        ctxTarget.stroke();
+      }
+      // Subtle weathered relief glyph carved into alternating blocks
+      if ((row + Math.floor(x / 128)) % 2 === 0) {
+        jrCtx.strokeStyle = 'rgba(46, 54, 34, 0.42)';
+        jrCtx.lineWidth = 3;
+        jrCtx.strokeRect(x + 22, y + 14, 84, 36);
+        jrCtx.strokeRect(x + 36, y + 22, 56, 20);
+        jrbCtx.strokeStyle = '#484848';
+        jrbCtx.lineWidth = 3;
+        jrbCtx.strokeRect(x + 22, y + 14, 84, 36);
+        jrbCtx.strokeRect(x + 36, y + 22, 56, 20);
+      }
+    }
+  }
+  // Pitted stone grain + damp lichen + moss creeping along mortar seams
+  for (let i = 0; i < 1200; i++) {
+    const px = (i * 151 + 29) % 512;
+    const py = (i * 211 + 17) % 512;
+    const isNearSeam = py % 64 < 12 || py % 64 > 54;
+    if (isNearSeam || i % 5 === 0) {
+      jrCtx.fillStyle = i % 2 === 0 ? 'rgba(54, 114, 32, 0.48)' : 'rgba(88, 148, 42, 0.36)';
+      jrCtx.beginPath();
+      jrCtx.ellipse(px, py, 5 + (i % 9), 3 + (i % 5), (i % 4) * 0.4, 0, Math.PI * 2);
+      jrCtx.fill();
+    } else {
+      jrCtx.fillStyle = i % 3 === 0 ? 'rgba(218, 214, 186, 0.22)' : 'rgba(42, 44, 32, 0.28)';
+      jrCtx.fillRect(px, py, 3 + (i % 4), 2 + (i % 3));
+    }
+    const bv = i % 2 === 0 ? 190 : 48;
+    jrbCtx.fillStyle = `rgb(${bv},${bv},${bv})`;
+    jrbCtx.fillRect(px, py, 3 + (i % 3), 3);
+  }
+  const jungleRuinStone = finalizeColorTexture(jrC, maxAnisotropy, 2, 2);
+  const jungleRuinBump = finalizeDataTexture(jrbC, maxAnisotropy, 2, 2);
+
+  // Botanical Veined Rainforest Leaf Texture
+  const [jlC, jlCtx] = makeCanvas(256, 256);
+  const leafGrad = jlCtx.createLinearGradient(0, 0, 0, 256);
+  leafGrad.addColorStop(0, '#62b835');
+  leafGrad.addColorStop(0.5, '#3b8c22');
+  leafGrad.addColorStop(1, '#235916');
+  jlCtx.fillStyle = leafGrad;
+  jlCtx.fillRect(0, 0, 256, 256);
+  // Central midrib
+  jlCtx.strokeStyle = 'rgba(190, 242, 100, 0.55)';
+  jlCtx.lineWidth = 6;
+  jlCtx.beginPath();
+  jlCtx.moveTo(128, 256);
+  jlCtx.lineTo(128, 0);
+  jlCtx.stroke();
+  // Lateral leaf veins
+  jlCtx.strokeStyle = 'rgba(163, 230, 53, 0.34)';
+  jlCtx.lineWidth = 3;
+  for (let vy = 220; vy >= 20; vy -= 22) {
+    jlCtx.beginPath();
+    jlCtx.moveTo(128, vy);
+    jlCtx.quadraticCurveTo(68, vy - 12, 10, vy - 34);
+    jlCtx.moveTo(128, vy);
+    jlCtx.quadraticCurveTo(188, vy - 12, 246, vy - 34);
+    jlCtx.stroke();
+  }
+  const jungleLeafTex = finalizeColorTexture(jlC, maxAnisotropy);
 
   // 8. Crystal cyber-circuit
   const [crysC, crysCtx] = makeCanvas(256, 256);
@@ -1699,6 +1797,9 @@ export function createProceduralTextures(maxAnisotropy: number): ProceduralTextu
     jungleDirt,
     grassBump,
     jungleSideBump,
+    jungleRuinStone,
+    jungleRuinBump,
+    jungleLeafTex,
     desertSandstone,
     desertSide,
     desertDirt,

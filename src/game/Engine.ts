@@ -400,11 +400,12 @@ export class GameEngine {
   private triggeredDiscoveryBanners = new Set<string>();
   private perspectiveMode: '3D' | '2D' | 'COHETE' | 'ALA DELTA' | 'BARCO' = '3D';
 
-  // Templo del Mono ambient jungle leaves, fireflies & waterfall mist pools
+  // Templo del Mono & Selva Esmeralda ambient jungle leaves, fireflies, waterfall mist pools & stellar arch rings
   private templeLeafMesh: THREE.InstancedMesh | null = null;
   private templeLeafStates: { x: number; y: number; z: number; fallSpeed: number; swayPhase: number; rotSpeed: number }[] = [];
   private templeFireflyTime: { value: number } | null = null;
   private templeWaterfallPools: THREE.Vector3[] = [];
+  private jungleArchRings: THREE.Mesh[] = [];
 
   // Player state
   private playerPos = new THREE.Vector3(0, 1.5, 0);
@@ -1096,6 +1097,7 @@ export class GameEngine {
     this.templeLeafStates = [];
     this.templeFireflyTime = null;
     this.templeWaterfallPools = [];
+    this.jungleArchRings = [];
     this.activeDiscoveryZone = null;
     this.triggeredDiscoveryBanners.clear();
   }
@@ -1185,115 +1187,617 @@ export class GameEngine {
     return geo;
   }
 
+  private createJaggedRockFormationGeometry(radius: number, height: number, seed: number): THREE.BufferGeometry {
+    const geo = new THREE.CylinderGeometry(radius * 0.62, radius * 1.15, height, 11, 5, false);
+    const pos = geo.attributes.position;
+    for (let i = 0; i < pos.count; i++) {
+      const vx = pos.getX(i);
+      const vy = pos.getY(i);
+      const vz = pos.getZ(i);
+      const ang = Math.atan2(vz, vx);
+      const yNorm = (vy + height * 0.5) / Math.max(0.1, height);
+      const ledge = 1 + 0.24 * Math.sin(ang * 3 + seed) + 0.16 * Math.cos(vy * 0.9 + seed * 1.7) + 0.12 * Math.sin(ang * 5 - yNorm * 4);
+      const capDip = yNorm > 0.88 ? Math.sin(ang * 2 + seed) * 0.45 : 0;
+      pos.setXYZ(i, vx * ledge, vy + capDip, vz * ledge);
+    }
+    geo.computeVertexNormals();
+    return geo;
+  }
+
+  private createCurvedLeafGeometry(length: number, width: number): THREE.BufferGeometry {
+    const segsY = 6;
+    const geo = new THREE.PlaneGeometry(width, length, 2, segsY);
+    geo.translate(0, length * 0.5, 0);
+    const pos = geo.attributes.position;
+    for (let i = 0; i < pos.count; i++) {
+      const x = pos.getX(i);
+      const y = pos.getY(i);
+      const t = y / Math.max(0.01, length);
+      // Taper blade silhouette at base & tip + natural outward droop arch + subtle center V-fold
+      const taper = Math.sin(Math.pow(t, 0.72) * Math.PI);
+      const droopZ = t * t * length * 0.42;
+      const vFold = Math.abs(x) * 0.22;
+      pos.setXYZ(i, x * (0.28 + taper * 0.92), y - t * t * length * 0.12, droopZ + vFold);
+    }
+    geo.computeVertexNormals();
+    return geo;
+  }
+
   private buildBiomeScenery(level: LevelDef) {
     const biome = level.theme.biome;
     const dummy = new THREE.Object3D();
 
     if (biome === 'jungle') {
-      // Far mist-shrouded alpine ridges & mid-ground forested valley slopes
-      this.addHorizonMountainRing(24, -55, level.theme.hazardFloorY - 2, 132, 220, 62, 0x355f7d, 0x9cc0d9, 2.2, 0.88);
-      this.addHorizonMountainRing(22, -52, level.theme.hazardFloorY - 1, 86, 138, 30, 0x1b4332, 0x3f7a38, 1.4, 0.9);
+      // =====================================================================
+      // NIVEL 01: SELVA ESMERALDA — Monumental Tropical Jungle & Eroded Ruins
+      // =====================================================================
 
-      // Background Rainforest Grove (Weathered hardwood trunks + buttress roots + organic multi-lobe foliage)
-      const treeCount = 56;
-      const trunkGeo = new THREE.CylinderGeometry(0.4, 1.05, 11.5, 10);
-      const trunkMat = new THREE.MeshStandardMaterial({
-        map: this.textures.barkTexture,
-        bumpMap: this.textures.barkBump,
-        bumpScale: 0.16,
-        roughness: 0.9,
-      });
-      const rootGeo = new THREE.ConeGeometry(1.45, 3.2, 7);
-      const canopyLowGeo = this.createDisplacedRockGeometry(3.2, 1.1);
-      const canopyTopGeo = this.createDisplacedRockGeometry(2.5, 2.7);
-      const canopyMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.82, metalness: 0.02 });
+      // 1. MULTI-PLANE ATMOSPHERIC HORIZON & DISTANT LOST TEMPLES
+      this.addHorizonMountainRing(24, -58, level.theme.hazardFloorY - 2, 136, 232, 66, 0x2f5d74, 0xa8d4db, 2.2, 0.88);
+      this.addHorizonMountainRing(22, -55, level.theme.hazardFloorY - 1, 88, 144, 34, 0x163d2c, 0x3b7a38, 1.4, 0.9);
 
-      const trunks = new THREE.InstancedMesh(trunkGeo, trunkMat, treeCount);
-      const roots = new THREE.InstancedMesh(rootGeo, trunkMat, treeCount);
-      const canopiesLow = new THREE.InstancedMesh(canopyLowGeo, canopyMat, treeCount);
-      const canopiesTop = new THREE.InstancedMesh(canopyTopGeo, canopyMat, treeCount);
-
-      for (let i = 0; i < treeCount; i++) {
-        const side = i % 2 === 0 ? 1 : -1;
-        const dist = 24 + ((i * 19) % 58);
-        const z = 14 - ((i * 21) % 132);
-        const x = (i % 3 === 0 ? 48 : 0) + side * dist;
-        const y = -9.5 + (i % 5) * 1.4;
-        const scale = 0.9 + (i % 4) * 0.24;
-
-        dummy.position.set(x, y + 5.5 * scale, z);
-        dummy.rotation.set((i % 3 - 1) * 0.04, i * 0.9, (i % 3 - 1) * 0.06);
-        dummy.scale.set(scale, scale, scale);
-        dummy.updateMatrix();
-        trunks.setMatrixAt(i, dummy.matrix);
-
-        dummy.position.set(x, y + 1.4 * scale, z);
-        dummy.rotation.set(0, i * 0.7, 0);
-        dummy.scale.set(scale * 1.15, scale, scale * 1.15);
-        dummy.updateMatrix();
-        roots.setMatrixAt(i, dummy.matrix);
-
-        dummy.position.set(x, y + 10.6 * scale, z);
-        dummy.rotation.set(0, i * 0.5, 0);
-        dummy.scale.set(scale * 1.28, scale * 0.78, scale * 1.28);
-        dummy.updateMatrix();
-        canopiesLow.setMatrixAt(i, dummy.matrix);
-        _color.setHex(i % 3 === 0 ? 0x26581c : i % 3 === 1 ? 0x316b22 : 0x1e4a16);
-        canopiesLow.setColorAt(i, _color);
-
-        dummy.position.set(x + (i % 2 === 0 ? 0.5 : -0.5), y + 12.8 * scale, z - 0.3);
-        dummy.rotation.set(0, i * 0.8, 0);
-        dummy.scale.set(scale * 1.15, scale * 0.74, scale * 1.15);
-        dummy.updateMatrix();
-        canopiesTop.setMatrixAt(i, dummy.matrix);
-        _color.setHex(i % 3 === 0 ? 0x458a2a : i % 3 === 1 ? 0x559e34 : 0x367522);
-        canopiesTop.setColorAt(i, _color);
-      }
-      for (const im of [trunks, roots, canopiesLow, canopiesTop]) {
-        im.instanceMatrix.needsUpdate = true;
-        if (im.instanceColor) im.instanceColor.needsUpdate = true;
-        im.computeBoundingSphere();
-      }
-      this.levelGroup.add(trunks, roots, canopiesLow, canopiesTop);
-
-      // Hero Rainforest Trees (Twisted weathered hardwood trunks, buttress roots, organic multi-cluster foliage & vines)
-      const heroBarkMat = new THREE.MeshStandardMaterial({
-        map: this.textures.barkTexture,
-        bumpMap: this.textures.barkBump,
-        bumpScale: 0.18,
+      // Shared PBR Materials for Eroded Stone, Mossy Turf, Bark, Foliage & Lianas
+      const ruinStoneMat = new THREE.MeshStandardMaterial({
+        map: this.textures.jungleRuinStone,
+        bumpMap: this.textures.jungleRuinBump,
+        bumpScale: 0.22,
+        roughnessMap: this.textures.stoneRoughness,
         roughness: 0.88,
+        metalness: 0.04,
+      });
+      const cliffRockMat = new THREE.MeshStandardMaterial({
+        map: this.textures.jungleRuinStone,
+        bumpMap: this.textures.jungleRuinBump,
+        bumpScale: 0.24,
+        color: 0x808773,
+        roughness: 0.92,
       });
       const moundTopMat = new THREE.MeshStandardMaterial({
         map: this.textures.jungleGrass,
         bumpMap: this.textures.grassBump,
-        bumpScale: 0.09,
+        bumpScale: 0.11,
         roughness: 0.86,
       });
       const moundSideMat = new THREE.MeshStandardMaterial({
         map: this.textures.jungleSide,
         bumpMap: this.textures.jungleSideBump,
-        bumpScale: 0.14,
+        bumpScale: 0.16,
         roughness: 0.9,
       });
-      const leafSunMat = new THREE.MeshStandardMaterial({ color: 0x4f962b, roughness: 0.78 });
-      const leafMidMat = new THREE.MeshStandardMaterial({ color: 0x357020, roughness: 0.82 });
-      const leafDeepMat = new THREE.MeshStandardMaterial({ color: 0x224d16, roughness: 0.85 });
-      const lianaMat = new THREE.MeshStandardMaterial({ color: 0x437523, roughness: 0.76 });
-      applyWindSwayShader(leafSunMat, this.shaderTimeUniform, 0.22, 1.9);
-      applyWindSwayShader(leafMidMat, this.shaderTimeUniform, 0.2, 1.7);
-      applyWindSwayShader(leafDeepMat, this.shaderTimeUniform, 0.16, 1.6);
-      applyWindSwayShader(lianaMat, this.shaderTimeUniform, 0.26, 1.4);
+      const heroBarkMat = new THREE.MeshStandardMaterial({
+        map: this.textures.barkTexture,
+        bumpMap: this.textures.barkBump,
+        bumpScale: 0.2,
+        roughness: 0.88,
+      });
+      const palmBarkMat = new THREE.MeshStandardMaterial({
+        map: this.textures.barkTexture,
+        bumpMap: this.textures.barkBump,
+        bumpScale: 0.14,
+        color: 0xa18873,
+        roughness: 0.86,
+      });
+      const leafSunMat = new THREE.MeshStandardMaterial({
+        color: 0x5ca832,
+        roughness: 0.72,
+      });
+      const leafMidMat = new THREE.MeshStandardMaterial({
+        color: 0x377822,
+        roughness: 0.78,
+      });
+      const leafDeepMat = new THREE.MeshStandardMaterial({
+        color: 0x1e4d16,
+        roughness: 0.84,
+      });
+      const leafVeinedMat = new THREE.MeshStandardMaterial({
+        map: this.textures.jungleLeafTex,
+        color: 0xffffff,
+        roughness: 0.68,
+        side: THREE.DoubleSide,
+      });
+      const lianaMat = new THREE.MeshStandardMaterial({
+        color: 0x457c25,
+        roughness: 0.76,
+      });
+      const goldCarvingMat = new THREE.MeshStandardMaterial({
+        map: this.textures.goldTrim,
+        color: 0xf59e0b,
+        emissive: 0x78350f,
+        emissiveIntensity: 0.45,
+        metalness: 0.78,
+        roughness: 0.28,
+      });
+      const stellarGlowMat = new THREE.MeshStandardMaterial({
+        color: 0x5eead4,
+        emissive: 0x10b981,
+        emissiveIntensity: 1.9,
+        roughness: 0.18,
+      });
 
-      const foliageClusterGeo = this.createDisplacedRockGeometry(2.35, 3.7);
+      applyWindSwayShader(leafSunMat, this.shaderTimeUniform, 0.24, 1.9);
+      applyWindSwayShader(leafMidMat, this.shaderTimeUniform, 0.2, 1.7);
+      applyWindSwayShader(leafDeepMat, this.shaderTimeUniform, 0.15, 1.55);
+      applyWindSwayShader(leafVeinedMat, this.shaderTimeUniform, 0.26, 2.05);
+      applyWindSwayShader(lianaMat, this.shaderTimeUniform, 0.28, 1.4);
+
+      // 2. SCULPTED ORGANIC VALLEY RIVERBANKS, MOSSY HILLS & IRREGULAR CANYON CLIFFS
+      const bankGeo = new THREE.PlaneGeometry(58, 220, 18, 42);
+      bankGeo.rotateX(-Math.PI / 2);
+      const bPos = bankGeo.attributes.position;
+      for (let i = 0; i < bPos.count; i++) {
+        const vx = bPos.getX(i);
+        const vz = bPos.getZ(i);
+        const innerFade = THREE.MathUtils.clamp((vx + 29) / 22, 0, 1);
+        const hill =
+          innerFade *
+          (6.5 +
+            Math.sin(vz * 0.06 + vx * 0.12) * 3.8 +
+            Math.cos(vx * 0.14 - vz * 0.04) * 2.6 +
+            Math.sin(vz * 0.17) * 1.4);
+        bPos.setY(i, hill - 0.8);
+      }
+      bankGeo.computeVertexNormals();
+      const bankLeft = new THREE.Mesh(bankGeo, moundTopMat);
+      bankLeft.position.set(-44, level.theme.hazardFloorY, -55);
+      bankLeft.receiveShadow = true;
+      const bankRight = new THREE.Mesh(bankGeo, moundTopMat);
+      bankRight.position.set(92, level.theme.hazardFloorY, -55);
+      bankRight.rotation.y = Math.PI;
+      bankRight.receiveShadow = true;
+      this.levelGroup.add(bankLeft, bankRight);
+
+      // Irregular Towering Jungle Rock Formations & Canyon Buttresses framing the valley
+      const cliffSpots: [number, number, number, number, number, number][] = [
+        [-28, -12, -20, 6.2, 19, 1.1],
+        [-34, -12, -46, 7.8, 24, 2.4],
+        [-30, -12, -82, 8.5, 27, 3.7],
+        [-18, -12, -108, 7.2, 23, 4.9],
+        [26, -12, -14, 6.4, 18, 5.8],
+        [32, -12, -32, 7.0, 21, 6.4],
+        [78, -12, -42, 7.4, 24, 7.1],
+        [76, -12, -68, 8.2, 26, 8.3],
+        [82, -12, -96, 8.8, 29, 9.5],
+        [24, -12, -112, 7.6, 25, 10.2],
+        [76, -12, -122, 8.4, 28, 11.4],
+        [-4, -12, -58, 5.4, 16, 12.1],
+      ];
+      for (const [cx, cy, cz, rad, ch, seed] of cliffSpots) {
+        const rock = new THREE.Mesh(this.createJaggedRockFormationGeometry(rad, ch, seed), cliffRockMat);
+        rock.position.set(cx, cy + ch * 0.42, cz);
+        rock.receiveShadow = true;
+        this.levelGroup.add(rock);
+
+        // Mossy grass cap perched atop jagged cliff pillar
+        const cap = new THREE.Mesh(this.createDisplacedRockGeometry(rad * 0.68, seed + 1.5), moundTopMat);
+        cap.scale.set(1.05, 0.34, 1.05);
+        cap.position.set(cx, cy + ch * 0.88, cz);
+        this.levelGroup.add(cap);
+      }
+
+      // Emerging River Shoals & Natural Stepping Boulders in the Valley Water
+      const shoalSpots: [number, number, number][] = [
+        [-8, -15, 2.2],
+        [9, -8, 2.0],
+        [16, -24, 2.5],
+        [26, -54, 2.8],
+        [34, -74, 2.4],
+        [18, -88, 2.6],
+        [68, -32, 2.3],
+      ];
+      for (let i = 0; i < shoalSpots.length; i++) {
+        const [sx, sz, sr] = shoalSpots[i];
+        const shoal = new THREE.Mesh(this.createDisplacedRockGeometry(sr, 2.1 + i), cliffRockMat);
+        shoal.scale.set(1.4, 0.55, 1.2);
+        shoal.position.set(sx, level.theme.hazardFloorY + 0.35, sz);
+        this.levelGroup.add(shoal);
+
+        const mossCap = new THREE.Mesh(this.createDisplacedRockGeometry(sr * 0.9, 4.4 + i), moundTopMat);
+        mossCap.scale.set(1.2, 0.24, 1.05);
+        mossCap.position.set(sx, level.theme.hazardFloorY + 0.82, sz);
+        this.levelGroup.add(mossCap);
+      }
+
+      // 3. ANCIENT ERODED TEMPLE ARCHITECTURE, STAIRS, FRACTURED COLUMNS & RUIN BRIDGE
+      const buildOvergrownStepPyramid = (
+        px: number,
+        py: number,
+        pz: number,
+        baseW: number,
+        tiers: number,
+        rotY: number,
+        withSanctuaryDoor = false
+      ) => {
+        const tg = new THREE.Group();
+        tg.position.set(px, py, pz);
+        tg.rotation.y = rotY;
+        const tierH = 2.6;
+        for (let t = 0; t < tiers; t++) {
+          const w = baseW - t * (baseW * 0.15);
+          const d = baseW * 0.9 - t * (baseW * 0.13);
+          const block = new THREE.Mesh(new THREE.BoxGeometry(w, tierH, d), ruinStoneMat);
+          block.position.y = t * tierH + tierH * 0.5;
+          block.receiveShadow = true;
+          block.castShadow = !this.isSoftwareGl;
+          tg.add(block);
+
+          // Overhanging mossy ledge invading the tier rim
+          const mossTrim = new THREE.Mesh(new THREE.BoxGeometry(w + 0.25, 0.26, d + 0.25), moundTopMat);
+          mossTrim.position.y = t * tierH + tierH - 0.08;
+          tg.add(mossTrim);
+        }
+
+        const totalH = tiers * tierH;
+        // Grand Central Stone Staircase + Carved Balustrades
+        const stepCount = tiers * 3;
+        const stairW = baseW * 0.24;
+        for (let s = 0; s < stepCount; s++) {
+          const f = s / stepCount;
+          const step = new THREE.Mesh(new THREE.BoxGeometry(stairW, 0.85, 1.1), ruinStoneMat);
+          step.position.set(0, f * totalH + 0.35, (1 - f) * (baseW * 0.46) + 0.6);
+          tg.add(step);
+        }
+        for (const side of [-1, 1]) {
+          const bal = new THREE.Mesh(new THREE.BoxGeometry(0.7, 1.2, baseW * 0.54), ruinStoneMat);
+          bal.position.set(side * (stairW * 0.56), totalH * 0.5, baseW * 0.25);
+          bal.rotation.x = -0.62;
+          tg.add(bal);
+        }
+
+        // Summit Temple Shrine & Luminous Sanctuary Doorway
+        const topY = totalH;
+        const shrineW = baseW * 0.34;
+        const shrine = new THREE.Mesh(new THREE.BoxGeometry(shrineW, 3.8, shrineW * 0.85), ruinStoneMat);
+        shrine.position.set(0, topY + 1.9, 0);
+        tg.add(shrine);
+        const roof = new THREE.Mesh(new THREE.BoxGeometry(shrineW + 0.9, 0.9, shrineW * 0.85 + 0.9), ruinStoneMat);
+        roof.position.set(0, topY + 4.1, 0);
+        tg.add(roof);
+        const roofMoss = new THREE.Mesh(new THREE.BoxGeometry(shrineW + 1.0, 0.3, shrineW * 0.85 + 1.0), moundTopMat);
+        roofMoss.position.set(0, topY + 4.65, 0);
+        tg.add(roofMoss);
+
+        if (withSanctuaryDoor) {
+          const doorGlow = new THREE.Mesh(
+            new THREE.BoxGeometry(shrineW * 0.44, 2.4, 0.4),
+            stellarGlowMat
+          );
+          doorGlow.position.set(0, topY + 1.35, shrineW * 0.42);
+          tg.add(doorGlow);
+
+          // Twin Emerald-Gold Temple Braziers
+          for (const side of [-1, 1]) {
+            const ped = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.72, 1.4, 10), ruinStoneMat);
+            ped.position.set(side * (shrineW * 0.68), topY + 0.7, shrineW * 0.52);
+            const flame = new THREE.Mesh(new THREE.OctahedronGeometry(0.45, 0), goldCarvingMat);
+            flame.position.set(side * (shrineW * 0.68), topY + 1.75, shrineW * 0.52);
+            tg.add(ped, flame);
+          }
+        }
+
+        // Fractured flanking columns invaded by foliage
+        for (const side of [-1, 1]) {
+          const fCol = new THREE.Mesh(new THREE.CylinderGeometry(0.52, 0.62, 3.2, 10), ruinStoneMat);
+          fCol.position.set(side * (baseW * 0.34), tierH + 1.6, baseW * 0.28);
+          tg.add(fCol);
+        }
+
+        this.levelGroup.add(tg);
+      };
+
+      // Colossal Sanctuary Temple behind Guardián Musgo-Alfa's Arena
+      buildOvergrownStepPyramid(50, 10.6, -133, 28, 5, 0, true);
+      // Distant Lost Jungle Temples receding into valley mist
+      buildOvergrownStepPyramid(-38, -12, -74, 22, 4, 0.42, true);
+      buildOvergrownStepPyramid(86, -10, -104, 24, 4, -0.38, false);
+      buildOvergrownStepPyramid(-24, -12, -122, 20, 4, 0.25, false);
+
+      // 2D Wall Carved Ancient Cliff Temple Facade (strictly behind z = -40.8 so player at z = -38 is unobstructed)
+      const wallBackdrop = new THREE.Group();
+      wallBackdrop.position.set(24, -12, -41.4);
+      const cliffWallMesh = new THREE.Mesh(new THREE.BoxGeometry(58, 22, 3.2), ruinStoneMat);
+      cliffWallMesh.position.y = 11;
+      cliffWallMesh.receiveShadow = true;
+      wallBackdrop.add(cliffWallMesh);
+
+      const cliffWallMoss = new THREE.Mesh(new THREE.BoxGeometry(59, 0.75, 3.6), moundTopMat);
+      cliffWallMoss.position.y = 22.1;
+      wallBackdrop.add(cliffWallMoss);
+
+      for (let col = -24; col <= 24; col += 8) {
+        const colH = 17 + ((Math.abs(col) * 3) % 5);
+        const pilaster = new THREE.Mesh(new THREE.BoxGeometry(1.7, colH, 0.95), ruinStoneMat);
+        pilaster.position.set(col, colH * 0.5, 1.75);
+        wallBackdrop.add(pilaster);
+
+        // Carved relief niche & glowing emerald rune medallion
+        if (col % 16 === 0) {
+          const niche = new THREE.Mesh(new THREE.BoxGeometry(3.2, 4.2, 0.5), goldCarvingMat);
+          niche.position.set(col + 4, 15.8, 1.6);
+          wallBackdrop.add(niche);
+        }
+      }
+      this.levelGroup.add(wallBackdrop);
+
+      // Ancient Weathered Stone Arch Bridge spanning the deep gorge (vista at [24, 9.2, -118])
+      const stoneBridge = new THREE.Group();
+      stoneBridge.position.set(24, 9.2, -118);
+      stoneBridge.rotation.y = 0.08;
+      const bridgeDeck = new THREE.Mesh(new THREE.BoxGeometry(28, 1.3, 4.4), ruinStoneMat);
+      stoneBridge.add(bridgeDeck);
+      const bridgeMoss = new THREE.Mesh(new THREE.BoxGeometry(27.5, 0.25, 4.5), moundTopMat);
+      bridgeMoss.position.y = 0.72;
+      stoneBridge.add(bridgeMoss);
+      for (const sx of [-11, -5.5, 0, 5.5, 11]) {
+        const pier = new THREE.Mesh(new THREE.BoxGeometry(1.8, 21, 3.8), ruinStoneMat);
+        pier.position.set(sx, -10.5, 0);
+        stoneBridge.add(pier);
+      }
+      for (const side of [-1, 1]) {
+        for (let b = -12; b <= 12; b += 4) {
+          const post = new THREE.Mesh(new THREE.BoxGeometry(0.65, 1.15, 0.65), ruinStoneMat);
+          post.position.set(b, 1.25, side * 1.9);
+          stoneBridge.add(post);
+        }
+      }
+      this.levelGroup.add(stoneBridge);
+
+      // 4. GRAND LUMINOUS STELLAR ARCHES ("Grandes Arcos Estelares") Framing Key Landmarks
+      const buildStellarArch = (ax: number, ay: number, az: number, rotY = 0, scale = 1) => {
+        const ag = new THREE.Group();
+        ag.position.set(ax, ay, az);
+        ag.rotation.y = rotY;
+        ag.scale.setScalar(scale);
+
+        const colOffset = 3.1;
+        for (const side of [-1, 1]) {
+          const plinth = new THREE.Mesh(new THREE.BoxGeometry(1.65, 0.75, 1.65), ruinStoneMat);
+          plinth.position.set(side * colOffset, 0.37, 0);
+          plinth.castShadow = !this.isSoftwareGl;
+          ag.add(plinth);
+
+          const pillar = new THREE.Mesh(new THREE.CylinderGeometry(0.48, 0.62, 5.1, 10), ruinStoneMat);
+          pillar.position.set(side * colOffset, 3.1, 0);
+          pillar.castShadow = !this.isSoftwareGl;
+          ag.add(pillar);
+
+          // Luminous Stellar Rune Band wrapping each stone pillar
+          const runeBand = new THREE.Mesh(new THREE.TorusGeometry(0.56, 0.08, 8, 20), stellarGlowMat);
+          runeBand.rotation.x = Math.PI / 2;
+          runeBand.position.set(side * colOffset, 3.2, 0);
+          ag.add(runeBand);
+
+          const capital = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.65, 1.4), ruinStoneMat);
+          capital.position.set(side * colOffset, 5.75, 0);
+          ag.add(capital);
+        }
+
+        // Carved Stone Arch & Ornate Lintel Crown
+        const archCrown = new THREE.Mesh(new THREE.TorusGeometry(colOffset, 0.48, 10, 22, Math.PI), ruinStoneMat);
+        archCrown.position.set(0, 5.85, 0);
+        archCrown.castShadow = !this.isSoftwareGl;
+        ag.add(archCrown);
+
+        const topLintel = new THREE.Mesh(new THREE.BoxGeometry(7.8, 0.85, 1.35), ruinStoneMat);
+        topLintel.position.set(0, 9.15, 0);
+        ag.add(topLintel);
+
+        const mossCap = new THREE.Mesh(new THREE.BoxGeometry(7.9, 0.28, 1.45), moundTopMat);
+        mossCap.position.set(0, 9.65, 0);
+        ag.add(mossCap);
+
+        // Radiant Floating Stellar Ring & Astral Crystal Keystone
+        const stellarRing = new THREE.Mesh(new THREE.TorusGeometry(2.1, 0.09, 10, 36), stellarGlowMat);
+        stellarRing.position.set(0, 5.8, 0);
+        ag.add(stellarRing);
+        this.jungleArchRings.push(stellarRing);
+
+        const keystone = new THREE.Mesh(new THREE.OctahedronGeometry(0.55, 0), goldCarvingMat);
+        keystone.position.set(0, 8.35, 0.35);
+        ag.add(keystone);
+
+        // Trailing liana vine from arch shoulder
+        const vCurve = new THREE.CatmullRomCurve3([
+          new THREE.Vector3(-colOffset - 0.3, 6.2, 0.4),
+          new THREE.Vector3(-colOffset - 0.55, 4.3, 0.5),
+          new THREE.Vector3(-colOffset - 0.25, 2.4, 0.45),
+        ]);
+        ag.add(new THREE.Mesh(new THREE.TubeGeometry(vCurve, 8, 0.07, 5, false), lianaMat));
+
+        this.levelGroup.add(ag);
+      };
+
+      buildStellarArch(0, 0.8, -5.2, 0, 0.94);
+      buildStellarArch(0, 2.5, -34.6, 0, 0.92);
+      buildStellarArch(50, 6.1, -44.2, 0, 0.96);
+      buildStellarArch(50, 12.2, -99.2, 0, 1.15);
+
+      // 5. MULTI-HEIGHT WATERFALLS & ELEVATED NATURAL ROCK POOLS
+      const wfMat = new THREE.MeshPhysicalMaterial({
+        map: this.textures.waterfallSurface,
+        transparent: true,
+        opacity: 0.88,
+        roughness: 0.1,
+        clearcoat: 0.85,
+        side: THREE.DoubleSide,
+      });
+      const poolWaterMat = new THREE.MeshStandardMaterial({
+        map: this.textures.lagoonSurface,
+        bumpMap: this.textures.waterBump,
+        bumpScale: 0.12,
+        roughness: 0.08,
+        metalness: 0.32,
+        envMapIntensity: 1.5,
+      });
+      applyWaterSurfaceShader(poolWaterMat, this.shaderTimeUniform, {
+        waveAmp: 0.08,
+        waveFreq: 0.25,
+        speed: 2.2,
+        fresnelColor: 0xa7f3d0,
+        fresnelStrength: 0.62,
+        foamStrength: 0.28,
+      });
+      const foamMat = new THREE.MeshBasicMaterial({
+        color: 0xe0f2fe,
+        transparent: true,
+        opacity: 0.65,
+        side: THREE.DoubleSide,
+      });
+
+      const buildNaturalCliffPoolAndWaterfall = (
+        wx: number,
+        topY: number,
+        poolY: number,
+        wz: number,
+        rotY: number,
+        streamWidth: number,
+        poolRadius: number,
+        ruinSpout = false
+      ) => {
+        const wg = new THREE.Group();
+        wg.position.set(wx, 0, wz);
+        wg.rotation.y = rotY;
+
+        const fallH = Math.max(4, topY - poolY + 0.6);
+        // Jagged wet cliff backing behind waterfall
+        const cliffL = new THREE.Mesh(this.createJaggedRockFormationGeometry(4.4, fallH + 4, wx * 0.3 + 1), cliffRockMat);
+        cliffL.position.set(-streamWidth * 0.72, poolY + fallH * 0.45, -2.2);
+        const cliffR = new THREE.Mesh(this.createJaggedRockFormationGeometry(4.4, fallH + 4, wx * 0.3 + 4), cliffRockMat);
+        cliffR.position.set(streamWidth * 0.72, poolY + fallH * 0.45, -2.2);
+        const cliffBack = new THREE.Mesh(this.createJaggedRockFormationGeometry(5.6, fallH + 5, wx * 0.3 + 7), cliffRockMat);
+        cliffBack.position.set(0, poolY + fallH * 0.5, -4.4);
+        wg.add(cliffL, cliffR, cliffBack);
+
+        if (ruinSpout) {
+          const spout = new THREE.Mesh(new THREE.BoxGeometry(streamWidth + 1.6, 1.4, 3.6), ruinStoneMat);
+          spout.position.set(0, topY - 0.2, -1.2);
+          wg.add(spout);
+        }
+
+        // Flowing Waterfall Ribbon
+        const stream = new THREE.Mesh(new THREE.PlaneGeometry(streamWidth, fallH, 4, 8), wfMat);
+        stream.position.set(0, poolY + fallH * 0.5 - 0.2, 0.35);
+        stream.rotation.x = -0.08;
+        wg.add(stream);
+
+        // Elevated Natural Stone Basin + Reflective Turquoise Water Pool + Plunge Foam
+        if (poolY > level.theme.hazardFloorY + 0.5) {
+          const basinRim = new THREE.Mesh(
+            new THREE.CylinderGeometry(poolRadius + 1.4, poolRadius + 2.2, 2.2, 14),
+            cliffRockMat
+          );
+          basinRim.position.set(0, poolY - 1.15, 1.4);
+          wg.add(basinRim);
+
+          const poolDisc = new THREE.Mesh(new THREE.CircleGeometry(poolRadius, 22), poolWaterMat);
+          poolDisc.rotation.x = -Math.PI / 2;
+          poolDisc.position.set(0, poolY + 0.04, 1.4);
+          wg.add(poolDisc);
+
+          // Spillover cascade down to the lower river
+          const spillH = poolY - level.theme.hazardFloorY + 0.4;
+          const spill = new THREE.Mesh(new THREE.PlaneGeometry(streamWidth * 0.72, spillH, 3, 6), wfMat);
+          spill.position.set(0, level.theme.hazardFloorY + spillH * 0.5, poolRadius + 1.1);
+          spill.rotation.x = -0.1;
+          wg.add(spill);
+        }
+
+        const foam = new THREE.Mesh(new THREE.RingGeometry(streamWidth * 0.35, streamWidth * 0.95, 22), foamMat);
+        foam.rotation.x = -Math.PI / 2;
+        foam.position.set(0, poolY + 0.14, 1.0);
+        wg.add(foam);
+
+        this.levelGroup.add(wg);
+        this.templeWaterfallPools.push(new THREE.Vector3(wx, poolY, wz + 1.0));
+      };
+
+      // 5 Multi-Height Waterfalls & Terraced Natural Pools
+      buildNaturalCliffPoolAndWaterfall(-24, 3.8, -4.6, -34, 0.55, 4.4, 5.2, true);
+      buildNaturalCliffPoolAndWaterfall(-28, 12.5, -4.2, -64, 0.45, 5.6, 6.2, false);
+      buildNaturalCliffPoolAndWaterfall(70, 9.5, -2.5, -62, -0.52, 4.6, 5.4, true);
+      buildNaturalCliffPoolAndWaterfall(78, 13.0, level.theme.hazardFloorY, -94, -0.58, 5.8, 6.0, false);
+      buildNaturalCliffPoolAndWaterfall(34, 17.5, level.theme.hazardFloorY, -126, 0.18, 4.8, 5.2, false);
+      buildNaturalCliffPoolAndWaterfall(66, 17.5, level.theme.hazardFloorY, -126, -0.18, 4.8, 5.2, false);
+
+      // 6. MULTI-SPECIES TROPICAL RAINFOREST (DENSE INSTANCED CANOPY CARPET + GIANT CEIBAS + CURVED PALMS)
+      const canopyClusterGeo = this.createDisplacedRockGeometry(2.35, 3.7);
+      const treeCount = 96;
+      const bgTrunkGeo = new THREE.CylinderGeometry(0.42, 1.1, 12.5, 9);
+      const bgRootGeo = new THREE.ConeGeometry(1.55, 3.2, 7);
+      const bgCanopyMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.8 });
+      applyWindSwayShader(bgCanopyMat, this.shaderTimeUniform, 0.14, 1.5);
+
+      const bgTrunks = new THREE.InstancedMesh(bgTrunkGeo, heroBarkMat, treeCount);
+      const bgRoots = new THREE.InstancedMesh(bgRootGeo, heroBarkMat, treeCount);
+      const bgCrownA = new THREE.InstancedMesh(canopyClusterGeo, bgCanopyMat, treeCount);
+      const bgCrownB = new THREE.InstancedMesh(canopyClusterGeo, bgCanopyMat, treeCount);
+      const bgCrownC = new THREE.InstancedMesh(canopyClusterGeo, bgCanopyMat, treeCount);
+
+      for (let i = 0; i < treeCount; i++) {
+        const side = i % 2 === 0 ? 1 : -1;
+        const dist = 22 + ((i * 19) % 64);
+        const z = 18 - ((i * 17) % 162);
+        const x = (i % 3 === 0 ? 48 : 0) + side * dist;
+        const y = -11.0 + (i % 5) * 1.45;
+        const sc = 0.92 + (i % 4) * 0.25;
+
+        dummy.position.set(x, y + 6.0 * sc, z);
+        dummy.rotation.set(((i % 3) - 1) * 0.05, i * 0.9, ((i % 3) - 1) * 0.06);
+        dummy.scale.set(sc, sc, sc);
+        dummy.updateMatrix();
+        bgTrunks.setMatrixAt(i, dummy.matrix);
+
+        dummy.position.set(x, y + 1.4 * sc, z);
+        dummy.rotation.set(0, i * 0.7, 0);
+        dummy.scale.set(sc * 1.15, sc, sc * 1.15);
+        dummy.updateMatrix();
+        bgRoots.setMatrixAt(i, dummy.matrix);
+
+        // 3 Overlapping Multi-Layer Foliage Crowns per Background Tree
+        dummy.position.set(x, y + 11.0 * sc, z);
+        dummy.rotation.set(0, i * 0.5, 0);
+        dummy.scale.set(sc * 1.45, sc * 0.74, sc * 1.45);
+        dummy.updateMatrix();
+        bgCrownA.setMatrixAt(i, dummy.matrix);
+        _color.setHex(i % 3 === 0 ? 0x1e4a16 : i % 3 === 1 ? 0x26581c : 0x2d6621);
+        bgCrownA.setColorAt(i, _color);
+
+        dummy.position.set(x + (i % 2 === 0 ? 1.1 : -1.1) * sc, y + 12.6 * sc, z - 0.6 * sc);
+        dummy.rotation.set(0.1, i * 0.8, 0.05);
+        dummy.scale.set(sc * 1.25, sc * 0.72, sc * 1.25);
+        dummy.updateMatrix();
+        bgCrownB.setMatrixAt(i, dummy.matrix);
+        _color.setHex(i % 3 === 0 ? 0x357522 : i % 3 === 1 ? 0x458a2a : 0x3d7d26);
+        bgCrownB.setColorAt(i, _color);
+
+        dummy.position.set(x - (i % 2 === 0 ? 0.8 : -0.8) * sc, y + 14.2 * sc, z + 0.4 * sc);
+        dummy.rotation.set(-0.08, i * 1.1, 0);
+        dummy.scale.set(sc * 1.05, sc * 0.68, sc * 1.05);
+        dummy.updateMatrix();
+        bgCrownC.setMatrixAt(i, dummy.matrix);
+        _color.setHex(i % 3 === 0 ? 0x5ca832 : i % 3 === 1 ? 0x6cb83a : 0x4f992b);
+        bgCrownC.setColorAt(i, _color);
+      }
+      for (const im of [bgTrunks, bgRoots, bgCrownA, bgCrownB, bgCrownC]) {
+        im.instanceMatrix.needsUpdate = true;
+        if (im.instanceColor) im.instanceColor.needsUpdate = true;
+        im.computeBoundingSphere();
+      }
+      this.levelGroup.add(bgTrunks, bgRoots, bgCrownA, bgCrownB, bgCrownC);
+
+      // Giant Hero Buttress-Rooted Ceiba Trees (12 monumental trees with 12-lobe multi-layer crowns & lianas)
       const heroTreeSpots: [number, number, number, number][] = [
-        [-15, -4, -14, 1.15],
-        [15, -4, -15, 1.08],
-        [-16, -3, -32, 1.1],
-        [14, -3, -46, 1.2],
-        [36, -2, -46, 1.15],
-        [34, 0, -68, 1.18],
-        [66, 0, -72, 1.15],
-        [35, 3, -96, 1.1],
+        [-15, -4, -14, 1.18],
+        [15, -4, -15, 1.12],
+        [-16, -3, -32, 1.14],
+        [14, -3, -46, 1.24],
+        [36, -2, -46, 1.18],
+        [34, 0, -68, 1.22],
+        [66, 0, -72, 1.18],
+        [35, 3, -96, 1.15],
+        [-17, -6, -64, 1.2],
+        [68, 1, -92, 1.16],
+        [24, 3, -110, 1.22],
+        [74, 4, -114, 1.2],
       ];
 
       const heroCrownCoords: THREE.Vector3[] = [];
@@ -1304,194 +1808,180 @@ export class GameEngine {
         tg.rotation.y = idx * 0.95;
 
         const island = new THREE.Mesh(
-          new THREE.CylinderGeometry(3.8 * sc, 4.5 * sc, 4.0, 12),
-          [moundSideMat, moundTopMat, moundSideMat]
+          this.createJaggedRockFormationGeometry(4.2 * sc, 5.2, idx + 0.7),
+          [moundSideMat, moundTopMat, cliffRockMat]
         );
-        island.position.y = -1.8;
+        island.position.y = -2.2;
         tg.add(island);
 
         const trunkCurve = new THREE.CatmullRomCurve3([
-          new THREE.Vector3(0, 0, 0),
-          new THREE.Vector3(0.45 * sc, 3.2 * sc, -0.25 * sc),
-          new THREE.Vector3(-0.35 * sc, 6.8 * sc, 0.3 * sc),
-          new THREE.Vector3(0.2 * sc, 10.2 * sc, 0),
+          new THREE.Vector3(0, -0.4, 0),
+          new THREE.Vector3(0.5 * sc, 3.4 * sc, -0.28 * sc),
+          new THREE.Vector3(-0.38 * sc, 7.0 * sc, 0.34 * sc),
+          new THREE.Vector3(0.22 * sc, 10.8 * sc, 0),
         ]);
-        const curvedTrunk = new THREE.Mesh(new THREE.TubeGeometry(trunkCurve, 14, 0.92 * sc, 9, false), heroBarkMat);
-        tg.add(curvedTrunk);
+        tg.add(new THREE.Mesh(new THREE.TubeGeometry(trunkCurve, 14, 0.96 * sc, 9, false), heroBarkMat));
 
-        for (let r = 0; r < 4; r++) {
-          const ang = (r / 4) * Math.PI * 2 + 0.35;
+        // 5 Gnarled Buttress Roots
+        for (let r = 0; r < 5; r++) {
+          const ang = (r / 5) * Math.PI * 2 + 0.35;
           const rootCurve = new THREE.CatmullRomCurve3([
-            new THREE.Vector3(Math.cos(ang) * 0.5 * sc, 2.2 * sc, Math.sin(ang) * 0.5 * sc),
-            new THREE.Vector3(Math.cos(ang) * 1.6 * sc, 0.7 * sc, Math.sin(ang) * 1.6 * sc),
-            new THREE.Vector3(Math.cos(ang) * 2.8 * sc, 0.1 * sc, Math.sin(ang) * 2.8 * sc),
+            new THREE.Vector3(Math.cos(ang) * 0.45 * sc, 2.5 * sc, Math.sin(ang) * 0.45 * sc),
+            new THREE.Vector3(Math.cos(ang) * 1.7 * sc, 0.8 * sc, Math.sin(ang) * 1.7 * sc),
+            new THREE.Vector3(Math.cos(ang) * 3.1 * sc, -0.2 * sc, Math.sin(ang) * 3.1 * sc),
           ]);
-          const rootMesh = new THREE.Mesh(new THREE.TubeGeometry(rootCurve, 8, 0.34 * sc, 7, false), heroBarkMat);
-          tg.add(rootMesh);
+          tg.add(new THREE.Mesh(new THREE.TubeGeometry(rootCurve, 8, 0.34 * sc, 7, false), heroBarkMat));
         }
 
-        for (let b = 0; b < 3; b++) {
-          const bAng = (b / 3) * Math.PI * 2 + idx * 0.4;
-          const bx = Math.cos(bAng) * 3.1 * sc;
-          const bz = Math.sin(bAng) * 3.1 * sc;
+        // 4 Major Boughs + Multi-Tier Leaf Clusters (12 overlapping puffs per tree!) + Hanging Moss Vines
+        for (let b = 0; b < 4; b++) {
+          const bAng = (b / 4) * Math.PI * 2 + idx * 0.45;
+          const bx = Math.cos(bAng) * 3.5 * sc;
+          const bz = Math.sin(bAng) * 3.5 * sc;
           const branchCurve = new THREE.CatmullRomCurve3([
-            new THREE.Vector3(0, 8.8 * sc, 0),
-            new THREE.Vector3(bx * 0.55, 10.2 * sc, bz * 0.55),
-            new THREE.Vector3(bx, 11.4 * sc, bz),
+            new THREE.Vector3(0, 9.0 * sc, 0),
+            new THREE.Vector3(bx * 0.55, 10.6 * sc, bz * 0.55),
+            new THREE.Vector3(bx, 11.9 * sc, bz),
           ]);
-          const branchMesh = new THREE.Mesh(new THREE.TubeGeometry(branchCurve, 6, 0.38 * sc, 6, false), heroBarkMat);
-          tg.add(branchMesh);
+          tg.add(new THREE.Mesh(new THREE.TubeGeometry(branchCurve, 6, 0.38 * sc, 6, false), heroBarkMat));
 
-          // Multi-lobe organic foliage clusters instead of primitive cones
           for (let c = 0; c < 3; c++) {
-            const cAng = bAng + (c - 1) * 0.65;
+            const cAng = bAng + (c - 1) * 0.72;
             const lobe = new THREE.Mesh(
-              foliageClusterGeo,
+              canopyClusterGeo,
               c === 0 ? leafSunMat : c === 1 ? leafMidMat : leafDeepMat
             );
-            lobe.scale.set(sc * (1.05 - c * 0.12), sc * 0.72, sc * (1.05 - c * 0.12));
+            lobe.scale.set(sc * (1.1 - c * 0.12), sc * 0.68, sc * (1.1 - c * 0.12));
             lobe.position.set(
-              bx + Math.cos(cAng) * 1.15 * sc,
-              (12.2 - c * 0.75) * sc,
-              bz + Math.sin(cAng) * 1.15 * sc
+              bx + Math.cos(cAng) * 1.25 * sc,
+              (12.8 - c * 0.85) * sc,
+              bz + Math.sin(cAng) * 1.25 * sc
             );
             lobe.rotation.y = cAng;
             tg.add(lobe);
           }
 
-          // Hanging aerial moss vine strand
           const tendrilCurve = new THREE.CatmullRomCurve3([
-            new THREE.Vector3(bx * 1.1, 11.0 * sc, bz * 1.1),
-            new THREE.Vector3(bx * 1.12, 8.6 * sc, bz * 1.12),
-            new THREE.Vector3(bx * 1.08, 6.2 * sc, bz * 1.08),
+            new THREE.Vector3(bx * 1.08, 11.4 * sc, bz * 1.08),
+            new THREE.Vector3(bx * 1.14, 8.6 * sc, bz * 1.14),
+            new THREE.Vector3(bx * 1.08, 5.6 * sc, bz * 1.08),
           ]);
-          tg.add(new THREE.Mesh(new THREE.TubeGeometry(tendrilCurve, 6, 0.06 * sc, 4, false), lianaMat));
+          tg.add(new THREE.Mesh(new THREE.TubeGeometry(tendrilCurve, 6, 0.065 * sc, 4, false), lianaMat));
         }
 
-        const topCrown = new THREE.Mesh(foliageClusterGeo, leafSunMat);
-        topCrown.scale.set(1.42 * sc, 0.78 * sc, 1.42 * sc);
-        topCrown.position.set(0, 13.6 * sc, 0);
+        const topCrown = new THREE.Mesh(canopyClusterGeo, leafSunMat);
+        topCrown.scale.set(1.52 * sc, 0.76 * sc, 1.52 * sc);
+        topCrown.position.set(0, 14.3 * sc, 0);
         tg.add(topCrown);
 
         this.levelGroup.add(tg);
-        heroCrownCoords.push(new THREE.Vector3(hx, hy + 11.0 * sc, hz));
+        heroCrownCoords.push(new THREE.Vector3(hx, hy + 11.8 * sc, hz));
       }
 
-      // Draped Natural Liana Vines arcing between adjacent trees
+      // Draped Natural Liana Vines arcing between adjacent hero trees
       const vinePairs: [number, number][] = [
         [0, 1],
         [0, 2],
         [3, 4],
         [5, 6],
+        [8, 2],
+        [7, 9],
       ];
       for (const [a, b] of vinePairs) {
         const pA = heroCrownCoords[a];
         const pB = heroCrownCoords[b];
         if (!pA || !pB) continue;
         const mid = pA.clone().lerp(pB, 0.5);
-        mid.y -= 3.8;
+        mid.y -= 3.9;
         const vineCurve = new THREE.CatmullRomCurve3([pA, mid, pB]);
-        this.levelGroup.add(new THREE.Mesh(new THREE.TubeGeometry(vineCurve, 14, 0.1, 5, false), lianaMat));
+        this.levelGroup.add(new THREE.Mesh(new THREE.TubeGeometry(vineCurve, 14, 0.11, 5, false), lianaMat));
       }
 
-      // Scenic Cascading Cliff Waterfalls (with animated UV waterfall ribbon + plunge foam)
-      const wfSpots: [number, number, number, number][] =
-        level.index === 0
-          ? [
-              [-28, 3, -64, 0.45],
-              [78, 4, -82, -0.55],
-            ]
-          : [
-              [-32, 4, -46, 0.45],
-              [28, 4, -68, -0.45],
-            ];
-      const cliffMat = new THREE.MeshStandardMaterial({
-        map: this.textures.climbStone,
-        bumpMap: this.textures.stoneBump,
-        bumpScale: 0.2,
-        roughness: 0.9,
-      });
-      const wfMat = new THREE.MeshPhysicalMaterial({
-        map: this.textures.waterfallSurface,
-        transparent: true,
-        opacity: 0.88,
-        roughness: 0.12,
-        clearcoat: 0.8,
-        side: THREE.DoubleSide,
-      });
-      const foamMat = new THREE.MeshBasicMaterial({ color: 0xe0f2fe, transparent: true, opacity: 0.58 });
-      const cliffRockGeo = this.createDisplacedRockGeometry(7.2, 5.1);
+      // Graceful Curved Tropical Coconut Palms along Riverbanks & Cliff Terraces (14 palms)
+      const palmFrondGeo = this.createCurvedLeafGeometry(4.2, 1.35);
+      const palmSpots: [number, number, number, number, number][] = [
+        [-11, -11.4, -4, 0.95, 0.4],
+        [10, -11.4, -7, 1.05, -0.5],
+        [-18, -11.4, -24, 1.12, 0.7],
+        [17, -11.4, -26, 0.98, -0.8],
+        [24, -11.4, -52, 1.08, 0.3],
+        [33, -11.4, -72, 1.15, -0.4],
+        [19, -11.4, -86, 1.02, 0.6],
+        [-19, -4.6, -34, 0.92, 0.9],
+        [65, -2.5, -60, 0.96, -0.9],
+        [34, 11.2, -124, 1.05, 0.5],
+        [66, 11.2, -124, 1.05, -0.5],
+        [-16, -11.4, -48, 1.08, 1.1],
+        [68, -11.4, -40, 1.1, -1.1],
+        [44, 18.2, -132, 0.88, 0.3],
+      ];
+      const coconutMat = new THREE.MeshStandardMaterial({ color: 0x5c3a1e, roughness: 0.78 });
+      for (let p = 0; p < palmSpots.length; p++) {
+        const [px, py, pz, sc, lean] = palmSpots[p];
+        const pg = new THREE.Group();
+        pg.position.set(px, py, pz);
+        pg.rotation.y = p * 0.95;
 
-      for (const [wx, wy, wz, rotY] of wfSpots) {
-        const wg = new THREE.Group();
-        wg.position.set(wx, wy, wz);
-        wg.rotation.y = rotY;
+        const curve = new THREE.CatmullRomCurve3([
+          new THREE.Vector3(0, -0.4, 0),
+          new THREE.Vector3(lean * 1.4 * sc, 4.2 * sc, 0.3 * sc),
+          new THREE.Vector3(lean * 2.5 * sc, 8.6 * sc, -0.2 * sc),
+          new THREE.Vector3(lean * 2.8 * sc, 11.4 * sc, 0),
+        ]);
+        pg.add(new THREE.Mesh(new THREE.TubeGeometry(curve, 12, 0.36 * sc, 7, false), palmBarkMat));
 
-        const cliffL = new THREE.Mesh(cliffRockGeo, cliffMat);
-        cliffL.scale.set(0.95, 2.2, 0.85);
-        cliffL.position.set(-5.2, -1.5, -1.5);
-        const cliffR = new THREE.Mesh(cliffRockGeo, cliffMat);
-        cliffR.scale.set(0.95, 2.2, 0.85);
-        cliffR.position.set(5.2, -1.5, -1.5);
-        const cliffBack = new THREE.Mesh(cliffRockGeo, cliffMat);
-        cliffBack.scale.set(1.4, 2.3, 0.7);
-        cliffBack.position.set(0, -1.0, -3.5);
-
-        const stream = new THREE.Mesh(new THREE.PlaneGeometry(5.6, 17.5, 4, 8), wfMat);
-        stream.position.set(0, -6.4, 0.4);
-        stream.rotation.x = -0.06;
-
-        const foam = new THREE.Mesh(new THREE.RingGeometry(1.6, 5.4, 20), foamMat);
-        foam.rotation.x = -Math.PI / 2;
-        foam.position.set(0, level.theme.hazardFloorY - wy + 0.18, 0.8);
-
-        wg.add(cliffL, cliffR, cliffBack, stream, foam);
-        this.levelGroup.add(wg);
+        const crownPos = new THREE.Vector3(lean * 2.8 * sc, 11.4 * sc, 0);
+        for (let c = 0; c < 3; c++) {
+          const ca = (c / 3) * Math.PI * 2;
+          const nut = new THREE.Mesh(new THREE.SphereGeometry(0.26 * sc, 8, 6), coconutMat);
+          nut.position.set(crownPos.x + Math.cos(ca) * 0.35 * sc, crownPos.y - 0.32 * sc, crownPos.z + Math.sin(ca) * 0.35 * sc);
+          pg.add(nut);
+        }
+        for (let f = 0; f < 9; f++) {
+          const fAng = (f / 9) * Math.PI * 2 + p * 0.3;
+          const fg = new THREE.Group();
+          fg.position.copy(crownPos);
+          fg.rotation.y = fAng;
+          const frond = new THREE.Mesh(palmFrondGeo, leafVeinedMat);
+          frond.scale.setScalar(sc);
+          frond.rotation.x = 1.05 + (f % 2) * 0.22;
+          fg.add(frond);
+          pg.add(fg);
+        }
+        this.levelGroup.add(pg);
       }
 
-      // Natural Displaced Mossy Boulders + Broad-Leaf Tropical Ferns around tree bases & safe platform rims
+      // 7. NATURAL MOSSY BOULDERS, CURVED ARCHED FERNS, BROAD-LEAF PLANTS & TROPICAL FLOWERS
       const rockSpots: [number, number, number, number][] = [
         [-13.2, -3.7, -12.5, 1.1],
         [13.4, -3.7, -13.8, 1.0],
-        [-3.8, 1.05, 3.6, 0.65],
-        [3.9, 1.05, 3.4, 0.58],
+        [-4.2, 1.0, 4.2, 0.62],
+        [4.2, 1.0, 4.1, 0.58],
         [-14.2, -2.7, -30.5, 0.95],
+        [-3.4, 2.2, -18.5, 0.58],
+        [3.4, 2.2, -25.2, 0.56],
+        [15.4, -2.7, -44.2, 1.05],
+        [34.2, -1.7, -44.6, 1.0],
+        [46.2, 6.2, -46.4, 0.62],
+        [53.6, 7.4, -76.2, 0.65],
+        [41.2, 12.4, -101.2, 0.72],
+        [58.8, 12.4, -101.2, 0.72],
+        [41.2, 12.4, -116.5, 0.72],
+        [58.8, 12.4, -116.5, 0.72],
+        [-21, -4.5, -31, 0.85],
+        [67, -2.4, -59, 0.85],
       ];
-      if (level.index === 0) {
-        rockSpots.push(
-          [-3.2, 2.25, -18.8, 0.62],
-          [3.1, 2.25, -24.8, 0.6],
-          [15.4, -2.7, -44.2, 1.05],
-          [34.2, -1.7, -44.6, 1.0],
-          [46.5, 6.25, -46.8, 0.65],
-          [53.4, 7.45, -76.2, 0.68],
-          [46.6, 12.35, -107.2, 0.72]
-        );
-      } else {
-        rockSpots.push(
-          [-2.8, 1.35, -14.2, 0.58],
-          [2.8, 1.35, -8.8, 0.55],
-          [-2.9, 8.95, -40.2, 0.6],
-          [-20.2, 23.35, -87.8, 0.7]
-        );
-      }
 
       const rockGeo = this.createDisplacedRockGeometry(0.95, 7.3);
       const rockMat = new THREE.MeshStandardMaterial({
-        color: 0x94a3b8,
-        bumpMap: this.textures.stoneBump,
-        bumpScale: 0.14,
-        roughness: 0.88,
+        map: this.textures.jungleRuinStone,
+        bumpMap: this.textures.jungleRuinBump,
+        bumpScale: 0.16,
+        roughness: 0.9,
       });
       const mossCapGeo = this.createDisplacedRockGeometry(0.75, 4.9);
-      const mossMat = new THREE.MeshStandardMaterial({
-        map: this.textures.jungleGrass,
-        bumpMap: this.textures.grassBump,
-        bumpScale: 0.08,
-        roughness: 0.85,
-      });
       const rocksInst = new THREE.InstancedMesh(rockGeo, rockMat, rockSpots.length);
-      const mossInst = new THREE.InstancedMesh(mossCapGeo, mossMat, rockSpots.length);
+      const mossInst = new THREE.InstancedMesh(mossCapGeo, moundTopMat, rockSpots.length);
 
       for (let i = 0; i < rockSpots.length; i++) {
         const [rx, ry, rz, rs] = rockSpots[i];
@@ -1513,80 +2003,212 @@ export class GameEngine {
       }
       this.levelGroup.add(rocksInst, mossInst);
 
-      // Realistic Multi-Blade Rainforest Ferns
-      const leafBladeGeo = new THREE.ConeGeometry(0.32, 1.55, 5);
-      const totalLeaves = rockSpots.length * 6;
-      const leavesInst = new THREE.InstancedMesh(leafBladeGeo, leafSunMat, totalLeaves);
+      // Curved Arched Multi-Blade Ferns & Tropical Hibiscus/Orchid Clusters
+      const fernBladeGeo = this.createCurvedLeafGeometry(1.75, 0.62);
+      const totalLeaves = rockSpots.length * 7;
+      const leavesInst = new THREE.InstancedMesh(fernBladeGeo, leafVeinedMat, totalLeaves);
+      const flowerPetalGeo = new THREE.ConeGeometry(0.24, 0.32, 6);
+      const flowerMat = new THREE.MeshStandardMaterial({
+        color: 0xffffff,
+        emissive: 0x3f1020,
+        emissiveIntensity: 0.35,
+        roughness: 0.42,
+      });
+      const flowerInst = new THREE.InstancedMesh(flowerPetalGeo, flowerMat, rockSpots.length * 2);
+      const flowerColors = [0xf43f5e, 0xfacc15, 0xe879f9, 0xfb923c];
+
       let lIdx = 0;
+      let flwIdx = 0;
       for (let i = 0; i < rockSpots.length; i++) {
         const [rx, ry, rz, rs] = rockSpots[i];
-        const px = rx + (i % 2 === 0 ? 0.95 : -0.95) * rs;
-        const pz = rz + 0.45 * rs;
-        for (let f = 0; f < 6; f++) {
-          const ang = (f / 6) * Math.PI * 2 + i * 0.5;
-          dummy.position.set(px + Math.cos(ang) * 0.42 * rs, ry + 0.58 * rs, pz + Math.sin(ang) * 0.42 * rs);
-          dummy.rotation.set(0, -ang, -0.78);
-          dummy.scale.set(rs, rs * (0.85 + (f % 2) * 0.24), rs * 0.22);
+        const px = rx + (i % 2 === 0 ? 0.92 : -0.92) * rs;
+        const pz = rz + 0.42 * rs;
+        for (let f = 0; f < 7; f++) {
+          const ang = (f / 7) * Math.PI * 2 + i * 0.5;
+          dummy.position.set(px + Math.cos(ang) * 0.25 * rs, ry + 0.25 * rs, pz + Math.sin(ang) * 0.25 * rs);
+          dummy.rotation.set(0.68, ang, 0);
+          dummy.scale.set(rs, rs * (0.85 + (f % 3) * 0.16), rs);
           dummy.updateMatrix();
           leavesInst.setMatrixAt(lIdx, dummy.matrix);
-          _color.setHex(f % 2 === 0 ? 0x52992c : 0x346e1d);
+          _color.setHex(f % 3 === 0 ? 0x84cc16 : f % 3 === 1 ? 0x4ade80 : 0x22c55e);
           leavesInst.setColorAt(lIdx, _color);
           lIdx++;
         }
-      }
-      leavesInst.instanceMatrix.needsUpdate = true;
-      if (leavesInst.instanceColor) leavesInst.instanceColor.needsUpdate = true;
-      leavesInst.computeBoundingSphere();
-      this.levelGroup.add(leavesInst);
 
-      // Level 1 vista: weathered wooden & rope suspension bridge across distant ravine
-      if (level.index === 0) {
-        const bridgeGroup = new THREE.Group();
-        bridgeGroup.position.set(22, 10, -118);
-        const span = 26;
-        const ropeCurve = new THREE.CatmullRomCurve3([
-          new THREE.Vector3(-span / 2, 2.2, 0),
-          new THREE.Vector3(0, -1.6, 0),
-          new THREE.Vector3(span / 2, 2.2, 0),
-        ]);
-        const ropeMat = new THREE.MeshStandardMaterial({ map: this.textures.barkTexture, roughness: 0.9 });
-        const ropeTop = new THREE.Mesh(new THREE.TubeGeometry(ropeCurve, 16, 0.14, 5, false), ropeMat);
-        const ropeLow = ropeTop.clone();
-        ropeLow.position.y = -1.6;
-        bridgeGroup.add(ropeTop, ropeLow);
-        for (let s = -4; s <= 4; s++) {
-          const slat = new THREE.Mesh(new THREE.BoxGeometry(0.18, 1.6, 0.25), ropeMat);
-          const x = s * 2.4;
-          const sag = (1 - (x / (span / 2)) ** 2) * -1.9;
-          slat.position.set(x, -0.7 + sag * 0.5, 0);
-          bridgeGroup.add(slat);
+        for (let fl = 0; fl < 2; fl++) {
+          dummy.position.set(px + (fl === 0 ? 0.28 : -0.3) * rs, ry + 0.85 * rs, pz + (fl === 0 ? 0.25 : -0.22) * rs);
+          dummy.rotation.set(Math.PI, i + fl, 0.2);
+          dummy.scale.setScalar(rs * 1.15);
+          dummy.updateMatrix();
+          flowerInst.setMatrixAt(flwIdx, dummy.matrix);
+          _color.setHex(flowerColors[(i + fl) % flowerColors.length]);
+          flowerInst.setColorAt(flwIdx, _color);
+          flwIdx++;
         }
-        this.levelGroup.add(bridgeGroup);
+      }
+      for (const im of [leavesInst, flowerInst]) {
+        im.instanceMatrix.needsUpdate = true;
+        if (im.instanceColor) im.instanceColor.needsUpdate = true;
+        im.computeBoundingSphere();
+      }
+      this.levelGroup.add(leavesInst, flowerInst);
+
+      // Floating Water Lily Pads & Pink Lotus Blooms across the Emerald River
+      const padGeo = new THREE.CylinderGeometry(1.15, 1.15, 0.08, 12);
+      const padMat = new THREE.MeshStandardMaterial({ color: 0x22c55e, roughness: 0.7 });
+      const lotusGeo = new THREE.ConeGeometry(0.32, 0.36, 6);
+      const lotusMat = new THREE.MeshStandardMaterial({ color: 0xf472b6, emissive: 0xdb2777, emissiveIntensity: 0.42 });
+      const padSpots: [number, number][] = [
+        [-6, -6], [7, -14], [-10, -24], [12, -32], [20, -48],
+        [34, -56], [30, -76], [24, -92], [64, -36], [70, -82],
+      ];
+      const padInst = new THREE.InstancedMesh(padGeo, padMat, padSpots.length);
+      const lotusInst = new THREE.InstancedMesh(lotusGeo, lotusMat, padSpots.length);
+      for (let i = 0; i < padSpots.length; i++) {
+        const [lx, lz] = padSpots[i];
+        const sc = 0.82 + (i % 3) * 0.24;
+        dummy.position.set(lx, level.theme.hazardFloorY + 0.06, lz);
+        dummy.rotation.set(0, i * 0.85, 0);
+        dummy.scale.set(sc, 1, sc);
+        dummy.updateMatrix();
+        padInst.setMatrixAt(i, dummy.matrix);
+
+        dummy.position.set(lx + 0.15, level.theme.hazardFloorY + 0.24, lz);
+        dummy.rotation.set(Math.PI, i, 0);
+        dummy.scale.setScalar(sc);
+        dummy.updateMatrix();
+        lotusInst.setMatrixAt(i, dummy.matrix);
+      }
+      padInst.instanceMatrix.needsUpdate = true;
+      lotusInst.instanceMatrix.needsUpdate = true;
+      padInst.computeBoundingSphere();
+      lotusInst.computeBoundingSphere();
+      this.levelGroup.add(padInst, lotusInst);
+
+      // 8. VOLUMETRIC GOLDEN SUNBEAMS, LOW VALLEY MIST, FALLING CURVED LEAVES & FIREFLIES
+      const beamMat = new THREE.MeshBasicMaterial({
+        color: 0xfef08a,
+        transparent: true,
+        opacity: this.isSoftwareGl ? 0.048 : 0.072,
+        blending: THREE.AdditiveBlending,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+      });
+      const beamGeo = new THREE.ConeGeometry(5.2, 38, 12, 1, true);
+      const beamCoords: [number, number, number][] = [
+        [0, 14, -4],
+        [-6, 15, -20],
+        [24, 16, -38],
+        [50, 19, -52],
+        [50, 22, -88],
+        [50, 26, -112],
+      ];
+      for (const [bx, by, bz] of beamCoords) {
+        const beam = new THREE.Mesh(beamGeo, beamMat);
+        beam.position.set(bx, by, bz);
+        beam.rotation.set(0.18, 0, -0.32);
+        this.levelGroup.add(beam);
       }
 
-      // Level 4 (Templo del Mono): ancient stone temple arches
-      if (level.index === 3) {
-        const archMat = new THREE.MeshStandardMaterial({
-          map: this.textures.climbStone,
-          bumpMap: this.textures.stoneBump,
-          bumpScale: 0.16,
-          roughness: 0.88,
+      // Soft Valley Atmospheric Mist Veils in Deep Ravine Zones
+      const mistPlaneMat = new THREE.MeshBasicMaterial({
+        color: 0xd1fae5,
+        transparent: true,
+        opacity: this.isSoftwareGl ? 0.08 : 0.12,
+        depthWrite: false,
+        side: THREE.DoubleSide,
+      });
+      for (const [mx, my, mz] of [
+        [-14, -8.5, -52],
+        [26, -8.0, -76],
+        [52, -7.5, -108],
+      ] as [number, number, number][]) {
+        const mist = new THREE.Mesh(new THREE.PlaneGeometry(58, 42), mistPlaneMat);
+        mist.rotation.x = -Math.PI / 2;
+        mist.position.set(mx, my, mz);
+        this.levelGroup.add(mist);
+      }
+
+      // Falling Curved Fluttering Rainforest Leaves (animated in tick via templeLeafMesh)
+      const leafCount = this.isSoftwareGl ? 28 : 68;
+      const fallLeafGeo = this.createCurvedLeafGeometry(0.56, 0.28);
+      const fallLeafMat = new THREE.MeshStandardMaterial({
+        map: this.textures.jungleLeafTex,
+        color: 0xffffff,
+        roughness: 0.62,
+        side: THREE.DoubleSide,
+      });
+      const fallLeaves = new THREE.InstancedMesh(fallLeafGeo, fallLeafMat, leafCount);
+      fallLeaves.frustumCulled = false;
+      fallLeaves.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+      this.templeLeafStates = [];
+      for (let i = 0; i < leafCount; i++) {
+        this.templeLeafStates.push({
+          x: -18 + Math.random() * 88,
+          y: Math.random() * 24 + 2,
+          z: 8 - Math.random() * 135,
+          fallSpeed: 0.9 + Math.random() * 0.95,
+          swayPhase: Math.random() * Math.PI * 2,
+          rotSpeed: 1.4 + Math.random() * 2.1,
         });
-        for (let a = 0; a < 5; a++) {
-          const arch = new THREE.Group();
-          arch.position.set(a % 2 === 0 ? -24 : 26, -6, -18 - a * 22);
-          arch.rotation.y = (a % 2 === 0 ? 1 : -1) * 0.35;
-          const pGeo = new THREE.BoxGeometry(2.2, 13, 2.2);
-          const pL = new THREE.Mesh(pGeo, archMat);
-          pL.position.set(-4.2, 6.5, 0);
-          const pR = new THREE.Mesh(pGeo, archMat);
-          pR.position.set(4.2, 6.5, 0);
-          const lintel = new THREE.Mesh(new THREE.BoxGeometry(11.6, 2.0, 2.6), archMat);
-          lintel.position.set(0, 13.2, 0);
-          arch.add(pL, pR, lintel);
-          this.levelGroup.add(arch);
-        }
+        _color.setHex(i % 3 === 0 ? 0x84cc16 : i % 3 === 1 ? 0x4ade80 : 0xfacc15);
+        fallLeaves.setColorAt(i, _color);
       }
+      if (fallLeaves.instanceColor) fallLeaves.instanceColor.needsUpdate = true;
+      fallLeaves.computeBoundingSphere();
+      this.templeLeafMesh = fallLeaves;
+      this.levelGroup.add(fallLeaves);
+
+      // Luminous Jungle Fireflies (animated in tick via templeFireflyTime)
+      const ffCount = this.isSoftwareGl ? 36 : 86;
+      const ffPos = new Float32Array(ffCount * 3);
+      const ffPhase = new Float32Array(ffCount);
+      for (let i = 0; i < ffCount; i++) {
+        ffPos[i * 3] = -20 + Math.random() * 92;
+        ffPos[i * 3 + 1] = level.theme.hazardFloorY + 4 + Math.random() * 22;
+        ffPos[i * 3 + 2] = 6 - Math.random() * 130;
+        ffPhase[i] = Math.random() * Math.PI * 2;
+      }
+      const ffGeo = new THREE.BufferGeometry();
+      ffGeo.setAttribute('position', new THREE.BufferAttribute(ffPos, 3));
+      ffGeo.setAttribute('aPhase', new THREE.BufferAttribute(ffPhase, 1));
+      const ffTime = { value: 0 };
+      this.templeFireflyTime = ffTime;
+      const ffMat = new THREE.ShaderMaterial({
+        uniforms: {
+          uTime: ffTime,
+        },
+        vertexShader: `
+          attribute float aPhase;
+          uniform float uTime;
+          varying float vGlow;
+          void main() {
+            vec3 p = position;
+            p.x += sin(uTime * 0.95 + aPhase) * 1.45;
+            p.y += sin(uTime * 1.55 + aPhase * 1.7) * 0.9;
+            p.z += cos(uTime * 0.85 + aPhase * 1.2) * 1.45;
+            vec4 mv = modelViewMatrix * vec4(p, 1.0);
+            gl_PointSize = clamp(128.0 / max(1.0, -mv.z), 3.0, 13.0);
+            vGlow = 0.4 + 0.6 * sin(uTime * 3.1 + aPhase * 2.0);
+            gl_Position = projectionMatrix * mv;
+          }
+        `,
+        fragmentShader: `
+          varying float vGlow;
+          void main() {
+            float d = length(gl_PointCoord - vec2(0.5));
+            if (d > 0.5) discard;
+            float a = smoothstep(0.5, 0.05, d) * vGlow;
+            gl_FragColor = vec4(0.68, 1.0, 0.48, a * 0.92);
+          }
+        `,
+        transparent: true,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+      });
+      const fireflies = new THREE.Points(ffGeo, ffMat);
+      fireflies.frustumCulled = false;
+      this.levelGroup.add(fireflies);
     } else if (biome === 'desert') {
       // Rolling wind-carved sand dune horizon ridges
       this.addHorizonMountainRing(0, -140, level.theme.hazardFloorY - 1, 120, 220, 38, 0xb87533, 0xe8b66b, 3.1, 0.88);
@@ -3443,21 +4065,25 @@ export class GameEngine {
           ? 0.88
           : theme.biome === 'ice'
             ? 0.08
-            : theme.biome === 'jungle' || theme.biome === 'temple'
-              ? 0.11
-              : theme.biome === 'nebula'
-                ? 0.78
-                : 0.35,
+            : theme.biome === 'jungle'
+              ? 0.08
+              : theme.biome === 'temple'
+                ? 0.11
+                : theme.biome === 'nebula'
+                  ? 0.78
+                  : 0.35,
       metalness:
         theme.biome === 'ice'
           ? 0.35
-          : theme.biome === 'jungle' || theme.biome === 'temple'
-            ? 0.28
-            : theme.biome === 'nebula'
-              ? 0.12
-              : 0.06,
+          : theme.biome === 'jungle'
+            ? 0.34
+            : theme.biome === 'temple'
+              ? 0.28
+              : theme.biome === 'nebula'
+                ? 0.12
+                : 0.06,
       envMapIntensity:
-        theme.biome === 'ice' ? 1.5 : theme.biome === 'jungle' || theme.biome === 'temple' ? 1.45 : 0.9,
+        theme.biome === 'ice' ? 1.5 : theme.biome === 'jungle' ? 1.6 : theme.biome === 'temple' ? 1.45 : 0.9,
       emissiveMap:
         theme.biome === 'volcanic'
           ? this.textures.lavaEmissive
@@ -3479,9 +4105,11 @@ export class GameEngine {
               ? 0xe0f2fe
               : theme.biome === 'temple'
                 ? 0xa7f3d0
-                : 0x7dd3fc,
-        fresnelStrength: theme.biome === 'volcanic' ? 0.36 : 0.56,
-        foamStrength: theme.biome === 'volcanic' ? 0.08 : 0.22,
+                : theme.biome === 'jungle'
+                  ? 0x99f6e4
+                  : 0x7dd3fc,
+        fresnelStrength: theme.biome === 'volcanic' ? 0.36 : theme.biome === 'jungle' ? 0.64 : 0.56,
+        foamStrength: theme.biome === 'volcanic' ? 0.08 : theme.biome === 'jungle' ? 0.28 : 0.22,
       });
     }
     this.hazardSeaMesh = new THREE.Mesh(seaGeo, seaMat);
@@ -3501,7 +4129,8 @@ export class GameEngine {
         pDef,
         this.textures,
         (d) => this.createPlatformMaterial(d),
-        this.isSoftwareGl
+        this.isSoftwareGl,
+        { emeraldJungleV2: level.index === 0 }
       );
       if (startsInactive || pDef.kind === 'disappearing') {
         const list = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
@@ -4473,6 +5102,13 @@ export class GameEngine {
           );
           break;
         }
+      }
+    }
+    if (this.jungleArchRings.length > 0) {
+      for (let i = 0; i < this.jungleArchRings.length; i++) {
+        const ring = this.jungleArchRings[i];
+        ring.rotation.z = this.totalTime * (i % 2 === 0 ? 0.55 : -0.55);
+        ring.rotation.y = Math.sin(this.totalTime * 0.9 + i) * 0.18;
       }
     }
 

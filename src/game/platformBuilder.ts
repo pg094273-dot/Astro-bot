@@ -52,15 +52,106 @@ function createRoundedSlabGeometry(w: number, h: number, d: number, bevel = 0.14
   return geo;
 }
 
+function hashSeed(id: string): number {
+  let h = 17;
+  for (let i = 0; i < id.length; i++) {
+    h = (h * 31 + id.charCodeAt(i)) % 997;
+  }
+  return h * 0.13;
+}
+
+function applyPlanarTopSideUVs(geo: THREE.BufferGeometry, w: number, h: number, d: number) {
+  const pos = geo.attributes.position;
+  const nrm = geo.attributes.normal;
+  const uv = new Float32Array(pos.count * 2);
+  for (let i = 0; i < pos.count; i++) {
+    const px = pos.getX(i);
+    const py = pos.getY(i);
+    const pz = pos.getZ(i);
+    const ny = Math.abs(nrm.getY(i));
+    if (ny > 0.65) {
+      uv[i * 2] = px / Math.max(1, w) + 0.5;
+      uv[i * 2 + 1] = pz / Math.max(1, d) + 0.5;
+    } else {
+      const horiz = Math.abs(nrm.getX(i)) > Math.abs(nrm.getZ(i)) ? pz : px;
+      uv[i * 2] = horiz / Math.max(1, Math.max(w, d)) + 0.5;
+      uv[i * 2 + 1] = py / Math.max(1, h) + 0.5;
+    }
+  }
+  geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
+}
+
+function createOrganicIslandGeometry(w: number, h: number, d: number, seed: number): THREE.BufferGeometry {
+  const hw = w * 0.5;
+  const hd = d * 0.5;
+  const segs = 28;
+  const shape = new THREE.Shape();
+
+  for (let i = 0; i <= segs; i++) {
+    const t = (i / segs) * Math.PI * 2;
+    const cx = Math.cos(t);
+    const cz = Math.sin(t);
+    // Superellipse exponent ~3.4 keeps rectangular walk coverage while curving corners naturally
+    const sx = Math.sign(cx) * Math.pow(Math.abs(cx), 0.58);
+    const sz = Math.sign(cz) * Math.pow(Math.abs(cz), 0.58);
+    const lobe =
+      1.0 +
+      0.045 * Math.sin(t * 3 + seed) +
+      0.032 * Math.cos(t * 5 - seed * 1.4) +
+      0.02 * Math.sin(t * 7 + seed * 0.7);
+    const px = sx * hw * lobe;
+    const pz = sz * hd * lobe;
+    if (i === 0) shape.moveTo(px, pz);
+    else shape.lineTo(px, pz);
+  }
+
+  const bevel = Math.min(0.24, Math.min(w, d) * 0.08);
+  const depth = Math.max(0.12, h - bevel * 0.7);
+  const geo = new THREE.ExtrudeGeometry(shape, {
+    depth,
+    bevelEnabled: true,
+    bevelThickness: bevel * 0.42,
+    bevelSize: bevel * 0.48,
+    bevelSegments: 2,
+    curveSegments: 3,
+  });
+  geo.rotateX(-Math.PI / 2);
+  geo.center();
+  applyPlanarTopSideUVs(geo, w, h, d);
+  return geo;
+}
+
+function createCraggyUnderbellyGeo(w: number, d: number, depth: number, seed: number): THREE.BufferGeometry {
+  const minR = Math.min(w, d) * 0.46;
+  const geo = new THREE.CylinderGeometry(minR, minR * 0.22, depth, 14, 4, false);
+  const pos = geo.attributes.position;
+  for (let i = 0; i < pos.count; i++) {
+    const vx = pos.getX(i);
+    const vy = pos.getY(i);
+    const vz = pos.getZ(i);
+    const yNorm = (vy + depth * 0.5) / depth; // 0 at tip, 1 at top
+    const strata =
+      1.0 +
+      0.16 * Math.sin(vy * 2.1 + seed) +
+      0.14 * Math.cos(Math.atan2(vz, vx) * 4 + seed * 1.3) * (1.1 - yNorm * 0.5);
+    pos.setXYZ(i, vx * strata * (w / Math.min(w, d)), vy, vz * strata * (d / Math.min(w, d)));
+  }
+  geo.computeVertexNormals();
+  return geo;
+}
+
 export function buildStyledPlatformMesh(
   def: PlatformDef,
   textures: ProceduralTextures,
   createBaseMaterial: (def: PlatformDef) => THREE.Material | THREE.Material[],
-  isSoftwareGl: boolean
+  isSoftwareGl: boolean,
+  options?: { emeraldJungleV2?: boolean }
 ): THREE.Mesh {
   const [w, h, d] = def.size;
   const baseMat = createBaseMaterial(def);
   const style = def.style ?? 'tech';
+  const jungleV2 = Boolean(options?.emeraldJungleV2);
+  const seed = hashSeed(def.id);
 
   // Use a sculpted composite Mesh as the primary entity (Engine still reads mesh.position & mesh.material cleanly)
   const useDisc = def.kind === 'rotating' || def.shape === 'disc' || def.shape === 'pillar';
@@ -71,14 +162,25 @@ export function buildStyledPlatformMesh(
         h,
         def.shape === 'pillar' ? 14 : 24
       )
-    : createRoundedSlabGeometry(w, h, d, Math.min(0.26, Math.min(w, d) * 0.09));
+    : jungleV2 && (def.shape === 'organic' || style === 'jungle') && def.kind !== 'glass' && def.kind !== 'disappearing'
+      ? createOrganicIslandGeometry(w, h, d, seed)
+      : createRoundedSlabGeometry(w, h, d, Math.min(0.26, Math.min(w, d) * 0.09));
 
   // If baseMat is a 6-face BoxGeometry material array, adapt gracefully to Extrude/Cylinder (single or dual material)
   const resolvedMat = Array.isArray(baseMat)
     ? new THREE.MeshStandardMaterial({
-        map: (baseMat[2] as THREE.MeshStandardMaterial)?.map ?? null,
-        bumpMap: (baseMat[2] as THREE.MeshStandardMaterial)?.bumpMap ?? null,
-        bumpScale: (baseMat[2] as THREE.MeshStandardMaterial)?.bumpScale ?? 0.08,
+        map:
+          jungleV2 && (def.shape === 'ruin' || style === 'temple')
+            ? textures.jungleRuinStone
+            : ((baseMat[2] as THREE.MeshStandardMaterial)?.map ?? null),
+        bumpMap:
+          jungleV2 && (def.shape === 'ruin' || style === 'temple')
+            ? textures.jungleRuinBump
+            : ((baseMat[2] as THREE.MeshStandardMaterial)?.bumpMap ?? null),
+        bumpScale:
+          jungleV2 && (def.shape === 'ruin' || style === 'temple')
+            ? 0.16
+            : ((baseMat[2] as THREE.MeshStandardMaterial)?.bumpScale ?? 0.08),
         roughnessMap: (baseMat[2] as THREE.MeshStandardMaterial)?.roughnessMap ?? textures.stoneRoughness,
         roughness: (baseMat[2] as THREE.MeshStandardMaterial)?.roughness ?? 0.72,
         metalness: (baseMat[2] as THREE.MeshStandardMaterial)?.metalness ?? 0.14,
@@ -100,26 +202,35 @@ export function buildStyledPlatformMesh(
 
   // Tapered organic rocky/architectural under-skirt & carved silhouettes
   if ((w >= 2.6 && d >= 2.6) && def.kind !== 'glass' && def.kind !== 'disappearing') {
-    const skirtMat = Array.isArray(baseMat)
-      ? (baseMat[0] as THREE.MeshStandardMaterial).clone()
-      : new THREE.MeshStandardMaterial({
-          map:
-            style === 'jungle'
-              ? textures.jungleSide
-              : style === 'desert'
-                ? textures.desertSide
-                : style === 'ice'
-                  ? textures.iceSide
-                  : style === 'volcanic'
-                    ? textures.volcanicSide
-                    : style === 'temple'
-                      ? textures.templeSide
-                      : style === 'nebula'
-                        ? textures.nebulaSide
-                        : textures.climbStone,
-          roughness: 0.88,
-          metalness: style === 'nebula' || style === 'tech' ? 0.35 : 0.08,
-        });
+    const skirtMat = jungleV2
+      ? new THREE.MeshStandardMaterial({
+          map: def.shape === 'ruin' || style === 'temple' ? textures.jungleRuinStone : textures.jungleSide,
+          bumpMap: def.shape === 'ruin' || style === 'temple' ? textures.jungleRuinBump : textures.jungleSideBump,
+          bumpScale: 0.18,
+          roughnessMap: textures.stoneRoughness,
+          roughness: 0.9,
+          metalness: 0.03,
+        })
+      : Array.isArray(baseMat)
+        ? (baseMat[0] as THREE.MeshStandardMaterial).clone()
+        : new THREE.MeshStandardMaterial({
+            map:
+              style === 'jungle'
+                ? textures.jungleSide
+                : style === 'desert'
+                  ? textures.desertSide
+                  : style === 'ice'
+                    ? textures.iceSide
+                    : style === 'volcanic'
+                      ? textures.volcanicSide
+                      : style === 'temple'
+                        ? textures.templeSide
+                        : style === 'nebula'
+                          ? textures.nebulaSide
+                          : textures.climbStone,
+            roughness: 0.88,
+            metalness: style === 'nebula' || style === 'tech' ? 0.35 : 0.08,
+          });
 
     if (useDisc) {
       const r = Math.max(w, d) * 0.44;
@@ -229,33 +340,79 @@ export function buildStyledPlatformMesh(
       plinth.position.y = -h * 0.35;
       mesh.add(plinth);
 
-      const underSkirt = new THREE.Mesh(
-        new THREE.CylinderGeometry(Math.min(w, d) * 0.44, Math.min(w, d) * 0.24, 2.4, 8),
-        skirtMat
-      );
-      underSkirt.scale.set(w / Math.min(w, d), 1, d / Math.min(w, d));
-      underSkirt.position.y = -h * 0.5 - 1.1;
-      underSkirt.rotation.y = Math.PI / 8;
-      mesh.add(underSkirt);
-
-      if (w >= 6 && d >= 6) {
-        const capMat = new THREE.MeshStandardMaterial({
-          color: 0xd97706,
-          emissive: 0x78350f,
-          emissiveIntensity: 0.35,
-          metalness: 0.6,
-          roughness: 0.35,
+      if (jungleV2) {
+        const rockMat = new THREE.MeshStandardMaterial({
+          map: textures.jungleRuinStone,
+          bumpMap: textures.jungleRuinBump,
+          bumpScale: 0.2,
+          roughness: 0.9,
         });
-        for (const sx of [-1, 1]) {
-          for (const sz of [-1, 1]) {
-            const bollard = new THREE.Mesh(new THREE.BoxGeometry(0.68, 0.85, 0.68), skirtMat);
-            bollard.position.set(sx * (w * 0.44), h * 0.5 + 0.4, sz * (d * 0.44));
-            bollard.castShadow = !isSoftwareGl;
-            mesh.add(bollard);
+        const cragDepth = def.id === 'j-high-alcove' ? 18.5 : def.kind === 'moving' ? 1.8 : 4.2;
+        if (def.id === 'j-high-alcove') {
+          const towerCol = new THREE.Mesh(
+            new THREE.CylinderGeometry(2.15, 2.85, cragDepth, 12),
+            rockMat
+          );
+          towerCol.position.y = -h * 0.5 - cragDepth * 0.5;
+          mesh.add(towerCol);
+        } else {
+          const crag = new THREE.Mesh(createCraggyUnderbellyGeo(w * 0.95, d * 0.95, cragDepth, seed), rockMat);
+          crag.position.y = -h * 0.46 - cragDepth * 0.48;
+          mesh.add(crag);
+        }
 
-            const cap = new THREE.Mesh(new THREE.OctahedronGeometry(0.24, 0), capMat);
-            cap.position.set(sx * (w * 0.44), h * 0.5 + 0.98, sz * (d * 0.44));
+        // Fractured carved columns & creeping roots on non-moving outer ruin corners
+        if (def.kind !== 'moving' && w >= 6 && d >= 5.5) {
+          const mossMat = new THREE.MeshStandardMaterial({
+            map: textures.jungleGrass,
+            bumpMap: textures.grassBump,
+            bumpScale: 0.08,
+            roughness: 0.88,
+          });
+          const corners: [number, number, number][] = [
+            [-1, -1, 1.45],
+            [1, -1, 1.05],
+          ];
+          for (const [sx, sz, colH] of corners) {
+            const col = new THREE.Mesh(new THREE.CylinderGeometry(0.36, 0.44, colH, 10), rockMat);
+            col.position.set(sx * (w * 0.44), h * 0.5 + colH * 0.45, sz * (d * 0.44));
+            col.castShadow = !isSoftwareGl;
+            mesh.add(col);
+
+            const cap = new THREE.Mesh(new THREE.CylinderGeometry(0.46, 0.4, 0.22, 10), mossMat);
+            cap.position.set(sx * (w * 0.44), h * 0.5 + colH * 0.9, sz * (d * 0.44));
             mesh.add(cap);
+          }
+        }
+      } else {
+        const underSkirt = new THREE.Mesh(
+          new THREE.CylinderGeometry(Math.min(w, d) * 0.44, Math.min(w, d) * 0.24, 2.4, 8),
+          skirtMat
+        );
+        underSkirt.scale.set(w / Math.min(w, d), 1, d / Math.min(w, d));
+        underSkirt.position.y = -h * 0.5 - 1.1;
+        underSkirt.rotation.y = Math.PI / 8;
+        mesh.add(underSkirt);
+
+        if (w >= 6 && d >= 6) {
+          const capMat = new THREE.MeshStandardMaterial({
+            color: 0xd97706,
+            emissive: 0x78350f,
+            emissiveIntensity: 0.35,
+            metalness: 0.6,
+            roughness: 0.35,
+          });
+          for (const sx of [-1, 1]) {
+            for (const sz of [-1, 1]) {
+              const bollard = new THREE.Mesh(new THREE.BoxGeometry(0.68, 0.85, 0.68), skirtMat);
+              bollard.position.set(sx * (w * 0.44), h * 0.5 + 0.4, sz * (d * 0.44));
+              bollard.castShadow = !isSoftwareGl;
+              mesh.add(bollard);
+
+              const cap = new THREE.Mesh(new THREE.OctahedronGeometry(0.24, 0), capMat);
+              cap.position.set(sx * (w * 0.44), h * 0.5 + 0.98, sz * (d * 0.44));
+              mesh.add(cap);
+            }
           }
         }
       }
@@ -267,31 +424,105 @@ export function buildStyledPlatformMesh(
       style === 'volcanic' ||
       style === 'temple'
     ) {
-      const skirtH = Math.min(3.2, Math.max(1.2, h * 1.45));
-      const skirtGeo = new THREE.CylinderGeometry(
-        Math.min(w, d) * 0.46,
-        Math.min(w, d) * 0.2,
-        skirtH,
-        8
-      );
-      const skirt = new THREE.Mesh(skirtGeo, skirtMat);
-      skirt.scale.set(w / Math.min(w, d), 1, d / Math.min(w, d));
-      skirt.position.y = -h * 0.42 - skirtH * 0.48;
-      skirt.rotation.y = Math.PI / 8;
-      mesh.add(skirt);
+      if (jungleV2) {
+        const isLargeIsland = w >= 8 && d >= 8;
+        const skirtH = isLargeIsland ? 6.2 : 3.4;
+        const cragGeo = createCraggyUnderbellyGeo(w, d, skirtH, seed);
+        const cragRockMat = new THREE.MeshStandardMaterial({
+          map: textures.jungleRuinStone,
+          bumpMap: textures.jungleRuinBump,
+          bumpScale: 0.2,
+          color: 0x8f8a74,
+          roughness: 0.92,
+        });
+        const skirt = new THREE.Mesh(cragGeo, skirtMat);
+        skirt.position.y = -h * 0.4 - skirtH * 0.46;
+        mesh.add(skirt);
 
-      // Subtle glowing orbital stabilizer core under floating landmasses
-      if (style === 'nebula' || style === 'tech' || style === 'gold') {
-        const core = new THREE.Mesh(
-          new THREE.OctahedronGeometry(Math.min(w, d) * 0.14, 0),
-          new THREE.MeshStandardMaterial({
-            color: 0x38bdf8,
-            emissive: 0x0ea5e9,
-            emissiveIntensity: 1.8,
-          })
+        // Deep stratified cliff spur anchoring big jungle clearings
+        const lowerSpur = new THREE.Mesh(
+          createCraggyUnderbellyGeo(w * 0.68, d * 0.68, skirtH * 0.95, seed + 2.3),
+          cragRockMat
         );
-        core.position.y = -h * 0.5 - skirtH * 0.92;
-        mesh.add(core);
+        lowerSpur.position.y = -h * 0.45 - skirtH * 0.9;
+        mesh.add(lowerSpur);
+
+        // Gnarled roots wrapping visibly around the platform perimeter & dangling tendrils beneath
+        const rootMat = new THREE.MeshStandardMaterial({
+          map: textures.barkTexture,
+          bumpMap: textures.barkBump,
+          bumpScale: 0.16,
+          roughness: 0.88,
+        });
+        const rootCount = isLargeIsland ? 6 : 4;
+        for (let r = 0; r < rootCount; r++) {
+          const ang = (r / rootCount) * Math.PI * 2 + seed * 0.5;
+          const rx = Math.cos(ang) * (w * 0.48);
+          const rz = Math.sin(ang) * (d * 0.48);
+          const rootCurve = new THREE.CatmullRomCurve3([
+            new THREE.Vector3(rx * 0.86, h * 0.44, rz * 0.86),
+            new THREE.Vector3(rx * 1.05, h * 0.1, rz * 1.05),
+            new THREE.Vector3(rx * 0.96, -h * 0.8, rz * 0.96),
+            new THREE.Vector3(rx * 0.72, -skirtH * 0.65, rz * 0.72),
+          ]);
+          const rootMesh = new THREE.Mesh(
+            new THREE.TubeGeometry(rootCurve, 8, isLargeIsland ? 0.28 : 0.19, 6, false),
+            rootMat
+          );
+          mesh.add(rootMesh);
+        }
+
+        // Flush weathered stone flagstones & mossy rim patches on main jungle clearings
+        if (isLargeIsland) {
+          const slabMat = new THREE.MeshStandardMaterial({
+            map: textures.jungleRuinStone,
+            bumpMap: textures.jungleRuinBump,
+            bumpScale: 0.14,
+            roughness: 0.88,
+            polygonOffset: true,
+            polygonOffsetFactor: -1,
+            polygonOffsetUnits: -1,
+          });
+          for (let s = 0; s < 5; s++) {
+            const sa = (s / 5) * Math.PI * 2 + seed;
+            const sr = Math.min(w, d) * 0.24;
+            const flagstone = new THREE.Mesh(
+              new THREE.CylinderGeometry(0.95 + (s % 2) * 0.35, 1.05 + (s % 2) * 0.35, 0.07, 6),
+              slabMat
+            );
+            flagstone.position.set(Math.cos(sa) * sr, h * 0.5 + 0.02, Math.sin(sa) * sr);
+            flagstone.rotation.y = sa;
+            flagstone.receiveShadow = true;
+            mesh.add(flagstone);
+          }
+        }
+      } else {
+        const skirtH = Math.min(3.2, Math.max(1.2, h * 1.45));
+        const skirtGeo = new THREE.CylinderGeometry(
+          Math.min(w, d) * 0.46,
+          Math.min(w, d) * 0.2,
+          skirtH,
+          8
+        );
+        const skirt = new THREE.Mesh(skirtGeo, skirtMat);
+        skirt.scale.set(w / Math.min(w, d), 1, d / Math.min(w, d));
+        skirt.position.y = -h * 0.42 - skirtH * 0.48;
+        skirt.rotation.y = Math.PI / 8;
+        mesh.add(skirt);
+
+        // Subtle glowing orbital stabilizer core under floating landmasses
+        if (style === 'nebula' || style === 'tech' || style === 'gold') {
+          const core = new THREE.Mesh(
+            new THREE.OctahedronGeometry(Math.min(w, d) * 0.14, 0),
+            new THREE.MeshStandardMaterial({
+              color: 0x38bdf8,
+              emissive: 0x0ea5e9,
+              emissiveIntensity: 1.8,
+            })
+          );
+          core.position.y = -h * 0.5 - skirtH * 0.92;
+          mesh.add(core);
+        }
       }
     }
   }
@@ -354,11 +585,30 @@ export function buildStyledPlatformMesh(
 
   // Linked hidden bridges start subtle holographic outline until switch/target activates them
   if (def.linkedTargetId || def.linkedSwitchId) {
-    const wire = new THREE.Mesh(
-      new THREE.BoxGeometry(w * 0.98, h * 0.96, d * 0.98),
-      new THREE.MeshBasicMaterial({ color: 0x38bdf8, wireframe: true, transparent: true, opacity: 0.35 })
-    );
-    mesh.add(wire);
+    if (jungleV2) {
+      const runeRibMat = new THREE.MeshStandardMaterial({
+        color: 0x34d399,
+        emissive: 0x0ea5e9,
+        emissiveIntensity: 1.5,
+        roughness: 0.2,
+      });
+      const alongZ = d >= w;
+      const span = alongZ ? d : w;
+      for (let i = -1; i <= 1; i++) {
+        const rib = new THREE.Mesh(
+          alongZ ? new THREE.BoxGeometry(w * 0.88, 0.14, 0.28) : new THREE.BoxGeometry(0.28, 0.14, d * 0.88),
+          runeRibMat
+        );
+        rib.position.set(alongZ ? 0 : i * (span * 0.3), -h * 0.44, alongZ ? i * (span * 0.3) : 0);
+        mesh.add(rib);
+      }
+    } else {
+      const wire = new THREE.Mesh(
+        new THREE.BoxGeometry(w * 0.98, h * 0.96, d * 0.98),
+        new THREE.MeshBasicMaterial({ color: 0x38bdf8, wireframe: true, transparent: true, opacity: 0.35 })
+      );
+      mesh.add(wire);
+    }
   }
 
   return mesh;
