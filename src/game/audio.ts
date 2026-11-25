@@ -372,12 +372,17 @@ class SoundEngine {
   private lastCoinTime = 0;
   private lastFootstepTime = 0;
 
-  // Lookahead Soundtrack Sequencer State
+  // Lookahead Soundtrack Sequencer & Jungle Ambient Soundscape State
+  private currentBiome: BiomeKind = 'jungle';
   private currentTheme: MusicTheme = 'title';
   private currentPhase: GamePhase = 'title';
   private schedulerId: number | null = null;
   private stepIndex = 0;
   private nextNoteTime = 0;
+  private jungleAmbGain: GainNode | null = null;
+  private jungleWindSrc: AudioBufferSourceNode | null = null;
+  private jungleWaterSrc: AudioBufferSourceNode | null = null;
+  private nextBirdTime = 0;
 
   private ensureCtx(): AudioContext | null {
     if (!this.ctx && typeof window !== 'undefined') {
@@ -467,6 +472,7 @@ class SoundEngine {
       this.masterGain.gain.setTargetAtTime(muted ? 0 : 0.88, this.ctx.currentTime, 0.03);
     }
     this.updateMusicBusGain();
+    this.updateJungleAmbienceState();
   }
 
   public isMuted(): boolean {
@@ -487,6 +493,7 @@ class SoundEngine {
     const nextTheme: MusicTheme =
       phase === 'title' ? 'title' : isBoss ? 'boss' : isRocket ? 'rocket' : biomeTheme;
     const themeChanged = nextTheme !== this.currentTheme;
+    this.currentBiome = biome;
     this.currentTheme = nextTheme;
     this.currentPhase = phase;
 
@@ -494,9 +501,128 @@ class SoundEngine {
       this.stepIndex = 0;
     }
     this.updateMusicBusGain();
+    this.updateJungleAmbienceState();
 
     if (this.ctx && this.schedulerId === null) {
       this.startSequencer();
+    }
+  }
+
+  private updateJungleAmbienceState() {
+    if (!this.ctx || !this.sfxBus) return;
+    const shouldPlay =
+      this.currentBiome === 'temple' && this.currentPhase === 'playing' && !this.muted;
+
+    if (shouldPlay && !this.jungleAmbGain && this.noiseBuffer) {
+      const now = this.ctx.currentTime;
+      const ambGain = this.ctx.createGain();
+      ambGain.gain.setValueAtTime(0.0001, now);
+      ambGain.gain.linearRampToValueAtTime(0.085, now + 1.1);
+      ambGain.connect(this.sfxBus);
+
+      // Gentle leafy canopy breeze
+      const windSrc = this.ctx.createBufferSource();
+      windSrc.buffer = this.noiseBuffer;
+      windSrc.loop = true;
+      const windBp = this.ctx.createBiquadFilter();
+      windBp.type = 'bandpass';
+      windBp.frequency.setValueAtTime(520, now);
+      windBp.Q.setValueAtTime(0.85, now);
+      const windLevel = this.ctx.createGain();
+      windLevel.gain.setValueAtTime(0.42, now);
+      windSrc.connect(windBp).connect(windLevel).connect(ambGain);
+      windSrc.start(now);
+
+      // Soft distant waterfall & river rush
+      const waterSrc = this.ctx.createBufferSource();
+      waterSrc.buffer = this.noiseBuffer;
+      waterSrc.loop = true;
+      const waterLp = this.ctx.createBiquadFilter();
+      waterLp.type = 'lowpass';
+      waterLp.frequency.setValueAtTime(420, now);
+      const waterLevel = this.ctx.createGain();
+      waterLevel.gain.setValueAtTime(0.55, now);
+      waterSrc.connect(waterLp).connect(waterLevel).connect(ambGain);
+      waterSrc.start(now);
+
+      this.jungleAmbGain = ambGain;
+      this.jungleWindSrc = windSrc;
+      this.jungleWaterSrc = waterSrc;
+      this.nextBirdTime = now + 2.2;
+    } else if (this.jungleAmbGain) {
+      this.jungleAmbGain.gain.setTargetAtTime(shouldPlay ? 0.085 : 0.0001, this.ctx.currentTime, 0.35);
+      if (!shouldPlay && this.currentBiome !== 'temple') {
+        this.stopJungleAmbience();
+      }
+    }
+  }
+
+  public stopJungleAmbience() {
+    if (!this.ctx || !this.jungleAmbGain) return;
+    const now = this.ctx.currentTime;
+    try {
+      this.jungleAmbGain.gain.cancelScheduledValues(now);
+      this.jungleAmbGain.gain.setValueAtTime(Math.max(0.0001, this.jungleAmbGain.gain.value), now);
+      this.jungleAmbGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.12);
+      this.jungleWindSrc?.stop(now + 0.14);
+      this.jungleWaterSrc?.stop(now + 0.14);
+    } catch {
+      // Ignore already stopped sources
+    }
+    this.jungleAmbGain = null;
+    this.jungleWindSrc = null;
+    this.jungleWaterSrc = null;
+  }
+
+  private playJungleBirdChirp(time: number) {
+    if (!this.ctx || !this.sfxBus || this.muted) return;
+    const callKind = Math.floor(Math.random() * 3);
+    if (callKind === 0) {
+      // Twin bright tropical songbird whistle
+      [0, 0.14].forEach((off, idx) => {
+        if (!this.ctx || !this.sfxBus) return;
+        const osc = this.ctx.createOscillator();
+        const gain = this.ctx.createGain();
+        osc.type = 'sine';
+        const f0 = 1950 + Math.random() * 450 + idx * 180;
+        osc.frequency.setValueAtTime(f0, time + off);
+        osc.frequency.exponentialRampToValueAtTime(f0 * 1.38, time + off + 0.06);
+        osc.frequency.exponentialRampToValueAtTime(f0 * 0.92, time + off + 0.12);
+        gain.gain.setValueAtTime(0.0008, time + off);
+        gain.gain.linearRampToValueAtTime(0.032, time + off + 0.02);
+        gain.gain.exponentialRampToValueAtTime(0.0005, time + off + 0.13);
+        osc.connect(gain).connect(this.sfxBus);
+        osc.start(time + off);
+        osc.stop(time + off + 0.14);
+      });
+    } else if (callKind === 1) {
+      // Soft canyon toucan / jungle bird trill
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      osc.type = 'triangle';
+      const f = 920 + Math.random() * 240;
+      osc.frequency.setValueAtTime(f, time);
+      osc.frequency.exponentialRampToValueAtTime(f * 0.72, time + 0.22);
+      gain.gain.setValueAtTime(0.0008, time);
+      gain.gain.linearRampToValueAtTime(0.028, time + 0.025);
+      gain.gain.exponentialRampToValueAtTime(0.0005, time + 0.24);
+      osc.connect(gain).connect(this.sfxBus);
+      osc.start(time);
+      osc.stop(time + 0.25);
+    } else {
+      // Gentle echoing forest flute-chirp
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      osc.type = 'sine';
+      const f = 1480 + Math.random() * 320;
+      osc.frequency.setValueAtTime(f, time);
+      osc.frequency.exponentialRampToValueAtTime(f * 1.18, time + 0.16);
+      gain.gain.setValueAtTime(0.0008, time);
+      gain.gain.linearRampToValueAtTime(0.024, time + 0.03);
+      gain.gain.exponentialRampToValueAtTime(0.0005, time + 0.18);
+      osc.connect(gain).connect(this.sfxBus);
+      osc.start(time);
+      osc.stop(time + 0.19);
     }
   }
 
@@ -516,6 +642,11 @@ class SoundEngine {
       if (this.currentPhase === 'victory' || this.currentPhase === 'gameover') {
         this.nextNoteTime = this.ctx.currentTime + 0.05;
         return;
+      }
+
+      if (this.currentBiome === 'temple' && this.currentPhase === 'playing' && this.ctx.currentTime >= this.nextBirdTime) {
+        this.playJungleBirdChirp(this.ctx.currentTime + 0.04);
+        this.nextBirdTime = this.ctx.currentTime + 3.6 + Math.random() * 4.2;
       }
 
       // Guard against tab-backgrounding catch-up bursts
@@ -539,6 +670,7 @@ class SoundEngine {
       clearInterval(this.schedulerId);
       this.schedulerId = null;
     }
+    this.stopJungleAmbience();
   }
 
   private scheduleStep(step: number, time: number, stepDur: number, arr: ThemeArrangement) {

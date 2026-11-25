@@ -35,16 +35,29 @@ import {
 } from './models';
 import {
   buildStyledPlatformMesh,
+  createDesertThermalUpdraftMesh,
   createEnemyProjectileMesh,
+  createNebulaGravityUpdraftMesh,
+  createParisWindUpdraftMesh,
+  createPolarWindUpdraftMesh,
   createRelicMesh,
   createSwitchMesh,
+  createTempleWindUpdraftMesh,
+  createVolcanicThermalUpdraftMesh,
   createWindZoneMesh,
 } from './platformBuilder';
 import {
   AmbientMoteSystem,
+  applyGlacialIceSheenShader,
+  applyMoltenLavaShader,
+  applyNebulaVoidShader,
+  applyShiftingSandShader,
   applyWaterSurfaceShader,
   applyWindSwayShader,
+  createAuroraCurtainMaterial,
   createBiomeAmbientParticles,
+  createHeatWaveShaderMaterial,
+  createHologramShaderMaterial,
 } from './shaders';
 import {
   createProceduralTextures,
@@ -400,12 +413,58 @@ export class GameEngine {
   private triggeredDiscoveryBanners = new Set<string>();
   private perspectiveMode: '3D' | '2D' | 'COHETE' | 'ALA DELTA' | 'BARCO' = '3D';
 
-  // Templo del Mono & Selva Esmeralda ambient jungle leaves, fireflies, waterfall mist pools & stellar arch rings
+  // Templo del Mono & Selva Esmeralda ambient jungle leaves, fireflies, waterfall mist pools, mist plumes & stellar arch rings
   private templeLeafMesh: THREE.InstancedMesh | null = null;
   private templeLeafStates: { x: number; y: number; z: number; fallSpeed: number; swayPhase: number; rotSpeed: number }[] = [];
   private templeFireflyTime: { value: number } | null = null;
   private templeWaterfallPools: THREE.Vector3[] = [];
+  private templeMistPlumes: { mesh: THREE.Mesh; baseY: number; baseScale: number; phase: number }[] = [];
+  private templeThermalRibbons: THREE.Object3D[] = [];
+  private templeRuneGlows: { mat: THREE.MeshStandardMaterial; phase: number }[] = [];
   private jungleArchRings: THREE.Mesh[] = [];
+
+  // Dunas del Desierto dynamic dust devils, hot-air geysers, sandstorm drift bands, solar astrolabes & thermal ribbons
+  private desertDustDevils: { group: THREE.Group; baseX: number; baseZ: number; phase: number; radius: number; speed: number }[] = [];
+  private desertGeysers: { group: THREE.Group; plume: THREE.Mesh; ring: THREE.Mesh; pos: THREE.Vector3; phase: number; period: number }[] = [];
+  private desertMechanismSpinners: THREE.Object3D[] = [];
+  private desertThermalRibbons: THREE.Object3D[] = [];
+  private desertSandstormBands: { mesh: THREE.Mesh; baseX: number; baseZ: number; phase: number; speed: number }[] = [];
+  private desertCollapsingMasonry: { mesh: THREE.Object3D; basePos: THREE.Vector3; phase: number; period: number }[] = [];
+
+  // Glaciar Aurora animated aurora ribbons, blizzards, cold vapor plumes, crystal conduits & polar updrafts
+  private iceThermalRibbons: THREE.Object3D[] = [];
+  private iceBlizzardBands: { mesh: THREE.Mesh; baseX: number; baseZ: number; phase: number; speed: number }[] = [];
+  private iceVaporPlumes: { mesh: THREE.Mesh; baseY: number; phase: number }[] = [];
+  private iceCrystalClusters: { mesh: THREE.Mesh; mat: THREE.MeshStandardMaterial; phase: number }[] = [];
+  private iceMechanismBeam: { mesh: THREE.Mesh; mat: THREE.MeshStandardMaterial } | null = null;
+
+  // Cañón Volcánico animated lava bubbles, geysers, smoke columns, falling rocks, ash, fissures & thermal updrafts
+  private volcanicThermalRibbons: THREE.Object3D[] = [];
+  private volcanicBubbles: { mesh: THREE.Mesh; pos: THREE.Vector3; phase: number; period: number; popped: boolean; maxR: number }[] = [];
+  private volcanicGeysers: { lavaJet: THREE.Mesh; steamPlume: THREE.Mesh; pos: THREE.Vector3; phase: number; period: number; kind: 'lava' | 'steam' }[] = [];
+  private volcanicSmokePuffs: { mesh: THREE.Mesh; baseX: number; baseY: number; baseZ: number; riseH: number; speed: number; phase: number; baseScale: number }[] = [];
+  private volcanicFallingRocks: { mesh: THREE.Mesh; startX: number; startY: number; startZ: number; phase: number; period: number; splashed: boolean; rotAxis: THREE.Vector3 }[] = [];
+  private volcanicAshMesh: THREE.InstancedMesh | null = null;
+  private volcanicAshStates: { x: number; y: number; z: number; fallSpeed: number; swayPhase: number; rotSpeed: number }[] = [];
+  private volcanicFissureGlows: { mat: THREE.MeshStandardMaterial; phase: number }[] = [];
+
+  // Ciudadela Nebulosa suspended skyscrapers, orbital astrolabes, volumetric clouds, void waterfalls & gravity updrafts
+  private nebulaSpinners: { obj: THREE.Object3D; speed: number; axis: 'x' | 'y' | 'z' }[] = [];
+  private nebulaFloatNodes: { obj: THREE.Object3D; baseY: number; amp: number; speed: number; phase: number }[] = [];
+  private nebulaCloudBanks: { group: THREE.Group; baseX: number; baseY: number; baseZ: number; spanX: number; speed: number; phase: number }[] = [];
+  private nebulaThermalRibbons: THREE.Object3D[] = [];
+  private nebulaWaterfallTex: THREE.CanvasTexture | null = null;
+  private nebulaWaterfallDrops: THREE.Vector3[] = [];
+
+  // Cielos de París golden sunset city, Seine bridges, sky updrafts, hot-air balloons, birds, volumetric clouds & falling leaves
+  private parisThermalRibbons: THREE.Object3D[] = [];
+  private parisBalloons: { group: THREE.Group; baseX: number; baseY: number; baseZ: number; swayAmp: number; phase: number; isObstacle: boolean; radius: number }[] = [];
+  private parisBirds: { group: THREE.Group; wingL: THREE.Mesh; wingR: THREE.Mesh; center: THREE.Vector3; radius: number; speed: number; phase: number }[] = [];
+  private parisClouds: { group: THREE.Group; baseX: number; baseY: number; baseZ: number; spanX: number; speed: number; phase: number }[] = [];
+  private parisClockHands: { hourHand: THREE.Object3D; minuteHand: THREE.Object3D }[] = [];
+  private parisUpdraftZones: { pos: THREE.Vector3; radius: number; height: number; triggeredCooldown: number }[] = [];
+  private parisLeafMesh: THREE.InstancedMesh | null = null;
+  private parisLeafStates: { x: number; y: number; z: number; fallSpeed: number; swayPhase: number; rotSpeed: number }[] = [];
 
   // Player state
   private playerPos = new THREE.Vector3(0, 1.5, 0);
@@ -1097,7 +1156,46 @@ export class GameEngine {
     this.templeLeafStates = [];
     this.templeFireflyTime = null;
     this.templeWaterfallPools = [];
+    this.templeMistPlumes = [];
+    this.templeThermalRibbons = [];
+    this.templeRuneGlows = [];
     this.jungleArchRings = [];
+    this.desertDustDevils = [];
+    this.desertGeysers = [];
+    this.desertMechanismSpinners = [];
+    this.desertThermalRibbons = [];
+    this.desertSandstormBands = [];
+    this.desertCollapsingMasonry = [];
+    this.iceThermalRibbons = [];
+    this.iceBlizzardBands = [];
+    this.iceVaporPlumes = [];
+    this.iceCrystalClusters = [];
+    this.iceMechanismBeam = null;
+    this.volcanicThermalRibbons = [];
+    this.volcanicBubbles = [];
+    this.volcanicGeysers = [];
+    this.volcanicSmokePuffs = [];
+    this.volcanicFallingRocks = [];
+    this.volcanicAshMesh = null;
+    this.volcanicAshStates = [];
+    this.volcanicFissureGlows = [];
+    this.nebulaSpinners = [];
+    this.nebulaFloatNodes = [];
+    this.nebulaCloudBanks = [];
+    this.nebulaThermalRibbons = [];
+    if (this.nebulaWaterfallTex) {
+      this.nebulaWaterfallTex.dispose();
+      this.nebulaWaterfallTex = null;
+    }
+    this.nebulaWaterfallDrops = [];
+    this.parisThermalRibbons = [];
+    this.parisBalloons = [];
+    this.parisBirds = [];
+    this.parisClouds = [];
+    this.parisClockHands = [];
+    this.parisUpdraftZones = [];
+    this.parisLeafMesh = null;
+    this.parisLeafStates = [];
     this.activeDiscoveryZone = null;
     this.triggeredDiscoveryBanners.clear();
   }
@@ -1211,13 +1309,77 @@ export class GameEngine {
     const pos = geo.attributes.position;
     for (let i = 0; i < pos.count; i++) {
       const x = pos.getX(i);
-      const y = pos.getY(i);
-      const t = y / Math.max(0.01, length);
+      const y = Math.max(0, pos.getY(i));
+      const t = THREE.MathUtils.clamp(y / Math.max(0.01, length), 0, 1);
       // Taper blade silhouette at base & tip + natural outward droop arch + subtle center V-fold
       const taper = Math.sin(Math.pow(t, 0.72) * Math.PI);
       const droopZ = t * t * length * 0.42;
       const vFold = Math.abs(x) * 0.22;
       pos.setXYZ(i, x * (0.28 + taper * 0.92), y - t * t * length * 0.12, droopZ + vFold);
+    }
+    geo.computeVertexNormals();
+    return geo;
+  }
+
+  private createDuneFieldGeometry(width: number, depth: number, segX: number, segZ: number, seed: number): THREE.BufferGeometry {
+    const geo = new THREE.PlaneGeometry(width, depth, segX, segZ);
+    geo.rotateX(-Math.PI / 2);
+    const pos = geo.attributes.position;
+    for (let i = 0; i < pos.count; i++) {
+      const vx = pos.getX(i);
+      const vz = pos.getZ(i);
+      // Asymmetric wind-carved barchan dune ridges with crisp crests & smooth swales
+      const w1 = Math.sin(vz * 0.032 + vx * 0.055 + seed);
+      const crest = (1.0 - Math.abs(w1)) * 7.5;
+      const roll = Math.sin(vx * 0.07 - vz * 0.02 + seed * 1.4) * 3.8 + Math.cos(vz * 0.065 + vx * 0.03) * 2.4;
+      const edgeFalloff = THREE.MathUtils.smoothstep(Math.abs(vx + width * 0.42), 2.0, width * 0.35);
+      const outerLift = Math.max(0, (Math.abs(vx) - width * 0.08) * 0.14);
+      const h = Math.max(-0.5, (crest + roll + outerLift) * edgeFalloff - 0.35);
+      pos.setY(i, h);
+    }
+    geo.computeVertexNormals();
+    return geo;
+  }
+
+  private createDesertRockArchGeometry(span: number, height: number, tubeRadius: number, seed: number): THREE.BufferGeometry {
+    const pts: THREE.Vector3[] = [];
+    const steps = 12;
+    for (let s = 0; s <= steps; s++) {
+      const t = s / steps;
+      const ang = t * Math.PI;
+      const x = -Math.cos(ang) * (span * 0.5);
+      const y = Math.sin(ang) * height + Math.sin(t * 7 + seed) * 0.45;
+      const z = Math.sin(t * 4 + seed * 1.3) * 0.95;
+      pts.push(new THREE.Vector3(x, y, z));
+    }
+    const curve = new THREE.CatmullRomCurve3(pts);
+    const geo = new THREE.TubeGeometry(curve, 24, tubeRadius, 8, false);
+    const pos = geo.attributes.position;
+    for (let i = 0; i < pos.count; i++) {
+      const vx = pos.getX(i);
+      const vy = pos.getY(i);
+      const vz = pos.getZ(i);
+      const strata = 1 + 0.16 * Math.sin(vy * 1.6 + seed) + 0.12 * Math.cos(vx * 0.9 + vz * 1.1);
+      pos.setXYZ(i, vx * (1 + (strata - 1) * 0.25), vy * (1 + (strata - 1) * 0.12), vz * strata);
+    }
+    geo.computeVertexNormals();
+    return geo;
+  }
+
+  private createGlacierPeakGeometry(radius: number, height: number, seed: number): THREE.BufferGeometry {
+    const geo = new THREE.ConeGeometry(radius, height, 11, 5, false);
+    const pos = geo.attributes.position;
+    for (let i = 0; i < pos.count; i++) {
+      const vx = pos.getX(i);
+      const vy = pos.getY(i);
+      const vz = pos.getZ(i);
+      const yNorm = THREE.MathUtils.clamp((vy + height * 0.5) / Math.max(0.1, height), 0, 1);
+      const ang = Math.atan2(vz, vx);
+      const ridge = 1 + 0.34 * Math.sin(ang * 3 + seed) + 0.18 * Math.cos(ang * 5 - seed * 1.4);
+      const shear = (1 - yNorm) * 0.25 + yNorm * 0.85;
+      const leanX = Math.sin(seed) * yNorm * radius * 0.28;
+      const leanZ = Math.cos(seed * 1.3) * yNorm * radius * 0.24;
+      pos.setXYZ(i, vx * ridge + leanX * shear, vy, vz * ridge + leanZ * shear);
     }
     geo.computeVertexNormals();
     return geo;
@@ -2210,123 +2372,422 @@ export class GameEngine {
       fireflies.frustumCulled = false;
       this.levelGroup.add(fireflies);
     } else if (biome === 'desert') {
-      // Rolling wind-carved sand dune horizon ridges
-      this.addHorizonMountainRing(0, -140, level.theme.hazardFloorY - 1, 120, 220, 38, 0xb87533, 0xe8b66b, 3.1, 0.88);
-      this.addHorizonMountainRing(0, -140, level.theme.hazardFloorY - 1, 68, 120, 14, 0xc7833c, 0xf2c982, 1.9, 0.9);
+      // Distant sunset canyon mesas & colossal rolling sand dune horizon rings
+      this.addHorizonMountainRing(0, -145, level.theme.hazardFloorY - 1.5, 138, 240, 44, 0x9c4c1b, 0xf2a556, 3.3, 0.9);
+      this.addHorizonMountainRing(0, -145, level.theme.hazardFloorY - 1.0, 74, 136, 18, 0xb86228, 0xf7be72, 2.1, 0.92);
 
-      // Continuous sculpted undulating desert sand dune ridges flanking the canyon & flight corridor
-      const duneRidgeGeo = new THREE.PlaneGeometry(76, 330, 16, 44);
-      duneRidgeGeo.rotateX(-Math.PI / 2);
-      const dPos = duneRidgeGeo.attributes.position;
-      for (let i = 0; i < dPos.count; i++) {
-        const vx = dPos.getX(i);
-        const vz = dPos.getZ(i);
-        const ridge =
-          Math.max(0, Math.sin(vz * 0.045 + vx * 0.08) * 3.8 + Math.cos(vx * 0.11 - vz * 0.025) * 2.4 + 2.2);
-        dPos.setY(i, ridge);
-      }
-      duneRidgeGeo.computeVertexNormals();
+      // Shared Desert PBR Materials
       const duneSurfaceMat = new THREE.MeshStandardMaterial({
         map: this.textures.desertSandstone,
         bumpMap: this.textures.sandBump,
-        bumpScale: 0.18,
-        roughness: 0.88,
-        metalness: 0.02,
-      });
-      const duneLeft = new THREE.Mesh(duneRidgeGeo, duneSurfaceMat);
-      duneLeft.position.set(-56, level.theme.hazardFloorY - 0.8, -145);
-      duneLeft.receiveShadow = true;
-      const duneRight = new THREE.Mesh(duneRidgeGeo, duneSurfaceMat);
-      duneRight.position.set(56, level.theme.hazardFloorY - 0.8, -145);
-      duneRight.rotation.y = Math.PI;
-      duneRight.receiveShadow = true;
-      this.levelGroup.add(duneLeft, duneRight);
-
-      // Weathered Ashlar Limestone Pyramids with sandstone texture & surface bump relief
-      const pyrGeo = new THREE.ConeGeometry(16, 22, 4);
-      const pyrMat = new THREE.MeshStandardMaterial({
-        map: this.textures.desertSandstone,
-        bumpMap: this.textures.stoneBump,
         bumpScale: 0.22,
-        roughness: 0.86,
-        metalness: 0.04,
+        roughness: 0.88,
+        metalness: 0.03,
       });
-      const pyrSpots: [number, number, number, number][] = [
-        [-44, -11, -35, 1.25],
-        [48, -11, -65, 1.1],
-        [-54, -11, -115, 1.55],
-        [50, -11, -165, 1.35],
-        [-48, -11, -220, 1.4],
-        [46, -11, -270, 1.6],
-        [-24, -11, -325, 1.9],
-        [30, -11, -335, 1.5],
-      ];
-      const pyrsInst = new THREE.InstancedMesh(pyrGeo, pyrMat, pyrSpots.length);
-      for (let i = 0; i < pyrSpots.length; i++) {
-        const [px, py, pz, sc] = pyrSpots[i];
-        dummy.position.set(px, py + 10.5 * sc, pz);
-        dummy.rotation.set(0, Math.PI / 4 + (i % 2) * 0.16, 0);
-        dummy.scale.set(sc, sc, sc);
-        dummy.updateMatrix();
-        pyrsInst.setMatrixAt(i, dummy.matrix);
-        _color.setHex(i % 2 === 0 ? 0xd9a164 : 0xe8b878);
-        pyrsInst.setColorAt(i, _color);
-      }
-      pyrsInst.instanceMatrix.needsUpdate = true;
-      if (pyrsInst.instanceColor) pyrsInst.instanceColor.needsUpdate = true;
-      pyrsInst.computeBoundingSphere();
-      this.levelGroup.add(pyrsInst);
-
-      // Stratified Eroded Desert Sandstone Mesas / Buttes along flanking canyon
-      const mesaCount = 28;
-      const mesaGeo = new THREE.CylinderGeometry(3.8, 7.6, 17, 7);
-      const mesaMat = new THREE.MeshStandardMaterial({
+      const sandstoneCliffMat = new THREE.MeshStandardMaterial({
         map: this.textures.desertSide,
         bumpMap: this.textures.stoneBump,
         bumpScale: 0.24,
-        roughness: 0.9,
+        roughness: 0.92,
       });
-      const mesas = new THREE.InstancedMesh(mesaGeo, mesaMat, mesaCount);
-      for (let i = 0; i < mesaCount; i++) {
-        const side = i % 2 === 0 ? 1 : -1;
-        const dist = 28 + ((i * 23) % 52);
-        const z = 4 - i * 10.5;
-        const sc = 0.85 + (i % 4) * 0.35;
-        dummy.position.set(side * dist, -4.5 + (i % 3) * 1.4, z);
-        dummy.rotation.set(0, i * 0.7, 0);
-        dummy.scale.set(sc * 1.1, sc, sc * 1.1);
-        dummy.updateMatrix();
-        mesas.setMatrixAt(i, dummy.matrix);
-      }
-      mesas.instanceMatrix.needsUpdate = true;
-      mesas.computeBoundingSphere();
-      this.levelGroup.add(mesas);
+      const ruinStoneMat = new THREE.MeshStandardMaterial({
+        map: this.textures.desertRuinStone,
+        bumpMap: this.textures.desertRuinBump,
+        bumpScale: 0.2,
+        roughness: 0.86,
+      });
+      const darkRecessMat = new THREE.MeshStandardMaterial({
+        color: 0x3b1f10,
+        roughness: 0.95,
+        metalness: 0.04,
+      });
+      const brassMat = new THREE.MeshStandardMaterial({
+        map: this.textures.goldTrim,
+        color: 0xf59e0b,
+        emissive: 0x92400e,
+        emissiveIntensity: 0.45,
+        metalness: 0.85,
+        roughness: 0.22,
+      });
+      const sunGlowMat = new THREE.MeshStandardMaterial({
+        color: 0xfef08a,
+        emissive: 0xf59e0b,
+        emissiveIntensity: 2.1,
+        roughness: 0.2,
+      });
+      const oasisRimMat = new THREE.MeshStandardMaterial({
+        map: this.textures.desertRuinStone,
+        bumpMap: this.textures.desertRuinBump,
+        bumpScale: 0.16,
+        color: 0xdcb480,
+        roughness: 0.84,
+      });
 
-      // Realistic Curved Desert Date Palms (textured bark + stone clusters + two-tier arched feather fronds)
-      const sandTopMat = new THREE.MeshStandardMaterial({
-        map: this.textures.desertSandstone,
-        bumpMap: this.textures.sandBump,
-        bumpScale: 0.08,
-        roughness: 0.88,
+      // 1. Sweeping Asymmetric Sculpted Barchan Sand Dune Terrain flanking the canyon & flight corridor
+      const duneGeoL = this.createDuneFieldGeometry(98, 370, 26, 56, 1.4);
+      const duneLeft = new THREE.Mesh(duneGeoL, duneSurfaceMat);
+      duneLeft.position.set(-64, level.theme.hazardFloorY - 0.5, -145);
+      duneLeft.receiveShadow = true;
+      this.levelGroup.add(duneLeft);
+
+      const duneGeoR = this.createDuneFieldGeometry(98, 370, 26, 56, 4.7);
+      const duneRight = new THREE.Mesh(duneGeoR, duneSurfaceMat);
+      duneRight.position.set(64, level.theme.hazardFloorY - 0.5, -145);
+      duneRight.rotation.y = Math.PI;
+      duneRight.receiveShadow = true;
+      this.levelGroup.add(duneRight);
+
+      // Far sunset desert canyon dune backdrop behind Goal Sanctuary (z = -310..-370)
+      const farDuneGeo = this.createDuneFieldGeometry(180, 74, 24, 14, 7.2);
+      const farDune = new THREE.Mesh(farDuneGeo, duneSurfaceMat);
+      farDune.position.set(0, level.theme.hazardFloorY + 2.5, -338);
+      farDune.receiveShadow = true;
+      this.levelGroup.add(farDune);
+
+      // 2. Monumental Muralla 2D Sandstone Fortress Wall (x = -5.8, spanning z = -7..-57 opposite the +X camera)
+      const murallaGroup = new THREE.Group();
+      const wallBase = new THREE.Mesh(new THREE.BoxGeometry(3.2, 22, 52), ruinStoneMat);
+      wallBase.position.set(-6.4, 0.5, -32);
+      wallBase.receiveShadow = true;
+      murallaGroup.add(wallBase);
+
+      // Stepped battered sandstone plinth & carved upper frieze along the 2D wall
+      const lowerSlope = new THREE.Mesh(new THREE.BoxGeometry(2.6, 10, 52.4), sandstoneCliffMat);
+      lowerSlope.position.set(-4.6, -6.2, -32);
+      murallaGroup.add(lowerSlope);
+
+      const corniceLedge = new THREE.Mesh(new THREE.BoxGeometry(3.8, 0.85, 52.8), ruinStoneMat);
+      corniceLedge.position.set(-6.1, 11.2, -32);
+      murallaGroup.add(corniceLedge);
+
+      // Buttress pilasters, deeply shadowed arched interior alcoves, warm glowing braziers & crumbling battlements
+      for (let k = 0; k < 6; k++) {
+        const bz = -10.5 - k * 8.4;
+        const pilaster = new THREE.Mesh(new THREE.BoxGeometry(1.5, 22.8, 1.9), ruinStoneMat);
+        pilaster.position.set(-4.7, 0.6, bz);
+        pilaster.castShadow = !this.isSoftwareGl;
+        murallaGroup.add(pilaster);
+
+        // Deeply recessed shadowy temple alcove (interior/exterior light contrast)
+        if (k < 5) {
+          const az = bz - 4.2;
+          const alcove = new THREE.Mesh(new THREE.BoxGeometry(1.6, 5.4, 3.8), darkRecessMat);
+          alcove.position.set(-4.95, 4.4, az);
+          murallaGroup.add(alcove);
+
+          const lintel = new THREE.Mesh(new THREE.BoxGeometry(2.0, 0.9, 4.8), ruinStoneMat);
+          lintel.position.set(-4.7, 7.45, az);
+          murallaGroup.add(lintel);
+
+          const brazier = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.18, 0.55, 8), brassMat);
+          brazier.position.set(-4.35, 2.2, az);
+          const ember = new THREE.Mesh(new THREE.OctahedronGeometry(0.22, 0), sunGlowMat);
+          ember.position.set(-4.35, 2.75, az);
+          murallaGroup.add(brazier, ember);
+
+          // Collapsing / trembling crenellation stone block along upper parapet
+          const merlon = new THREE.Mesh(new THREE.BoxGeometry(1.4, 1.5, 2.2), ruinStoneMat);
+          merlon.position.set(-5.3, 12.2, az);
+          merlon.rotation.z = (k % 2 === 0 ? 1 : -1) * 0.06;
+          murallaGroup.add(merlon);
+          this.desertCollapsingMasonry.push({
+            mesh: merlon,
+            basePos: merlon.position.clone(),
+            phase: k * 1.4,
+            period: 5.5 + (k % 3) * 1.6,
+          });
+        }
+      }
+      this.levelGroup.add(murallaGroup);
+
+      // 3. Stratified Canyon Cliffs, Hoodoos & Natural Sandstone Rock Arches along flight corridor
+      const canyonButteSpecs: [number, number, number, number, number][] = [
+        [-24, -10.5, -18, 5.5, 20],
+        [-27, -10.5, -44, 6.2, 23],
+        [24, -10.5, -26, 5.0, 15],
+        [28, -10.5, -58, 6.4, 21],
+        [-23, -10.5, -86, 6.8, 25],
+        [24, -10.5, -98, 6.4, 24],
+        [-25, -10.5, -124, 7.2, 26],
+        [24, -10.5, -138, 6.5, 23],
+        [-24, -10.5, -168, 7.4, 27],
+        [25, -10.5, -182, 6.9, 25],
+        [-23, -10.5, -210, 6.6, 24],
+        [25, -10.5, -226, 7.0, 26],
+        [-24, -10.5, -254, 6.8, 24],
+        [34, -10.5, -266, 7.2, 25],
+        [-22, -10.5, -288, 7.5, 28],
+        [23, -10.5, -288, 7.5, 28],
+      ];
+      for (let i = 0; i < canyonButteSpecs.length; i++) {
+        const [bx, by, bz, rad, bh] = canyonButteSpecs[i];
+        const geo = this.createJaggedRockFormationGeometry(rad, bh, i * 1.9 + 0.7);
+        const mesh = new THREE.Mesh(geo, sandstoneCliffMat);
+        mesh.position.set(bx, by + bh * 0.44, bz);
+        mesh.receiveShadow = true;
+        mesh.castShadow = !this.isSoftwareGl;
+        this.levelGroup.add(mesh);
+
+        // Stratified flat wind-eroded sandstone caprock ledge
+        const cap = new THREE.Mesh(this.createJaggedRockFormationGeometry(rad * 0.86, 2.1, i * 2.4), duneSurfaceMat);
+        cap.position.set(bx, by + bh * 0.88, bz);
+        this.levelGroup.add(cap);
+      }
+
+      // Towering Natural Sandstone Rock Arches spanning high across the flight canyon (y >= 17 clearance!)
+      const archConfigs: [number, number, number, number, number][] = [
+        [0, -10.5, -106, 36, 27],
+        [0, -10.5, -174, 38, 29],
+        [0, -10.5, -234, 34, 26],
+      ];
+      for (let a = 0; a < archConfigs.length; a++) {
+        const [ax, ay, az, span, archH] = archConfigs[a];
+        const archGeo = this.createDesertRockArchGeometry(span, archH, 2.6, a * 2.3 + 1.1);
+        const archMesh = new THREE.Mesh(archGeo, sandstoneCliffMat);
+        archMesh.position.set(ax, ay, az);
+        archMesh.rotation.y = (a % 2 === 0 ? 1 : -1) * 0.14;
+        archMesh.castShadow = !this.isSoftwareGl;
+        archMesh.receiveShadow = true;
+        this.levelGroup.add(archMesh);
+      }
+
+      // 4. Stepped Sun Temples & Half-Buried Ancient Desert City (replacing simple cones!)
+      const buildSteppedSunTemple = (
+        cx: number,
+        cy: number,
+        cz: number,
+        scale: number,
+        tiltZ: number,
+        tiltX: number,
+        seedVal: number
+      ) => {
+        const tg = new THREE.Group();
+        tg.position.set(cx, cy, cz);
+        tg.rotation.set(tiltX, seedVal * 0.5, tiltZ);
+
+        // 4 stepped carved sandstone terraces
+        for (let t = 0; t < 4; t++) {
+          const tw = (18 - t * 3.8) * scale;
+          const th = 3.2 * scale;
+          const tier = new THREE.Mesh(new THREE.BoxGeometry(tw, th, tw * 0.92), ruinStoneMat);
+          tier.position.y = t * th * 0.95 + th * 0.5;
+          tier.castShadow = !this.isSoftwareGl;
+          tier.receiveShadow = true;
+          tg.add(tier);
+        }
+
+        // Shadowed interior sanctuary doorway + glowing sun shrine chamber
+        const portalFrame = new THREE.Mesh(new THREE.BoxGeometry(5.6 * scale, 5.4 * scale, 2.4 * scale), ruinStoneMat);
+        portalFrame.position.set(0, 2.7 * scale, 8.6 * scale);
+        const doorwayVoid = new THREE.Mesh(new THREE.BoxGeometry(3.1 * scale, 4.0 * scale, 2.7 * scale), darkRecessMat);
+        doorwayVoid.position.set(0, 2.0 * scale, 8.7 * scale);
+        const innerBrazier = new THREE.Mesh(new THREE.OctahedronGeometry(0.65 * scale, 0), sunGlowMat);
+        innerBrazier.position.set(0, 2.4 * scale, 8.2 * scale);
+        tg.add(portalFrame, doorwayVoid, innerBrazier);
+
+        // Summit gilded electrum sun-altar & flanking mini obelisks
+        const altar = new THREE.Mesh(new THREE.CylinderGeometry(1.4 * scale, 2.2 * scale, 2.1 * scale, 4), brassMat);
+        altar.position.y = 13.0 * scale;
+        altar.rotation.y = Math.PI / 4;
+        tg.add(altar);
+
+        for (const sx of [-1, 1]) {
+          const obShaft = new THREE.Mesh(new THREE.CylinderGeometry(0.45 * scale, 0.78 * scale, 6.2 * scale, 4), ruinStoneMat);
+          obShaft.position.set(sx * 7.8 * scale, 3.1 * scale, 9.2 * scale);
+          obShaft.rotation.y = Math.PI / 4;
+          const obTip = new THREE.Mesh(new THREE.ConeGeometry(0.55 * scale, 1.2 * scale, 4), brassMat);
+          obTip.position.set(sx * 7.8 * scale, 6.7 * scale, 9.2 * scale);
+          obTip.rotation.y = Math.PI / 4;
+          tg.add(obShaft, obTip);
+        }
+
+        this.levelGroup.add(tg);
+      };
+
+      const templeSpots: [number, number, number, number, number, number, number][] = [
+        [-42, -10.5, -36, 1.15, 0.08, -0.04, 0.4],
+        [44, -10.5, -62, 1.05, -0.1, 0.05, 1.2],
+        [-48, -10.5, -120, 1.38, 0.14, 0.06, 2.1],
+        [46, -10.5, -162, 1.25, -0.12, -0.05, 2.9],
+        [-44, -10.5, -220, 1.3, 0.09, 0.04, 3.7],
+        [-30, -10.5, -315, 1.65, 0.0, 0.0, 0.2],
+        [34, -10.5, -318, 1.55, 0.0, 0.0, 5.9],
+      ];
+      for (const [tx, ty, tz, sc, rz, rx, sd] of templeSpots) {
+        buildSteppedSunTemple(tx, ty, tz, sc, rz, rx, sd);
+      }
+
+      // Half-buried ancient sandstone city ruins (tilted colonnades, watchtowers & fractured columns)
+      const buriedRuins: [number, number, number, number, number][] = [
+        [-20, -9.2, -72, 1.0, 0.18],
+        [19, -9.2, -112, 1.1, -0.16],
+        [-21, -9.2, -155, 0.95, 0.14],
+        [20, -9.2, -196, 1.05, -0.15],
+        [-20, -9.2, -242, 1.15, 0.12],
+      ];
+      for (let i = 0; i < buriedRuins.length; i++) {
+        const [rx, ry, rz, sc, tilt] = buriedRuins[i];
+        const cg = new THREE.Group();
+        cg.position.set(rx, ry, rz);
+        cg.rotation.set(tilt * 0.5, i * 0.85, tilt);
+
+        const courtyard = new THREE.Mesh(new THREE.BoxGeometry(9.5 * sc, 2.8 * sc, 9.5 * sc), ruinStoneMat);
+        courtyard.position.y = 1.0 * sc;
+        const tower = new THREE.Mesh(new THREE.BoxGeometry(3.8 * sc, 7.6 * sc, 3.8 * sc), ruinStoneMat);
+        tower.position.set(-2.2 * sc, 3.8 * sc, -2.0 * sc);
+        const towerVoid = new THREE.Mesh(new THREE.BoxGeometry(1.8 * sc, 3.4 * sc, 4.0 * sc), darkRecessMat);
+        towerVoid.position.set(-2.2 * sc, 3.0 * sc, -2.0 * sc);
+        cg.add(courtyard, tower, towerVoid);
+
+        for (let c = 0; c < 3; c++) {
+          const colH = (4.6 - (c % 2) * 1.4) * sc;
+          const col = new THREE.Mesh(new THREE.CylinderGeometry(0.45 * sc, 0.54 * sc, colH, 10), ruinStoneMat);
+          col.position.set(2.4 * sc, 2.0 * sc + colH * 0.5, (-2.6 + c * 2.6) * sc);
+          cg.add(col);
+        }
+        // Fallen fractured column drum resting on drifted sand
+        const fallenDrum = new THREE.Mesh(new THREE.CylinderGeometry(0.46 * sc, 0.5 * sc, 3.2 * sc, 10), ruinStoneMat);
+        fallenDrum.position.set(0.4 * sc, 2.7 * sc, 2.2 * sc);
+        fallenDrum.rotation.set(0.18, 0.6, Math.PI / 2 - 0.15);
+        cg.add(fallenDrum);
+
+        this.levelGroup.add(cg);
+      }
+
+      // 5. Monumental Sun Gates & Astrolabe Mechanisms at Launchpad (z = -64) & Goal Sanctuary (z = -290)
+      const buildMonumentalSunGate = (gx: number, gy: number, gz: number, span: number, height: number, hasSanctuary: boolean) => {
+        const gg = new THREE.Group();
+        gg.position.set(gx, gy, gz);
+        const halfSpan = span * 0.5;
+
+        for (const sx of [-1, 1]) {
+          const pylon = new THREE.Mesh(new THREE.BoxGeometry(2.6, height, 3.2), ruinStoneMat);
+          pylon.position.set(sx * halfSpan, height * 0.45, 0);
+          pylon.castShadow = !this.isSoftwareGl;
+          gg.add(pylon);
+
+          const basePlinth = new THREE.Mesh(new THREE.BoxGeometry(3.4, 1.6, 4.0), sandstoneCliffMat);
+          basePlinth.position.set(sx * halfSpan, 0.4, 0);
+          gg.add(basePlinth);
+
+          const obCap = new THREE.Mesh(new THREE.ConeGeometry(1.1, 2.6, 4), brassMat);
+          obCap.position.set(sx * halfSpan, height * 0.95 + 1.3, 0);
+          obCap.rotation.y = Math.PI / 4;
+          gg.add(obCap);
+
+          const brazierLight = new THREE.Mesh(new THREE.OctahedronGeometry(0.42, 0), sunGlowMat);
+          brazierLight.position.set(sx * (halfSpan - 1.5), 2.5, 1.3);
+          gg.add(brazierLight);
+        }
+
+        // Massive carved sandstone lintel beam + spinning golden astrolabe solar ring
+        const lintel = new THREE.Mesh(new THREE.BoxGeometry(span + 4.2, 2.1, 3.4), ruinStoneMat);
+        lintel.position.set(0, height * 0.92, 0);
+        lintel.castShadow = !this.isSoftwareGl;
+        gg.add(lintel);
+
+        const crownSun = new THREE.Mesh(new THREE.TorusGeometry(2.3, 0.24, 10, 28), brassMat);
+        crownSun.position.set(0, height * 0.92 + 2.8, 0);
+        const innerRing = new THREE.Mesh(new THREE.TorusGeometry(1.5, 0.14, 8, 22), sunGlowMat);
+        crownSun.add(innerRing);
+        gg.add(crownSun);
+        this.desertMechanismSpinners.push(crownSun);
+
+        if (hasSanctuary) {
+          // Deep shaded temple sanctuary behind the Goal Portal
+          const sanctuaryBack = new THREE.Mesh(new THREE.BoxGeometry(span + 1.2, height * 0.85, 4.5), ruinStoneMat);
+          sanctuaryBack.position.set(0, height * 0.4, -4.6);
+          const innerShadow = new THREE.Mesh(new THREE.BoxGeometry(span * 0.55, height * 0.6, 2.2), darkRecessMat);
+          innerShadow.position.set(0, height * 0.3, -2.6);
+          gg.add(sanctuaryBack, innerShadow);
+        }
+
+        this.levelGroup.add(gg);
+      };
+
+      buildMonumentalSunGate(0, 4.0, -70.4, 11.6, 14.5, false);
+      buildMonumentalSunGate(0, 9.0, -290.5, 11.8, 12.2, true);
+
+      // 6. Crystal-Clear Desert Oasis Lagoons (Secret Oasis Canyon Basin & Mid-Canyon Oasis)
+      const oasisWaterMat = new THREE.MeshPhysicalMaterial({
+        map: this.textures.lagoonSurface,
+        bumpMap: this.textures.waterBump,
+        bumpScale: 0.1,
+        color: 0x14b8a6,
+        roughness: 0.06,
+        metalness: 0.26,
+        clearcoat: 1.0,
+        envMapIntensity: 1.75,
+        transparent: true,
+        opacity: 0.92,
       });
-      const sandSideMat = new THREE.MeshStandardMaterial({
-        map: this.textures.desertSide,
-        bumpMap: this.textures.stoneBump,
-        bumpScale: 0.14,
-        roughness: 0.9,
+      applyWaterSurfaceShader(oasisWaterMat, this.shaderTimeUniform, {
+        waveAmp: 0.08,
+        waveFreq: 0.26,
+        speed: 1.8,
+        fresnelColor: 0x99f6e4,
+        fresnelStrength: 0.62,
+        foamStrength: 0.24,
       });
+
+      const oasisSpots: [number, number, number, number][] = [
+        [24, -10.35, -264, 11.5],
+        [-27, -10.35, -148, 9.8],
+      ];
+      for (let o = 0; o < oasisSpots.length; o++) {
+        const [ox, oy, oz, rad] = oasisSpots[o];
+        const og = new THREE.Group();
+        og.position.set(ox, oy, oz);
+
+        // Submerged golden-sand pool floor
+        const bed = new THREE.Mesh(new THREE.CircleGeometry(rad, 28), duneSurfaceMat);
+        bed.rotation.x = -Math.PI / 2;
+        bed.position.y = -0.35;
+        og.add(bed);
+
+        // Crystal-clear reflective turquoise water surface
+        const pool = new THREE.Mesh(new THREE.CircleGeometry(rad * 0.96, 32), oasisWaterMat);
+        pool.rotation.x = -Math.PI / 2;
+        pool.position.y = 0.22;
+        og.add(pool);
+
+        // Natural sandstone boulder shoreline rim
+        for (let b = 0; b < 16; b++) {
+          const ang = (b / 16) * Math.PI * 2 + o * 0.4;
+          const dist = rad * (0.94 + (b % 3) * 0.07);
+          const boulder = new THREE.Mesh(this.createDisplacedRockGeometry(1.1 + (b % 3) * 0.35, b + o * 5), oasisRimMat);
+          boulder.scale.set(1.3, 0.55, 1.0);
+          boulder.position.set(Math.cos(ang) * dist, 0.15, Math.sin(ang) * dist);
+          boulder.rotation.y = ang;
+          og.add(boulder);
+        }
+        this.levelGroup.add(og);
+      }
+
+      // 7. Curved Wind-Swayed Desert Date Palms (NO cone fronds — arched 3D curved botanical fronds!)
       const palmTrunkMat = new THREE.MeshStandardMaterial({
         map: this.textures.barkTexture,
         bumpMap: this.textures.barkBump,
-        bumpScale: 0.18,
-        color: 0x9c6e4b,
+        bumpScale: 0.2,
+        color: 0x8f613e,
         roughness: 0.9,
       });
-      const palmFrondUpper = new THREE.MeshStandardMaterial({ color: 0x5c7d22, roughness: 0.76 });
-      const palmFrondLower = new THREE.MeshStandardMaterial({ color: 0x878c28, roughness: 0.82 });
-      applyWindSwayShader(palmFrondUpper, this.shaderTimeUniform, 0.24, 2.0);
-      applyWindSwayShader(palmFrondLower, this.shaderTimeUniform, 0.22, 1.85);
-      const desertStoneGeo = this.createDisplacedRockGeometry(0.7, 9.1);
+      const palmFrondGeo = this.createCurvedLeafGeometry(4.2, 1.05);
+      const palmFrondUpper = new THREE.MeshStandardMaterial({
+        map: this.textures.jungleLeafTex,
+        color: 0x6b9428,
+        roughness: 0.72,
+        side: THREE.DoubleSide,
+      });
+      const palmFrondLower = new THREE.MeshStandardMaterial({
+        map: this.textures.jungleLeafTex,
+        color: 0x8ea032,
+        roughness: 0.78,
+        side: THREE.DoubleSide,
+      });
+      applyWindSwayShader(palmFrondUpper, this.shaderTimeUniform, 0.28, 2.05);
+      applyWindSwayShader(palmFrondLower, this.shaderTimeUniform, 0.26, 1.9);
+      const desertStoneGeo = this.createDisplacedRockGeometry(0.75, 9.1);
       const warmStoneMat = new THREE.MeshStandardMaterial({
         map: this.textures.desertSandstone,
         bumpMap: this.textures.stoneBump,
@@ -2336,14 +2797,18 @@ export class GameEngine {
       });
 
       const palmSpots: [number, number, number, number][] = [
-        [-13, -3.5, -14, 1.15],
-        [13, -3.5, -24, 1.1],
-        [-14, -2.5, -46, 1.2],
-        [15, -2.0, -58, 1.15],
-        [-17, -2.0, -105, 1.25],
-        [17, -2.0, -140, 1.2],
-        [-17, -2.0, -185, 1.25],
-        [17, -2.0, -225, 1.18],
+        [-14, -4.5, -14, 1.15],
+        [15, -4.5, -24, 1.12],
+        [-15, -4.0, -46, 1.2],
+        [16, -3.5, -58, 1.15],
+        [-17, -6.5, -142, 1.25],
+        [-31, -8.5, -154, 1.3],
+        [17, -4.5, -140, 1.2],
+        [-17, -4.5, -185, 1.22],
+        [17, -4.5, -225, 1.18],
+        [14, -7.8, -258, 1.24],
+        [31, -7.8, -268, 1.28],
+        [23, -7.8, -274, 1.15],
         [-14, 3.2, -264, 1.1],
         [14, 4.0, -278, 1.15],
       ];
@@ -2352,148 +2817,112 @@ export class GameEngine {
         const [px, py, pz, sc] = palmSpots[idx];
         const pg = new THREE.Group();
         pg.position.set(px, py, pz);
-        pg.rotation.y = idx * 1.1;
+        pg.rotation.y = idx * 1.15;
 
-        const islet = new THREE.Mesh(
-          new THREE.CylinderGeometry(3.2 * sc, 3.9 * sc, 3.6, 12),
-          [sandSideMat, sandTopMat, sandSideMat]
+        const sandMound = new THREE.Mesh(
+          this.createDisplacedRockGeometry(3.0 * sc, idx + 2.1),
+          duneSurfaceMat
         );
-        islet.position.y = -1.7;
-        pg.add(islet);
+        sandMound.scale.set(1.2, 0.55, 1.2);
+        sandMound.position.y = -0.9;
+        pg.add(sandMound);
 
-        const lean = (idx % 2 === 0 ? 1 : -1) * 1.1 * sc;
+        const lean = (idx % 2 === 0 ? 1 : -1) * 1.25 * sc;
         const trunkCurve = new THREE.CatmullRomCurve3([
-          new THREE.Vector3(0, 0, 0),
-          new THREE.Vector3(lean * 0.35, 3.2 * sc, 0.25 * sc),
-          new THREE.Vector3(lean * 0.75, 6.2 * sc, 0.1 * sc),
-          new THREE.Vector3(lean, 8.8 * sc, -0.15 * sc),
+          new THREE.Vector3(0, -0.5, 0),
+          new THREE.Vector3(lean * 0.35, 3.2 * sc, 0.28 * sc),
+          new THREE.Vector3(lean * 0.78, 6.4 * sc, 0.1 * sc),
+          new THREE.Vector3(lean, 9.1 * sc, -0.15 * sc),
         ]);
-        const trunkMesh = new THREE.Mesh(new THREE.TubeGeometry(trunkCurve, 12, 0.36 * sc, 8, false), palmTrunkMat);
+        const trunkMesh = new THREE.Mesh(new THREE.TubeGeometry(trunkCurve, 12, 0.34 * sc, 8, false), palmTrunkMat);
+        trunkMesh.castShadow = !this.isSoftwareGl;
         pg.add(trunkMesh);
 
         for (let r = 0; r < 3; r++) {
           const rAng = (r / 3) * Math.PI * 2 + idx;
           const st = new THREE.Mesh(desertStoneGeo, warmStoneMat);
-          st.position.set(Math.cos(rAng) * 0.78 * sc, 0.28 * sc, Math.sin(rAng) * 0.78 * sc);
-          st.scale.set(sc * 1.15, sc * 0.7, sc);
+          st.position.set(Math.cos(rAng) * 0.78 * sc, 0.25 * sc, Math.sin(rAng) * 0.78 * sc);
+          st.scale.set(sc * 1.15, sc * 0.68, sc);
           pg.add(st);
         }
 
-        const crownPos = new THREE.Vector3(lean, 8.8 * sc, -0.15 * sc);
+        const crownPos = new THREE.Vector3(lean, 9.1 * sc, -0.15 * sc);
+        // Golden date clusters beneath crown
+        for (let dc = 0; dc < 3; dc++) {
+          const da = (dc / 3) * Math.PI * 2;
+          const dateBunch = new THREE.Mesh(new THREE.SphereGeometry(0.32 * sc, 6, 5), brassMat);
+          dateBunch.scale.set(0.8, 1.4, 0.8);
+          dateBunch.position.set(crownPos.x + Math.cos(da) * 0.42 * sc, crownPos.y - 0.38 * sc, crownPos.z + Math.sin(da) * 0.42 * sc);
+          pg.add(dateBunch);
+        }
+
+        // 11 arched curved 3D palm fronds in two layers
         for (let tier = 0; tier < 2; tier++) {
           const count = tier === 0 ? 6 : 5;
           for (let f = 0; f < count; f++) {
-            const fAng = (f / count) * Math.PI * 2 + tier * 0.55;
-            const bladeGroup = new THREE.Group();
-            bladeGroup.position.copy(crownPos);
-            bladeGroup.rotation.y = fAng;
+            const fAng = (f / count) * Math.PI * 2 + tier * 0.52;
+            const bladePivot = new THREE.Group();
+            bladePivot.position.copy(crownPos);
+            bladePivot.rotation.y = fAng;
 
-            const frond = new THREE.Mesh(
-              new THREE.ConeGeometry(0.62 * sc, (tier === 0 ? 4.3 : 3.6) * sc, 5),
-              tier === 0 ? palmFrondUpper : palmFrondLower
-            );
-            frond.scale.set(1.0, 1.0, 0.18);
-            frond.rotation.z = tier === 0 ? -1.16 : -1.48;
-            frond.position.set(1.95 * sc, tier === 0 ? 0.15 * sc : -0.45 * sc, 0);
-            bladeGroup.add(frond);
-            pg.add(bladeGroup);
+            const frond = new THREE.Mesh(palmFrondGeo, tier === 0 ? palmFrondUpper : palmFrondLower);
+            frond.scale.setScalar(sc * (tier === 0 ? 1.0 : 0.86));
+            frond.rotation.x = tier === 0 ? 0.92 : 1.24;
+            bladePivot.add(frond);
+            pg.add(bladePivot);
           }
         }
-
         this.levelGroup.add(pg);
       }
 
-      // Natural Ribbed Saguaro Cacti with rounded dome tips
-      const cactusCount = 34;
-      const cacTrunkGeo = new THREE.CylinderGeometry(0.4, 0.36, 4.4, 10);
-      const cacTipGeo = new THREE.SphereGeometry(0.4, 8, 6);
-      const cacArmGeo = new THREE.CylinderGeometry(0.27, 0.26, 1.85, 8);
-      const cacMat = new THREE.MeshStandardMaterial({ color: 0x5d7324, roughness: 0.8 });
-      const cacTrunks = new THREE.InstancedMesh(cacTrunkGeo, cacMat, cactusCount);
-      const cacTips = new THREE.InstancedMesh(cacTipGeo, cacMat, cactusCount);
-      const cacArmL = new THREE.InstancedMesh(cacArmGeo, cacMat, cactusCount);
-      const cacArmR = new THREE.InstancedMesh(cacArmGeo, cacMat, cactusCount);
+      // 8. Desert Agave Rosettes, Oasis Reeds, Scrub Bushes & Sandstone Outcrops
+      const agaveLeafGeo = this.createCurvedLeafGeometry(1.35, 0.34);
+      const agaveMat = new THREE.MeshStandardMaterial({
+        map: this.textures.jungleLeafTex,
+        color: 0x5c8542,
+        roughness: 0.78,
+        side: THREE.DoubleSide,
+      });
+      applyWindSwayShader(agaveMat, this.shaderTimeUniform, 0.14, 1.7);
 
-      for (let i = 0; i < cactusCount; i++) {
-        const side = i % 2 === 0 ? 1 : -1;
-        const dist = 18 + ((i * 17) % 44);
-        const z = 8 - i * 8.6;
-        const sc = 0.8 + (i % 4) * 0.25;
-        const baseY = level.theme.hazardFloorY + 0.5;
-        const cx = side * dist;
-
-        dummy.position.set(cx, baseY + 2.2 * sc, z);
-        dummy.rotation.set(0, i * 0.9, 0);
-        dummy.scale.set(sc, sc, sc);
-        dummy.updateMatrix();
-        cacTrunks.setMatrixAt(i, dummy.matrix);
-        _color.setHex(i % 2 === 0 ? 0x627826 : 0x4d611d);
-        cacTrunks.setColorAt(i, _color);
-
-        dummy.position.set(cx, baseY + 4.4 * sc, z);
-        dummy.rotation.set(0, 0, 0);
-        dummy.scale.set(sc, sc, sc);
-        dummy.updateMatrix();
-        cacTips.setMatrixAt(i, dummy.matrix);
-
-        const yaw = i * 0.9;
-        const ox = Math.cos(yaw) * 0.82 * sc;
-        const oz = -Math.sin(yaw) * 0.82 * sc;
-        dummy.position.set(cx + ox, baseY + 2.8 * sc, z + oz);
-        dummy.rotation.set(0, yaw, -0.32);
-        dummy.scale.set(sc, sc, sc);
-        dummy.updateMatrix();
-        cacArmL.setMatrixAt(i, dummy.matrix);
-
-        dummy.position.set(cx - ox, baseY + 2.2 * sc, z - oz);
-        dummy.rotation.set(0, yaw, 0.32);
-        dummy.scale.set(sc, sc * 0.85, sc);
-        dummy.updateMatrix();
-        cacArmR.setMatrixAt(i, dummy.matrix);
-      }
-      for (const im of [cacTrunks, cacTips, cacArmL, cacArmR]) {
-        im.instanceMatrix.needsUpdate = true;
-        if (im.instanceColor) im.instanceColor.needsUpdate = true;
-        im.computeBoundingSphere();
-      }
-      this.levelGroup.add(cacTrunks, cacTips, cacArmL, cacArmR);
-
-      // Displaced Sandstone Rock Outcrops + Desert Agave / Palm Shrubs
       const desertDecorSpots: [number, number, number, number][] = [
-        [-3.8, 1.0, 3.6, 0.65],
-        [3.8, 1.0, 3.6, 0.62],
-        [-3.9, 1.0, -3.5, 0.58],
-        [-4.5, 8.2, -253.2, 0.72],
-        [4.5, 8.2, -262.8, 0.68],
-        [-4.1, 9.9, -287.6, 0.68],
-        [4.1, 9.9, -287.6, 0.64],
-        [-12.5, -3.5, -13.5, 0.9],
-        [12.5, -3.5, -23.5, 0.85],
-        [-13.5, -2.5, -45.5, 0.95],
+        [-3.8, 1.0, 3.6, 0.7],
+        [3.8, 1.0, 3.6, 0.68],
+        [-3.9, 1.0, -3.5, 0.62],
+        [-4.5, 8.2, -253.2, 0.74],
+        [4.5, 8.2, -262.8, 0.72],
+        [22.4, 10.3, -268.2, 0.62],
+        [-4.1, 9.9, -287.6, 0.7],
+        [4.1, 9.9, -287.6, 0.66],
+        [-13.5, -4.5, -13.5, 0.9],
+        [14.5, -4.5, -23.5, 0.88],
+        [-14.5, -4.0, -45.5, 0.95],
+        [21.0, -10.1, -255.0, 0.95],
+        [29.0, -10.1, -269.0, 1.0],
+        [-25.0, -10.1, -142.0, 0.92],
       ];
       const dRockInst = new THREE.InstancedMesh(desertStoneGeo, warmStoneMat, desertDecorSpots.length);
-      const shrubGeo = new THREE.ConeGeometry(0.28, 1.45, 5);
-      const shrubInst = new THREE.InstancedMesh(shrubGeo, palmFrondUpper, desertDecorSpots.length * 6);
+      const shrubInst = new THREE.InstancedMesh(agaveLeafGeo, agaveMat, desertDecorSpots.length * 7);
 
       let shIdx = 0;
       for (let i = 0; i < desertDecorSpots.length; i++) {
         const [rx, ry, rz, rs] = desertDecorSpots[i];
         dummy.position.set(rx, ry + 0.22 * rs, rz);
         dummy.rotation.set(0.15, i * 1.2, 0);
-        dummy.scale.set(rs * 1.25, rs * 0.72, rs);
+        dummy.scale.set(rs * 1.28, rs * 0.72, rs);
         dummy.updateMatrix();
         dRockInst.setMatrixAt(i, dummy.matrix);
 
         const sx = rx + (i % 2 === 0 ? 0.7 : -0.7) * rs;
         const sz = rz + 0.35 * rs;
-        for (let f = 0; f < 6; f++) {
-          const ang = (f / 6) * Math.PI * 2 + i * 0.4;
-          dummy.position.set(sx + Math.cos(ang) * 0.42 * rs, ry + 0.46 * rs, sz + Math.sin(ang) * 0.42 * rs);
-          dummy.rotation.set(0, -ang, -0.88);
-          dummy.scale.set(rs, rs, rs * 0.22);
+        for (let f = 0; f < 7; f++) {
+          const ang = (f / 7) * Math.PI * 2 + i * 0.4;
+          dummy.position.set(sx, ry + 0.1 * rs, sz);
+          dummy.rotation.set(0.65 + (f % 2) * 0.25, ang, 0);
+          dummy.scale.setScalar(rs * 0.9);
           dummy.updateMatrix();
           shrubInst.setMatrixAt(shIdx, dummy.matrix);
-          _color.setHex(f % 2 === 0 ? 0x627c24 : 0x4b631a);
+          _color.setHex(f % 2 === 0 ? 0x6b9146 : 0x4c7032);
           shrubInst.setColorAt(shIdx, _color);
           shIdx++;
         }
@@ -2504,250 +2933,634 @@ export class GameEngine {
       if (shrubInst.instanceColor) shrubInst.instanceColor.needsUpdate = true;
       shrubInst.computeBoundingSphere();
       this.levelGroup.add(dRockInst, shrubInst);
-    } else if (biome === 'temple') {
-      // Sunlit emerald rainforest canopy & distant blue-jade mist mountain ridges
-      this.addHorizonMountainRing(0, -78, level.theme.hazardFloorY - 2, 130, 215, 54, 0x2b6e58, 0x99d99b, 2.5, 0.88);
-      this.addHorizonMountainRing(0, -78, level.theme.hazardFloorY - 1, 86, 138, 26, 0x174a2b, 0x4b943c, 1.4, 0.92);
 
-      // Sculpted Lush Mossy Riverbanks flanking the emerald river corridor (river runs freely between x = -27 and x = +25)
-      const bankGeo = new THREE.PlaneGeometry(58, 220, 14, 34);
+      // 9. Dynamic Swirling Dust Devils (remolinos de polvo) orbiting side ravines
+      const devilRingMat = new THREE.MeshBasicMaterial({
+        color: 0xf6c978,
+        transparent: true,
+        opacity: 0.34,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+      });
+      const devilConeMat = new THREE.MeshBasicMaterial({
+        color: 0xe6a15c,
+        transparent: true,
+        opacity: 0.16,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+      });
+      const devilSpots: [number, number, number][] = [
+        [-15, -34, 4.2],
+        [16, -98, 4.8],
+        [-16, -172, 5.2],
+        [15, -230, 4.4],
+      ];
+      for (let d = 0; d < devilSpots.length; d++) {
+        const [dx, dz, drad] = devilSpots[d];
+        const dg = new THREE.Group();
+        dg.position.set(dx, level.theme.hazardFloorY + 0.2, dz);
+
+        const funnel = new THREE.Mesh(new THREE.CylinderGeometry(3.6, 0.7, 13.5, 16, 1, true), devilConeMat);
+        funnel.position.y = 6.75;
+        dg.add(funnel);
+
+        for (let r = 0; r < 6; r++) {
+          const t = r / 5;
+          const ring = new THREE.Mesh(
+            new THREE.TorusGeometry(0.85 + t * 2.75, 0.14 + t * 0.08, 6, 20),
+            devilRingMat
+          );
+          ring.rotation.x = Math.PI / 2 + (r % 2 === 0 ? 0.08 : -0.08);
+          ring.position.y = 0.8 + t * 11.2;
+          dg.add(ring);
+        }
+        this.levelGroup.add(dg);
+        this.desertDustDevils.push({
+          group: dg,
+          baseX: dx,
+          baseZ: dz,
+          phase: d * 1.7,
+          radius: drad,
+          speed: 0.45 + (d % 2) * 0.15,
+        });
+      }
+
+      // 10. Hot-Air Desert Geysers (géiseres de aire caliente) pulsing from canyon fumaroles
+      const geyserSpots: [number, number, number][] = [
+        [-9, level.theme.hazardFloorY + 0.1, -22],
+        [9, level.theme.hazardFloorY + 0.1, -44],
+        [-11, level.theme.hazardFloorY + 0.1, -112],
+        [11, level.theme.hazardFloorY + 0.1, -162],
+        [10, level.theme.hazardFloorY + 0.1, -226],
+      ];
+      const plumeMat = new THREE.MeshBasicMaterial({
+        color: 0xfde047,
+        transparent: true,
+        opacity: 0.36,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+        blending: THREE.AdditiveBlending,
+      });
+      for (let g = 0; g < geyserSpots.length; g++) {
+        const [gx, gy, gz] = geyserSpots[g];
+        const gg = new THREE.Group();
+        gg.position.set(gx, gy, gz);
+
+        const crater = new THREE.Mesh(new THREE.CylinderGeometry(1.4, 2.5, 1.3, 10), sandstoneCliffMat);
+        crater.position.y = 0.65;
+        gg.add(crater);
+
+        const core = new THREE.Mesh(
+          new THREE.CircleGeometry(1.15, 16),
+          new THREE.MeshBasicMaterial({ color: 0xf97316, transparent: true, opacity: 0.78 })
+        );
+        core.rotation.x = -Math.PI / 2;
+        core.position.y = 1.32;
+        gg.add(core);
+
+        const plume = new THREE.Mesh(new THREE.CylinderGeometry(1.6, 0.7, 11.0, 12, 1, true), plumeMat);
+        plume.position.y = 6.5;
+        gg.add(plume);
+
+        const ring = new THREE.Mesh(new THREE.TorusGeometry(1.2, 0.1, 6, 18), plumeMat);
+        ring.rotation.x = Math.PI / 2;
+        ring.position.y = 2.0;
+        gg.add(ring);
+
+        this.levelGroup.add(gg);
+        this.desertGeysers.push({
+          group: gg,
+          plume,
+          ring,
+          pos: new THREE.Vector3(gx, gy, gz),
+          phase: g * 1.15,
+          period: 4.2 + (g % 3) * 0.8,
+        });
+      }
+
+      // 11. Dynamic Sweeping Sandstorm Drift Ribbons (tormentas de arena dinámicas en el horizonte del cañón)
+      const stormBandMat = new THREE.MeshBasicMaterial({
+        color: 0xf8c67c,
+        transparent: true,
+        opacity: 0.14,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+      });
+      const stormBandGeo = new THREE.PlaneGeometry(54, 14);
+      for (let s = 0; s < 6; s++) {
+        const band = new THREE.Mesh(stormBandGeo, stormBandMat);
+        const bx = (s % 2 === 0 ? -1 : 1) * 18;
+        const bz = -24 - s * 46;
+        band.position.set(bx, level.theme.hazardFloorY + 6.5, bz);
+        band.rotation.y = (s % 2 === 0 ? 0.18 : -0.18);
+        this.levelGroup.add(band);
+        this.desertSandstormBands.push({
+          mesh: band,
+          baseX: bx,
+          baseZ: bz,
+          phase: s * 1.1,
+          speed: 2.2 + (s % 3) * 0.6,
+        });
+      }
+    } else if (biome === 'temple') {
+      // =====================================================================
+      // NIVEL 04: TEMPLO DEL MONO — Monumental Stone Temple, Guardian Sentinels,
+      // 3 Distinct Jungle Routes, Volumetric Waterfalls, Layered Foliage & Mist
+      // =====================================================================
+
+      // PLANE 3 (FAR BACKGROUND): Multi-depth misty jungle ridges & distant stepped ridge temples
+      this.addHorizonMountainRing(0, -82, level.theme.hazardFloorY - 2.5, 138, 225, 62, 0x225a48, 0x8cc98c, 2.7, 0.9);
+      this.addHorizonMountainRing(0, -82, level.theme.hazardFloorY - 1.2, 88, 142, 29, 0x133e24, 0x458b38, 1.45, 0.92);
+
+      // Sculpted Mossy Riverbanks & Rocky Canyon Shores flanking the Emerald River (corridor x = -28..+26 stays free)
+      const bankGeo = new THREE.PlaneGeometry(64, 235, 16, 36);
       bankGeo.rotateX(-Math.PI / 2);
       const bPos = bankGeo.attributes.position;
       for (let i = 0; i < bPos.count; i++) {
         const vx = bPos.getX(i);
         const vz = bPos.getZ(i);
-        const innerDist = Math.max(0, 29 - Math.abs(vx));
-        const h = Math.max(-0.4, innerDist * 0.24 + Math.sin(vz * 0.07 + vx * 0.11) * 1.4 + Math.cos(vx * 0.14) * 0.9);
+        const innerDist = Math.max(0, 31 - Math.abs(vx));
+        const h = Math.max(
+          -0.45,
+          innerDist * 0.27 + Math.sin(vz * 0.065 + vx * 0.12) * 1.85 + Math.cos(vx * 0.15 - vz * 0.04) * 1.15
+        );
         bPos.setY(i, h);
       }
       bankGeo.computeVertexNormals();
       const bankMat = new THREE.MeshStandardMaterial({
         map: this.textures.jungleGrass,
         bumpMap: this.textures.grassBump,
-        bumpScale: 0.12,
+        bumpScale: 0.14,
         roughness: 0.88,
       });
       const bankL = new THREE.Mesh(bankGeo, bankMat);
-      bankL.position.set(-55, level.theme.hazardFloorY - 0.3, -82);
+      bankL.position.set(-58, level.theme.hazardFloorY - 0.35, -86);
       bankL.receiveShadow = true;
       const bankR = new THREE.Mesh(bankGeo, bankMat);
-      bankR.position.set(53, level.theme.hazardFloorY - 0.3, -82);
+      bankR.position.set(56, level.theme.hazardFloorY - 0.35, -86);
       bankR.rotation.y = Math.PI;
       bankR.receiveShadow = true;
       this.levelGroup.add(bankL, bankR);
 
-      // Temple Architectural Materials
+      // Temple Architectural & Jungle Botanical Materials
       const tTopMat = new THREE.MeshStandardMaterial({
         map: this.textures.templeTop,
-        bumpMap: this.textures.stoneBump,
-        bumpScale: 0.14,
-        roughness: 0.86,
+        bumpMap: this.textures.templeCarvedBump,
+        bumpScale: 0.16,
+        roughnessMap: this.textures.stoneRoughness,
+        roughness: 0.84,
       });
       const tSideMat = new THREE.MeshStandardMaterial({
         map: this.textures.templeSide,
-        bumpMap: this.textures.stoneBump,
-        bumpScale: 0.18,
-        roughness: 0.88,
+        bumpMap: this.textures.templeCarvedBump,
+        bumpScale: 0.2,
+        roughnessMap: this.textures.stoneRoughness,
+        roughness: 0.86,
       });
-      const tDoorMat = new THREE.MeshStandardMaterial({ color: 0x16110a, roughness: 0.95 });
+      const tCarvedMat = new THREE.MeshStandardMaterial({
+        map: this.textures.templeCarvedStone,
+        bumpMap: this.textures.templeCarvedBump,
+        bumpScale: 0.24,
+        roughnessMap: this.textures.stoneRoughness,
+        roughness: 0.84,
+      });
+      const tWetStoneMat = new THREE.MeshStandardMaterial({
+        map: this.textures.templeCarvedStone,
+        bumpMap: this.textures.templeCarvedBump,
+        bumpScale: 0.22,
+        color: 0x8ea18b,
+        roughness: 0.36,
+        metalness: 0.08,
+      });
+      const tDoorMat = new THREE.MeshStandardMaterial({ color: 0x0b120d, roughness: 0.96 });
       const tMossMat = new THREE.MeshStandardMaterial({
         map: this.textures.jungleGrass,
         bumpMap: this.textures.grassBump,
-        bumpScale: 0.08,
+        bumpScale: 0.1,
         roughness: 0.85,
       });
       const tGoldMat = new THREE.MeshStandardMaterial({
+        map: this.textures.goldTrim,
         color: 0xfbbf24,
         emissive: 0x92400e,
         emissiveIntensity: 0.45,
-        metalness: 0.82,
+        metalness: 0.84,
         roughness: 0.24,
       });
       const jadeFlameMat = new THREE.MeshStandardMaterial({
         color: 0x34d399,
         emissive: 0x10b981,
-        emissiveIntensity: 2.3,
+        emissiveIntensity: 2.1,
         roughness: 0.2,
       });
+      const jadePulseMat = new THREE.MeshStandardMaterial({
+        color: 0x6ee7b7,
+        emissive: 0x059669,
+        emissiveIntensity: 1.65,
+        roughness: 0.18,
+      });
+      this.templeRuneGlows.push({ mat: jadePulseMat, phase: 0.5 });
 
-      // 1. MONUMENTAL STEPPED GRAND TEMPLE CITADEL & FLANKING SANCTUARIES
-      const buildPyramid = (tx: number, ty: number, tz: number, sc: number, rotY: number) => {
+      // ORIGINAL GUARDIAN STATUE BUILDER (Sculpted Ancient Temple Monkey Sentinels)
+      const buildGuardianStatue = (gx: number, gy: number, gz: number, sc: number, rotY: number, jadeMode = false) => {
+        const sg = new THREE.Group();
+        sg.position.set(gx, gy, gz);
+        sg.rotation.y = rotY;
+        const bodyMat = jadeMode ? tWetStoneMat : tCarvedMat;
+
+        const base = new THREE.Mesh(new THREE.BoxGeometry(2.8 * sc, 1.3 * sc, 2.8 * sc), tCarvedMat);
+        base.position.y = 0.65 * sc;
+        const step = new THREE.Mesh(new THREE.BoxGeometry(2.2 * sc, 0.75 * sc, 2.2 * sc), tTopMat);
+        step.position.y = 1.65 * sc;
+
+        const torso = new THREE.Mesh(new THREE.BoxGeometry(1.75 * sc, 2.3 * sc, 1.45 * sc), bodyMat);
+        torso.position.y = 3.15 * sc;
+        const chestPlate = new THREE.Mesh(new THREE.CylinderGeometry(0.55 * sc, 0.55 * sc, 0.22 * sc, 12), tGoldMat);
+        chestPlate.rotation.x = Math.PI / 2;
+        chestPlate.position.set(0, 3.25 * sc, 0.74 * sc);
+
+        // Sculpted crossed sentinel forearms & shield
+        for (const sx of [-1, 1]) {
+          const shoulder = new THREE.Mesh(new THREE.DodecahedronGeometry(0.58 * sc, 0), bodyMat);
+          shoulder.position.set(sx * 1.08 * sc, 3.9 * sc, 0.12 * sc);
+          const arm = new THREE.Mesh(new THREE.BoxGeometry(0.54 * sc, 1.5 * sc, 0.62 * sc), bodyMat);
+          arm.position.set(sx * 0.92 * sc, 2.95 * sc, 0.45 * sc);
+          arm.rotation.z = sx * 0.25;
+          sg.add(shoulder, arm);
+        }
+
+        // Sculpted Guardian Monkey Head, Ears, Snout, Glowing Jade Eyes & Feathered Crown
+        const head = new THREE.Mesh(new THREE.BoxGeometry(1.38 * sc, 1.3 * sc, 1.3 * sc), bodyMat);
+        head.position.set(0, 4.92 * sc, 0.1 * sc);
+        const brow = new THREE.Mesh(new THREE.BoxGeometry(1.52 * sc, 0.34 * sc, 0.45 * sc), tCarvedMat);
+        brow.position.set(0, 5.26 * sc, 0.66 * sc);
+        const snout = new THREE.Mesh(new THREE.BoxGeometry(0.95 * sc, 0.58 * sc, 0.46 * sc), bodyMat);
+        snout.position.set(0, 4.62 * sc, 0.72 * sc);
+
+        for (const sx of [-1, 1]) {
+          const ear = new THREE.Mesh(new THREE.CylinderGeometry(0.38 * sc, 0.38 * sc, 0.26 * sc, 8), bodyMat);
+          ear.rotation.z = Math.PI / 2;
+          ear.position.set(sx * 0.8 * sc, 4.98 * sc, 0.05 * sc);
+          const eye = new THREE.Mesh(new THREE.OctahedronGeometry(0.16 * sc, 0), jadePulseMat);
+          eye.position.set(sx * 0.32 * sc, 5.0 * sc, 0.76 * sc);
+          sg.add(ear, eye);
+        }
+
+        const crownBase = new THREE.Mesh(new THREE.BoxGeometry(1.68 * sc, 0.48 * sc, 1.42 * sc), tGoldMat);
+        crownBase.position.set(0, 5.78 * sc, 0.08 * sc);
+        const crownCrest = new THREE.Mesh(new THREE.ConeGeometry(0.52 * sc, 1.15 * sc, 5), jadeFlameMat);
+        crownCrest.position.set(0, 6.45 * sc, 0.12 * sc);
+
+        const mossShoulder = new THREE.Mesh(this.createDisplacedRockGeometry(0.65 * sc, gx + gz), tMossMat);
+        mossShoulder.scale.set(1.2, 0.45, 0.9);
+        mossShoulder.position.set(-0.75 * sc, 4.35 * sc, 0.05 * sc);
+
+        sg.traverse((obj) => {
+          if ((obj as THREE.Mesh).isMesh) {
+            obj.castShadow = !this.isSoftwareGl;
+            obj.receiveShadow = !this.isSoftwareGl;
+          }
+        });
+        sg.add(base, step, torso, chestPlate, head, brow, snout, crownBase, crownCrest, mossShoulder);
+        this.levelGroup.add(sg);
+      };
+
+      // 1. MONUMENTAL STEPPED GRAND TEMPLE CITADEL & FLANKING VALLEY SANCTUARIES (Plane 2/3)
+      const buildMonumentalTemple = (tx: number, ty: number, tz: number, sc: number, rotY: number) => {
         const tg = new THREE.Group();
         tg.position.set(tx, ty, tz);
         tg.rotation.y = rotY;
-        for (let tier = 0; tier < 6; tier++) {
-          const w = (26 - tier * 3.6) * sc;
-          const h = 3.4 * sc;
+        for (let tier = 0; tier < 7; tier++) {
+          const w = (30 - tier * 3.5) * sc;
+          const h = 3.2 * sc;
           const tierMesh = new THREE.Mesh(
             new THREE.BoxGeometry(w, h, w),
             [tSideMat, tSideMat, tTopMat, tSideMat, tSideMat, tSideMat]
           );
           tierMesh.position.y = (tier + 0.5) * h;
           tg.add(tierMesh);
-        }
-        const sanctum = new THREE.Mesh(new THREE.BoxGeometry(7.2 * sc, 4.6 * sc, 6.8 * sc), tSideMat);
-        sanctum.position.y = 22.6 * sc;
-        const doorway = new THREE.Mesh(new THREE.BoxGeometry(2.6 * sc, 3.1 * sc, 0.45 * sc), tDoorMat);
-        doorway.position.set(0, 22.0 * sc, 3.3 * sc);
-        const sunDisc = new THREE.Mesh(new THREE.TorusGeometry(1.7 * sc, 0.22 * sc, 8, 24), tGoldMat);
-        sunDisc.position.set(0, 25.8 * sc, 3.35 * sc);
-        tg.add(sanctum, doorway, sunDisc);
 
-        for (let st = 0; st < 12; st++) {
-          const step = new THREE.Mesh(new THREE.BoxGeometry(4.6 * sc, 1.55 * sc, 2.3 * sc), tTopMat);
-          step.position.set(0, (st + 0.5) * 1.55 * sc, (13.4 - st * 0.88) * sc);
+          // Corner stepped stone buttress ribs & partially collapsed parapet fragments
+          if (tier < 5) {
+            for (const sx of [-1, 1]) {
+              const rib = new THREE.Mesh(new THREE.BoxGeometry(1.45 * sc, h * 1.04, 1.45 * sc), tCarvedMat);
+              rib.position.set(sx * (w * 0.48), (tier + 0.5) * h, w * 0.48);
+              tg.add(rib);
+            }
+          }
+        }
+
+        // Upper Recessed Dark Sanctuary Shrine & Relief Archway
+        const sanctum = new THREE.Mesh(new THREE.BoxGeometry(8.6 * sc, 5.2 * sc, 7.6 * sc), tCarvedMat);
+        sanctum.position.y = 24.8 * sc;
+        const doorway = new THREE.Mesh(new THREE.BoxGeometry(3.2 * sc, 3.6 * sc, 0.65 * sc), tDoorMat);
+        doorway.position.set(0, 24.1 * sc, 3.65 * sc);
+        const lintelArch = new THREE.Mesh(new THREE.BoxGeometry(6.8 * sc, 1.15 * sc, 1.35 * sc), tTopMat);
+        lintelArch.position.set(0, 26.4 * sc, 3.7 * sc);
+        const sunDisc = new THREE.Mesh(new THREE.TorusGeometry(1.95 * sc, 0.26 * sc, 8, 24), tGoldMat);
+        sunDisc.position.set(0, 28.4 * sc, 3.75 * sc);
+        const sunCore = new THREE.Mesh(new THREE.OctahedronGeometry(0.75 * sc, 0), jadePulseMat);
+        sunCore.position.set(0, 28.4 * sc, 3.85 * sc);
+        tg.add(sanctum, doorway, lintelArch, sunDisc, sunCore);
+
+        // Monumental Eroded Central Staircase with Stepped Balustrades
+        for (let st = 0; st < 14; st++) {
+          const step = new THREE.Mesh(new THREE.BoxGeometry(5.6 * sc, 1.55 * sc, 2.4 * sc), tTopMat);
+          step.position.set(0, (st + 0.5) * 1.55 * sc, (15.4 - st * 0.9) * sc);
           tg.add(step);
         }
-        const balL = new THREE.Mesh(new THREE.BoxGeometry(0.95 * sc, 1.6 * sc, 14.5 * sc), tSideMat);
-        balL.position.set(-2.65 * sc, 9.5 * sc, 8.6 * sc);
+        const balL = new THREE.Mesh(new THREE.BoxGeometry(1.1 * sc, 1.8 * sc, 16.5 * sc), tCarvedMat);
+        balL.position.set(-3.2 * sc, 10.6 * sc, 9.6 * sc);
         balL.rotation.x = -0.78;
         const balR = balL.clone();
-        balR.position.x = 2.65 * sc;
+        balR.position.x = 3.2 * sc;
         tg.add(balL, balR);
 
-        for (let m = 0; m < 6; m++) {
-          const bush = new THREE.Mesh(this.createDisplacedRockGeometry(1.6 * sc, m + 1.4), tMossMat);
-          bush.position.set((m % 2 === 0 ? -1 : 1) * (8.5 - (m % 3) * 1.5) * sc, (6.8 + (m % 3) * 3.4) * sc, (m < 3 ? 1 : -1) * 7.2 * sc);
-          bush.scale.set(1.25, 0.62, 1.1);
+        // Invading jungle moss & ruined broken pillar tops on terraces
+        for (let m = 0; m < 8; m++) {
+          const bush = new THREE.Mesh(this.createDisplacedRockGeometry(1.75 * sc, m + 1.4), tMossMat);
+          bush.position.set(
+            (m % 2 === 0 ? -1 : 1) * (10.2 - (m % 4) * 1.7) * sc,
+            (6.4 + (m % 4) * 3.2) * sc,
+            (m < 4 ? 1 : -1) * 7.8 * sc
+          );
+          bush.scale.set(1.3, 0.6, 1.15);
           tg.add(bush);
         }
         this.levelGroup.add(tg);
       };
 
-      // Colossal Citadel behind the Boss Summit + Flanking Valley Temples
-      buildPyramid(0, level.theme.hazardFloorY - 0.5, -172, 1.85, 0);
-      buildPyramid(-46, level.theme.hazardFloorY - 1, -68, 0.95, 0.42);
-      buildPyramid(44, level.theme.hazardFloorY - 1, -86, 1.05, -0.38);
+      // Colossal Temple Citadel behind Kukul Summit + Flanking Valley Temples
+      buildMonumentalTemple(0, level.theme.hazardFloorY - 0.5, -176, 1.92, 0);
+      buildMonumentalTemple(-52, level.theme.hazardFloorY - 1, -74, 0.96, 0.44);
+      buildMonumentalTemple(48, level.theme.hazardFloorY - 1, -92, 1.08, -0.4);
 
-      // 2. PLAYABLE GRAND TEMPLE ENTRANCE ARCH & COLONNADE CORRIDOR (z = -92 to -124)
+      // Sculpted Original Guardian Sentinel Statues at Key Monumental Landmarks
+      buildGuardianStatue(-7.4, 0.8, -24.5, 0.82, 0.36);
+      buildGuardianStatue(7.4, 0.8, -24.5, 0.82, -0.36);
+      buildGuardianStatue(-28.6, 14.4, -78.2, 0.95, 1.15, true); // Secret Jade Treasury Guardian
+      buildGuardianStatue(-7.6, 10.2, -93.0, 1.18, 0.25); // Colossal Temple Gate Guardians
+      buildGuardianStatue(7.6, 10.2, -93.0, 1.18, -0.25);
+      buildGuardianStatue(-13.2, 22.8, -138.0, 1.1, 0.55); // Summit Kukul Guardians
+      buildGuardianStatue(13.2, 22.8, -138.0, 1.1, -0.55);
+
+      // 2. PLAYABLE MONUMENTAL TEMPLE GATE, COLLAPSED ARCHES & INNER SANCTUARY COLONNADE (z = -92..-126)
       const gateArch = new THREE.Group();
       gateArch.position.set(0, 0, -93.0);
       for (const sx of [-1, 1]) {
-        const tower = new THREE.Mesh(new THREE.BoxGeometry(3.4, 24.5, 4.2), tSideMat);
-        tower.position.set(sx * 7.6, 8.5, 0);
+        const tower = new THREE.Mesh(new THREE.BoxGeometry(3.8, 25.5, 4.6), tCarvedMat);
+        tower.position.set(sx * 7.8, 8.8, 0);
         tower.castShadow = !this.isSoftwareGl;
         tower.receiveShadow = !this.isSoftwareGl;
         gateArch.add(tower);
 
-        const cap = new THREE.Mesh(new THREE.BoxGeometry(4.2, 1.4, 5.0), tTopMat);
-        cap.position.set(sx * 7.6, 21.0, 0);
-        gateArch.add(cap);
+        // Stepped decorative frieze bands & moss shelves
+        const cap = new THREE.Mesh(new THREE.BoxGeometry(4.8, 1.5, 5.4), tTopMat);
+        cap.position.set(sx * 7.8, 21.4, 0);
+        const baseStep = new THREE.Mesh(new THREE.BoxGeometry(4.6, 2.0, 5.2), tTopMat);
+        baseStep.position.set(sx * 7.8, 10.2, 0);
+        gateArch.add(cap, baseStep);
 
-        const brazier = new THREE.Mesh(new THREE.CylinderGeometry(0.68, 0.45, 0.7, 10), tGoldMat);
-        brazier.position.set(sx * 5.2, 11.7, -0.8);
-        const flame = new THREE.Mesh(new THREE.ConeGeometry(0.42, 1.15, 7), jadeFlameMat);
-        flame.position.set(sx * 5.2, 12.6, -0.8);
+        const brazier = new THREE.Mesh(new THREE.CylinderGeometry(0.72, 0.45, 0.72, 10), tGoldMat);
+        brazier.position.set(sx * 5.4, 11.7, -0.8);
+        const flame = new THREE.Mesh(new THREE.ConeGeometry(0.42, 1.18, 7), jadeFlameMat);
+        flame.position.set(sx * 5.4, 12.6, -0.8);
         gateArch.add(brazier, flame);
       }
-      const gateLintel = new THREE.Mesh(new THREE.BoxGeometry(19.2, 2.8, 3.8), tSideMat);
-      gateLintel.position.set(0, 21.5, 0);
-      const gateCrest = new THREE.Mesh(new THREE.BoxGeometry(10.0, 2.2, 4.2), tGoldMat);
-      gateCrest.position.set(0, 23.8, 0);
-      const gateMedallion = new THREE.Mesh(new THREE.TorusGeometry(1.5, 0.24, 8, 22), jadeFlameMat);
-      gateMedallion.position.set(0, 21.5, 2.0);
-      gateArch.add(gateLintel, gateCrest, gateMedallion);
+      // Sculpted relief archway lintel with partially weathered uneven top blocks
+      const gateLintel = new THREE.Mesh(new THREE.BoxGeometry(19.6, 3.0, 4.0), tCarvedMat);
+      gateLintel.position.set(0, 21.8, 0);
+      const brokenCrownL = new THREE.Mesh(new THREE.BoxGeometry(4.6, 1.8, 3.8), tTopMat);
+      brokenCrownL.position.set(-4.8, 24.0, 0);
+      brokenCrownL.rotation.z = 0.04;
+      const gateCrest = new THREE.Mesh(new THREE.BoxGeometry(6.8, 2.5, 4.3), tGoldMat);
+      gateCrest.position.set(0, 24.3, 0);
+      const gateMedallion = new THREE.Mesh(new THREE.TorusGeometry(1.65, 0.25, 8, 24), jadePulseMat);
+      gateMedallion.position.set(0, 21.8, 2.05);
+      gateArch.add(gateLintel, brokenCrownL, gateCrest, gateMedallion);
       this.levelGroup.add(gateArch);
 
-      // Flanking Colonnade Pillars & Overhead Carved Lintels framing the Inner Temple Hall
+      // Flanking Carved Sanctuary Colonnade Pillars, Eroded Stair Terraces & Creeping Vines
+      const vineTubeMat = new THREE.MeshStandardMaterial({ color: 0x3b6e22, roughness: 0.84 });
+      applyWindSwayShader(vineTubeMat, this.shaderTimeUniform, 0.16, 1.4);
       for (const zPos of [-103.0, -113.0, -122.0]) {
         for (const sx of [-1, 1]) {
-          const col = new THREE.Mesh(new THREE.CylinderGeometry(1.05, 1.25, 26, 10), tSideMat);
-          col.position.set(sx * 8.4, 9.5, zPos);
-          this.levelGroup.add(col);
+          const col = new THREE.Mesh(new THREE.CylinderGeometry(1.12, 1.38, 27, 12), tCarvedMat);
+          col.position.set(sx * 8.6, 9.6, zPos);
+          col.castShadow = !this.isSoftwareGl;
+          const cap = new THREE.Mesh(new THREE.BoxGeometry(3.0, 1.2, 3.0), tTopMat);
+          cap.position.set(sx * 8.6, 23.4, zPos);
+          this.levelGroup.add(col, cap);
 
-          const torchBowl = new THREE.Mesh(new THREE.CylinderGeometry(0.5, 0.3, 0.45, 8), tGoldMat);
+          // Partially collapsed stone wall segments between colonnade bays
+          if (zPos !== -113.0) {
+            const wallSeg = new THREE.Mesh(new THREE.BoxGeometry(1.4, 7.2, 6.2), tSideMat);
+            wallSeg.position.set(sx * 9.5, 13.5, zPos - 4.2);
+            wallSeg.rotation.z = sx * 0.03;
+            this.levelGroup.add(wallSeg);
+          }
+
+          const torchBowl = new THREE.Mesh(new THREE.CylinderGeometry(0.52, 0.32, 0.48, 8), tGoldMat);
           torchBowl.position.set(sx * 7.1, zPos === -103 ? 13.4 : 18.2, zPos);
-          const torchFire = new THREE.Mesh(new THREE.ConeGeometry(0.32, 0.85, 6), jadeFlameMat);
-          torchFire.position.set(sx * 7.1, (zPos === -103 ? 13.4 : 18.2) + 0.6, zPos);
+          const torchFire = new THREE.Mesh(new THREE.ConeGeometry(0.34, 0.9, 6), jadeFlameMat);
+          torchFire.position.set(sx * 7.1, (zPos === -103 ? 13.4 : 18.2) + 0.62, zPos);
           this.levelGroup.add(torchBowl, torchFire);
         }
-        const spanBeam = new THREE.Mesh(new THREE.BoxGeometry(19.6, 1.8, 2.2), tTopMat);
-        spanBeam.position.set(0, 25.4, zPos);
+        const spanBeam = new THREE.Mesh(new THREE.BoxGeometry(20.4, 1.85, 2.3), tCarvedMat);
+        spanBeam.position.set(0, 25.6, zPos);
         this.levelGroup.add(spanBeam);
+
+        // Hanging creeping lianas draping down from temple arch beams
+        const drapeCurve = new THREE.CatmullRomCurve3([
+          new THREE.Vector3(-4.5, 25.0, zPos),
+          new THREE.Vector3(-4.8, 22.8, zPos + 0.4),
+          new THREE.Vector3(-4.2, 20.6, zPos - 0.2),
+        ]);
+        this.levelGroup.add(new THREE.Mesh(new THREE.TubeGeometry(drapeCurve, 8, 0.1, 5, false), vineTubeMat));
       }
 
-      // 3. SUNKEN RIVER RUIN ARCHWAYS emerging from the Emerald River
+      // Eroded Visual Stone Side-Stair Flights & Aqueduct Bridges framing Temple Hall -> Upper Terrace
+      for (const sx of [-1, 1]) {
+        for (let s = 0; s < 5; s++) {
+          const stp = new THREE.Mesh(new THREE.BoxGeometry(2.2, 1.1, 2.4), tTopMat);
+          stp.position.set(sx * 6.4, 11.2 + s * 0.9, -99.0 - s * 2.1);
+          this.levelGroup.add(stp);
+        }
+      }
+
+      // 3. VISUAL LANDMARKS FOR THE 3 DISTINCT ROUTES (West Secret Grotto, Center Prueba Obelisks, East Sky Canopy)
+      // West Secret Route: Natural Stone Cave Grotto Arch framing m-secret-cave (behind z = -39 so monkey-2d-ledge camera is unobstructed!)
+      const caveGrotto = new THREE.Group();
+      caveGrotto.position.set(-21.5, -0.5, -36.5);
+      const caveCliffGeo = this.createDisplacedRockGeometry(4.2, 7.1);
+      const grottoL = new THREE.Mesh(caveCliffGeo, tWetStoneMat);
+      grottoL.scale.set(0.7, 2.2, 0.9);
+      grottoL.position.set(-6.0, 4.2, -1.5);
+      const grottoR = new THREE.Mesh(caveCliffGeo, tWetStoneMat);
+      grottoR.scale.set(0.65, 1.9, 0.85);
+      grottoR.position.set(5.4, 3.8, -1.2);
+      const grottoRoof = new THREE.Mesh(caveCliffGeo, tWetStoneMat);
+      grottoRoof.scale.set(1.85, 0.65, 1.1);
+      grottoRoof.position.set(-0.3, 9.8, -1.4);
+      caveGrotto.add(grottoL, grottoR, grottoRoof);
+      for (let jc = 0; jc < 4; jc++) {
+        const crystal = new THREE.Mesh(new THREE.OctahedronGeometry(0.48 + (jc % 2) * 0.18, 0), jadePulseMat);
+        crystal.scale.set(0.65, 1.95, 0.65);
+        crystal.position.set(-5.2 + jc * 3.4, 1.2 + (jc % 2) * 5.8, -2.5);
+        crystal.rotation.set(0.2, jc * 0.8, -0.25);
+        caveGrotto.add(crystal);
+      }
+      this.levelGroup.add(caveGrotto);
+
+      // Center Route & River Sunken Ruin Archways & Eroded Obelisks (Prueba de los Antiguos landmarks)
       const ruinArchSpots: [number, number, number, number][] = [
         [-12.5, level.theme.hazardFloorY - 0.8, -6.0, 0.45],
         [12.5, level.theme.hazardFloorY - 0.8, -14.5, -0.4],
-        [-13.5, level.theme.hazardFloorY - 0.8, -63.0, 0.28],
-        [16.0, level.theme.hazardFloorY - 0.8, -86.0, -0.35],
+        [-8.5, level.theme.hazardFloorY - 0.8, -66.0, 0.28],
+        [9.5, level.theme.hazardFloorY - 0.8, -81.0, -0.32],
+        [16.0, level.theme.hazardFloorY - 0.8, -88.0, -0.35],
       ];
       for (const [ax, ay, az, rotY] of ruinArchSpots) {
         const arch = new THREE.Group();
         arch.position.set(ax, ay, az);
         arch.rotation.y = rotY;
-        const pL = new THREE.Mesh(new THREE.BoxGeometry(1.7, 9.2, 1.7), tSideMat);
-        pL.position.set(-3.4, 4.6, 0);
-        const pR = pL.clone();
-        pR.position.x = 3.4;
-        const lintel = new THREE.Mesh(new THREE.BoxGeometry(9.4, 1.5, 2.0), tTopMat);
-        lintel.position.set(0, 9.5, 0);
-        const mossCap = new THREE.Mesh(this.createDisplacedRockGeometry(1.3, ax + az), tMossMat);
-        mossCap.position.set(-2.0, 10.4, 0);
+        const pL = new THREE.Mesh(new THREE.CylinderGeometry(0.85, 1.08, 9.8, 10), tCarvedMat);
+        pL.position.set(-3.4, 4.9, 0);
+        const pR = new THREE.Mesh(new THREE.CylinderGeometry(0.85, 1.08, 8.2, 10), tCarvedMat);
+        pR.position.set(3.4, 4.1, 0);
+        const lintel = new THREE.Mesh(new THREE.BoxGeometry(9.6, 1.55, 2.1), tTopMat);
+        lintel.position.set(-0.3, 9.6, 0);
+        lintel.rotation.z = -0.06;
+        const mossCap = new THREE.Mesh(this.createDisplacedRockGeometry(1.4, ax + az), tMossMat);
+        mossCap.position.set(-2.2, 10.6, 0);
         mossCap.scale.set(1.4, 0.55, 1.0);
         arch.add(pL, pR, lintel, mossCap);
         this.levelGroup.add(arch);
       }
 
-      // 4. DRAMATIC CLIFFSIDE WATERFALLS WITH CARVED STONE SPOUTS & PLUNGE FOAM POOLS
-      const wfSpots: [number, number, number, number, number][] = [
-        [-29.0, 6.2, -37.5, 1.18, 1.0],
-        [27.5, 7.0, -47.5, -1.12, 1.05],
-        [-16.5, 13.5, -118.0, 0.35, 1.2],
-        [16.5, 13.5, -118.0, -0.35, 1.2],
+      // East Elevated Route Sun-Jade Sky Totems framing the high canopy & golden bridges
+      const skyTotemSpots: [number, number, number][] = [
+        [18.8, 15.8, -36.8],
+        [15.2, 17.0, -75.5],
+        [12.8, 17.0, -99.5],
+      ];
+      for (const [tx, ty, tz] of skyTotemSpots) {
+        const totem = new THREE.Group();
+        totem.position.set(tx, ty, tz);
+        const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.85, 18.0, 8), tCarvedMat);
+        shaft.position.y = -7.5;
+        const sunRing = new THREE.Mesh(new THREE.TorusGeometry(0.95, 0.14, 8, 20), tGoldMat);
+        sunRing.position.y = 2.6;
+        const orb = new THREE.Mesh(new THREE.OctahedronGeometry(0.38, 0), jadePulseMat);
+        orb.position.y = 2.6;
+        totem.add(shaft, sunRing, orb);
+        this.levelGroup.add(totem);
+      }
+
+      // 4. VOLUMETRIC MULTI-LAYER WATERFALLS, TEMPLE AQUEDUCT CASCADES & RISING MIST
+      const wfSpots: [number, number, number, number, number, boolean][] = [
+        [-29.0, 8.2, -37.5, 1.18, 1.05, false],
+        [27.8, 9.4, -47.5, -1.12, 1.1, false],
+        [-15.8, 16.5, -116.5, 0.32, 1.25, true], // Temple Aqueduct Cascade West
+        [15.8, 16.5, -116.5, -0.32, 1.25, true], // Temple Aqueduct Cascade East
+        [44.0, 21.0, -142.0, -0.45, 1.35, false], // Distant Valley Waterfall
       ];
       const cliffMat = new THREE.MeshStandardMaterial({
         map: this.textures.climbStone,
-        bumpMap: this.textures.stoneBump,
-        bumpScale: 0.2,
-        roughness: 0.9,
+        bumpMap: this.textures.templeCarvedBump,
+        bumpScale: 0.22,
+        roughness: 0.88,
       });
-      const wfMat = new THREE.MeshPhysicalMaterial({
+      const wfOuterMat = new THREE.MeshPhysicalMaterial({
         map: this.textures.waterfallSurface,
+        bumpMap: this.textures.waterBump,
+        bumpScale: 0.08,
         transparent: true,
-        opacity: 0.88,
-        roughness: 0.12,
-        clearcoat: 0.8,
+        opacity: 0.82,
+        roughness: 0.09,
+        clearcoat: 0.9,
+        side: THREE.DoubleSide,
+      });
+      const wfCoreMat = new THREE.MeshBasicMaterial({
+        color: 0xdff7fe,
+        transparent: true,
+        opacity: 0.46,
         side: THREE.DoubleSide,
       });
       const foamMat = new THREE.MeshBasicMaterial({ color: 0xe0f2fe, transparent: true, opacity: 0.62 });
+      const mistMat = new THREE.MeshBasicMaterial({
+        color: 0xeafcf4,
+        transparent: true,
+        opacity: 0.22,
+        depthWrite: false,
+      });
       const cliffRockGeo = this.createDisplacedRockGeometry(6.8, 5.1);
+      const mistGeo = this.createDisplacedRockGeometry(2.4, 2.9);
 
-      for (const [wx, wy, wz, rotY, sc] of wfSpots) {
+      for (const [wx, wy, wz, rotY, sc, aqueduct] of wfSpots) {
         const wg = new THREE.Group();
         wg.position.set(wx, wy, wz);
         wg.rotation.y = rotY;
 
-        const cliffL = new THREE.Mesh(cliffRockGeo, cliffMat);
-        cliffL.scale.set(0.9 * sc, 2.1 * sc, 0.82 * sc);
-        cliffL.position.set(-4.8 * sc, -1.5, -1.4);
-        const cliffR = new THREE.Mesh(cliffRockGeo, cliffMat);
-        cliffR.scale.set(0.9 * sc, 2.1 * sc, 0.82 * sc);
-        cliffR.position.set(4.8 * sc, -1.5, -1.4);
-        const cliffBack = new THREE.Mesh(cliffRockGeo, cliffMat);
-        cliffBack.scale.set(1.35 * sc, 2.2 * sc, 0.7 * sc);
-        cliffBack.position.set(0, -1.0, -3.2);
+        if (!aqueduct) {
+          const cliffL = new THREE.Mesh(cliffRockGeo, cliffMat);
+          cliffL.scale.set(0.92 * sc, 2.2 * sc, 0.85 * sc);
+          cliffL.position.set(-4.8 * sc, -1.6, -1.5);
+          const cliffR = new THREE.Mesh(cliffRockGeo, cliffMat);
+          cliffR.scale.set(0.92 * sc, 2.2 * sc, 0.85 * sc);
+          cliffR.position.set(4.8 * sc, -1.6, -1.5);
+          const cliffBack = new THREE.Mesh(cliffRockGeo, cliffMat);
+          cliffBack.scale.set(1.4 * sc, 2.3 * sc, 0.72 * sc);
+          cliffBack.position.set(0, -1.1, -3.2);
+          wg.add(cliffL, cliffR, cliffBack);
+        } else {
+          // Carved temple stone aqueduct water channel pouring directly off the sanctuary wall
+          const channel = new THREE.Mesh(new THREE.BoxGeometry(6.2 * sc, 1.5, 6.0), tCarvedMat);
+          channel.position.set(0, 2.0 * sc, -2.4);
+          const rimL = new THREE.Mesh(new THREE.BoxGeometry(0.7, 1.1, 5.8), tTopMat);
+          rimL.position.set(-2.9 * sc, 2.75 * sc, -2.4);
+          const rimR = rimL.clone();
+          rimR.position.x = 2.9 * sc;
+          wg.add(channel, rimL, rimR);
+        }
 
         const spout = new THREE.Mesh(new THREE.BoxGeometry(5.6 * sc, 1.2, 2.6), tTopMat);
         spout.position.set(0, 2.2 * sc, -0.5);
 
         const dropH = wy - level.theme.hazardFloorY + 3.2;
-        const stream = new THREE.Mesh(new THREE.PlaneGeometry(5.2 * sc, dropH, 4, 8), wfMat);
-        stream.position.set(0, 2.2 * sc - dropH * 0.5, 0.55);
-        stream.rotation.x = -0.05;
+        const innerCore = new THREE.Mesh(new THREE.PlaneGeometry(4.4 * sc, dropH, 4, 8), wfCoreMat);
+        innerCore.position.set(0, 2.2 * sc - dropH * 0.5, 0.32);
+        innerCore.rotation.x = -0.05;
+
+        const outerStream = new THREE.Mesh(new THREE.PlaneGeometry(5.35 * sc, dropH, 6, 10), wfOuterMat);
+        outerStream.position.set(0, 2.2 * sc - dropH * 0.5, 0.62);
+        outerStream.rotation.x = -0.05;
 
         const poolY = level.theme.hazardFloorY - wy + 0.14;
-        const foam = new THREE.Mesh(new THREE.RingGeometry(1.5 * sc, 5.2 * sc, 20), foamMat);
+        const foam = new THREE.Mesh(new THREE.RingGeometry(1.5 * sc, 5.4 * sc, 22), foamMat);
         foam.rotation.x = -Math.PI / 2;
-        foam.position.set(0, poolY, 1.0);
+        foam.position.set(0, poolY, 1.1);
 
-        wg.add(cliffL, cliffR, cliffBack, spout, stream, foam);
+        // Volumetric waterfall mist billows rising from plunge pool
+        for (let m = 0; m < 2; m++) {
+          const mist = new THREE.Mesh(mistGeo, mistMat);
+          mist.position.set((m === 0 ? -1.4 : 1.4) * sc, poolY + 1.2 + m * 0.8, 1.4);
+          mist.scale.set(1.4 * sc, 0.52 * sc, 1.2 * sc);
+          wg.add(mist);
+          this.templeMistPlumes.push({
+            mesh: mist,
+            baseY: poolY + 1.2 + m * 0.8,
+            baseScale: 1.35 * sc,
+            phase: wx * 0.2 + m * 2.1,
+          });
+        }
+
+        wg.add(spout, innerCore, outerStream, foam);
         this.levelGroup.add(wg);
         this.templeWaterfallPools.push(new THREE.Vector3(wx, level.theme.hazardFloorY + 0.3, wz));
       }
 
-      // 5. DENSE 3-TIER RAINFOREST: BUTTRESS CEIBA CANOPY TREES, CURVED PALMS & DRAPED LIANAS
+      // 5. DENSE MULTI-LAYERED TROPICAL RAINFOREST: GIANT IRREGULAR CEIBAS, LAYERED 3D LEAVES, PALMS & FOREGROUND FRAMING
       const palmBarkMat = new THREE.MeshStandardMaterial({
         map: this.textures.barkTexture,
         bumpMap: this.textures.barkBump,
@@ -2758,21 +3571,24 @@ export class GameEngine {
       const redBarkMat = new THREE.MeshStandardMaterial({
         map: this.textures.barkTexture,
         bumpMap: this.textures.barkBump,
-        bumpScale: 0.18,
-        color: 0x7a3723,
+        bumpScale: 0.2,
+        color: 0x70341e,
         roughness: 0.88,
       });
-      const leafSun = new THREE.MeshStandardMaterial({ color: 0x62ab33, roughness: 0.75 });
-      const leafEmerald = new THREE.MeshStandardMaterial({ color: 0x357d24, roughness: 0.8 });
-      const leafDeep = new THREE.MeshStandardMaterial({ color: 0x205218, roughness: 0.85 });
+      const leafSun = new THREE.MeshStandardMaterial({ color: 0x62ab33, roughness: 0.72, side: THREE.DoubleSide });
+      const leafEmerald = new THREE.MeshStandardMaterial({ color: 0x357d24, roughness: 0.78, side: THREE.DoubleSide });
+      const leafDeep = new THREE.MeshStandardMaterial({ color: 0x205218, roughness: 0.84, side: THREE.DoubleSide });
       const lianaMat = new THREE.MeshStandardMaterial({ color: 0x468026, roughness: 0.78 });
       applyWindSwayShader(leafSun, this.shaderTimeUniform, 0.24, 2.0);
       applyWindSwayShader(leafEmerald, this.shaderTimeUniform, 0.21, 1.85);
       applyWindSwayShader(leafDeep, this.shaderTimeUniform, 0.16, 1.65);
       applyWindSwayShader(lianaMat, this.shaderTimeUniform, 0.28, 1.45);
-      const templeClusterGeo = this.createDisplacedRockGeometry(2.2, 4.3);
 
-      // Curved Tropical Palms on outer banks & river edge
+      // Curved 3D Botanical Palm Frond Geometry (replaces all cone fronds)
+      const palmFrondGeo = this.createCurvedLeafGeometry(4.3, 1.35);
+      const coconutGeo = new THREE.SphereGeometry(0.24, 8, 6);
+      const coconutMat = new THREE.MeshStandardMaterial({ color: 0x5c3a1e, roughness: 0.85 });
+
       const tPalmSpots: [number, number, number, number][] = [
         [-14, level.theme.hazardFloorY, -2, 1.15],
         [14, level.theme.hazardFloorY, -8, 1.18],
@@ -2787,76 +3603,113 @@ export class GameEngine {
         const [px, py, pz, sc] = tPalmSpots[i];
         const pg = new THREE.Group();
         pg.position.set(px, py, pz);
-        const lean = (i % 2 === 0 ? 1 : -1) * 1.1 * sc;
+        const lean = (i % 2 === 0 ? 1 : -1) * 1.25 * sc;
         const pCurve = new THREE.CatmullRomCurve3([
           new THREE.Vector3(0, -0.5, 0),
-          new THREE.Vector3(lean * 0.45, 5.5 * sc, 0.25 * sc),
+          new THREE.Vector3(lean * 0.45, 5.5 * sc, 0.28 * sc),
           new THREE.Vector3(lean, 11.4 * sc, -0.1 * sc),
         ]);
         pg.add(new THREE.Mesh(new THREE.TubeGeometry(pCurve, 10, 0.36 * sc, 7, false), palmBarkMat));
 
         const crown = new THREE.Vector3(lean, 11.4 * sc, -0.1 * sc);
-        for (let f = 0; f < 7; f++) {
-          const fAng = (f / 7) * Math.PI * 2 + i * 0.45;
+        for (let c = 0; c < 3; c++) {
+          const ca = (c / 3) * Math.PI * 2;
+          const nut = new THREE.Mesh(coconutGeo, coconutMat);
+          nut.position.set(crown.x + Math.cos(ca) * 0.36 * sc, crown.y - 0.22 * sc, crown.z + Math.sin(ca) * 0.36 * sc);
+          pg.add(nut);
+        }
+        for (let f = 0; f < 9; f++) {
+          const fAng = (f / 9) * Math.PI * 2 + i * 0.45;
           const fg = new THREE.Group();
           fg.position.copy(crown);
           fg.rotation.y = fAng;
-          const frond = new THREE.Mesh(new THREE.ConeGeometry(0.68 * sc, 4.4 * sc, 5), f % 2 === 0 ? leafEmerald : leafSun);
-          frond.scale.set(1.0, 1.0, 0.18);
-          frond.rotation.z = -1.2;
-          frond.position.set(2.0 * sc, 0, 0);
+          fg.rotation.x = 0.72 + (f % 2) * 0.22;
+          const frond = new THREE.Mesh(palmFrondGeo, f % 2 === 0 ? leafEmerald : leafSun);
+          frond.scale.setScalar(sc);
           fg.add(frond);
           pg.add(fg);
         }
         this.levelGroup.add(pg);
       }
 
-      // Giant Buttress-Rooted Jungle Hardwood Trees + Draped Liana Canopy Arches
+      // Giant Irregular Buttress-Rooted Ceiba Canopy Trees with Multi-Layered 3D Leaf Crowns
+      const canopyFanGeo = this.createCurvedLeafGeometry(3.4, 2.25);
+      const canopyCoreGeo = this.createDisplacedRockGeometry(2.15, 4.3);
       const tHardwoodSpots: [number, number, number, number][] = [
-        [-22, level.theme.hazardFloorY, -10, 1.15],
-        [22, level.theme.hazardFloorY, -16, 1.12],
-        [-28, level.theme.hazardFloorY + 0.5, -48, 1.25],
-        [24, level.theme.hazardFloorY + 0.5, -56, 1.22],
-        [-32, level.theme.hazardFloorY + 1.0, -76, 1.25],
-        [22, level.theme.hazardFloorY + 0.5, -88, 1.18],
-        [-24, level.theme.hazardFloorY + 0.5, -104, 1.15],
-        [24, level.theme.hazardFloorY + 0.5, -124, 1.2],
+        [-22, level.theme.hazardFloorY, -10, 1.18],
+        [22, level.theme.hazardFloorY, -16, 1.15],
+        [-28, level.theme.hazardFloorY + 0.5, -48, 1.28],
+        [24, level.theme.hazardFloorY + 0.5, -56, 1.24],
+        [-32, level.theme.hazardFloorY + 1.0, -76, 1.28],
+        [22, level.theme.hazardFloorY + 0.5, -88, 1.2],
+        [-24, level.theme.hazardFloorY + 0.5, -104, 1.18],
+        [24, level.theme.hazardFloorY + 0.5, -124, 1.22],
       ];
       const crownTips: THREE.Vector3[] = [];
       for (let i = 0; i < tHardwoodSpots.length; i++) {
         const [hx, hy, hz, sc] = tHardwoodSpots[i];
         const hg = new THREE.Group();
         hg.position.set(hx, hy, hz);
+        const swayX = (i % 2 === 0 ? 1 : -1) * 0.6 * sc;
         const tCurve = new THREE.CatmullRomCurve3([
           new THREE.Vector3(0, -0.8, 0),
-          new THREE.Vector3(0.45 * sc, 4.8 * sc, -0.25 * sc),
-          new THREE.Vector3(-0.35 * sc, 10.4 * sc, 0.25 * sc),
+          new THREE.Vector3(swayX, 5.2 * sc, -0.3 * sc),
+          new THREE.Vector3(-swayX * 0.6, 11.2 * sc, 0.35 * sc),
         ]);
-        hg.add(new THREE.Mesh(new THREE.TubeGeometry(tCurve, 11, 0.78 * sc, 8, false), redBarkMat));
+        hg.add(new THREE.Mesh(new THREE.TubeGeometry(tCurve, 12, 0.82 * sc, 8, false), redBarkMat));
 
-        for (let r = 0; r < 4; r++) {
-          const ang = (r / 4) * Math.PI * 2 + 0.4;
+        // 5 Flaring Buttress Roots gripping ground/riverbank
+        for (let r = 0; r < 5; r++) {
+          const ang = (r / 5) * Math.PI * 2 + 0.4 + i * 0.3;
           const rCurve = new THREE.CatmullRomCurve3([
-            new THREE.Vector3(Math.cos(ang) * 0.45 * sc, 2.4 * sc, Math.sin(ang) * 0.45 * sc),
-            new THREE.Vector3(Math.cos(ang) * 2.2 * sc, -0.4, Math.sin(ang) * 2.2 * sc),
+            new THREE.Vector3(Math.cos(ang) * 0.5 * sc, 2.8 * sc, Math.sin(ang) * 0.5 * sc),
+            new THREE.Vector3(Math.cos(ang) * 1.45 * sc, 1.0 * sc, Math.sin(ang) * 1.45 * sc),
+            new THREE.Vector3(Math.cos(ang) * 2.55 * sc, -0.45, Math.sin(ang) * 2.55 * sc),
           ]);
-          hg.add(new THREE.Mesh(new THREE.TubeGeometry(rCurve, 5, 0.28 * sc, 6, false), redBarkMat));
+          hg.add(new THREE.Mesh(new THREE.TubeGeometry(rCurve, 6, 0.3 * sc, 6, false), redBarkMat));
         }
 
-        for (let c = 0; c < 4; c++) {
-          const cAng = (c / 4) * Math.PI * 2 + i * 0.7;
-          const lobe = new THREE.Mesh(templeClusterGeo, c === 0 ? leafSun : c === 1 ? leafEmerald : leafDeep);
-          lobe.position.set(Math.cos(cAng) * 2.3 * sc, (11.6 - (c % 2) * 0.8) * sc, Math.sin(cAng) * 2.3 * sc);
-          lobe.scale.set(1.32 * sc, 0.74 * sc, 1.32 * sc);
-          hg.add(lobe);
+        // Secondary Spreading Branches + Multi-Layered Leaf Fans + Dense Interior Canopy Cores
+        const crownCenter = new THREE.Vector3(-swayX * 0.6, 11.8 * sc, 0.35 * sc);
+        const coreMass = new THREE.Mesh(canopyCoreGeo, leafDeep);
+        coreMass.position.copy(crownCenter);
+        coreMass.scale.set(1.35 * sc, 0.65 * sc, 1.35 * sc);
+        hg.add(coreMass);
+
+        for (let b = 0; b < 5; b++) {
+          const bAng = (b / 5) * Math.PI * 2 + i * 0.7;
+          const bx = crownCenter.x + Math.cos(bAng) * 3.1 * sc;
+          const bz = crownCenter.z + Math.sin(bAng) * 3.1 * sc;
+          const by = crownCenter.y + 1.2 * sc + (b % 2) * 0.9 * sc;
+          const bCurve = new THREE.CatmullRomCurve3([
+            crownCenter.clone().add(new THREE.Vector3(0, -1.2 * sc, 0)),
+            new THREE.Vector3(bx * 0.65, by - 0.6 * sc, bz * 0.65),
+            new THREE.Vector3(bx, by, bz),
+          ]);
+          hg.add(new THREE.Mesh(new THREE.TubeGeometry(bCurve, 6, 0.24 * sc, 6, false), redBarkMat));
+
+          const tierMat = b % 3 === 0 ? leafSun : b % 3 === 1 ? leafEmerald : leafDeep;
+          const subMass = new THREE.Mesh(canopyCoreGeo, tierMat);
+          subMass.position.set(bx, by, bz);
+          subMass.scale.set(1.05 * sc, 0.56 * sc, 1.05 * sc);
+          hg.add(subMass);
+
+          // Radiating 3D curved leaf fans for natural layered silhouettes
+          for (let lf = 0; lf < 4; lf++) {
+            const lfAng = bAng + (lf - 1.5) * 0.55;
+            const leafPivot = new THREE.Group();
+            leafPivot.position.set(bx, by + 0.3 * sc, bz);
+            leafPivot.rotation.y = lfAng;
+            leafPivot.rotation.x = 0.88 + (lf % 2) * 0.24;
+            const lfMesh = new THREE.Mesh(canopyFanGeo, lf % 2 === 0 ? leafSun : leafEmerald);
+            lfMesh.scale.setScalar(sc * 0.95);
+            leafPivot.add(lfMesh);
+            hg.add(leafPivot);
+          }
         }
-        const topCrown = new THREE.Mesh(templeClusterGeo, leafSun);
-        topCrown.position.set(0, 13.4 * sc, 0);
-        topCrown.scale.set(1.4 * sc, 0.76 * sc, 1.4 * sc);
-        hg.add(topCrown);
 
         this.levelGroup.add(hg);
-        crownTips.push(new THREE.Vector3(hx, hy + 14.2 * sc, hz));
+        crownTips.push(new THREE.Vector3(hx, hy + 14.5 * sc, hz));
       }
 
       // Overhead Draped Jungle Liana Arches across the valley
@@ -2871,29 +3724,31 @@ export class GameEngine {
         const pB = crownTips[b];
         if (!pA || !pB) continue;
         const mid = pA.clone().lerp(pB, 0.5);
-        mid.y += 4.5;
+        mid.y += 4.6;
         const vineCurve = new THREE.CatmullRomCurve3([pA, mid, pB]);
-        this.levelGroup.add(new THREE.Mesh(new THREE.TubeGeometry(vineCurve, 14, 0.11, 5, false), lianaMat));
+        this.levelGroup.add(new THREE.Mesh(new THREE.TubeGeometry(vineCurve, 14, 0.12, 5, false), lianaMat));
       }
 
-      // 6. NATURAL BOULDERS, FERNS & COLORFUL TROPICAL FLOWERS ON PLATFORM RIMS
+      // 6. PLANE 1 (FOREGROUND FRAMING) + NATURAL BOULDERS, 3D FERNS & TROPICAL FLOWERS
       const templeDecorSpots: [number, number, number, number][] = [
-        [-4.5, 1.0, 4.4, 0.68],
-        [4.5, 1.0, 4.4, 0.65],
-        [-4.2, 1.6, -19.2, 0.6],
-        [4.2, 1.6, -25.8, 0.58],
-        [-3.6, 9.3, -37.2, 0.62],
-        [3.6, 9.3, -57.0, 0.62],
-        [-8.0, -3.5, -7.2, 0.9],
-        [-13.5, -3.5, -26.5, 0.92],
-        [-4.8, 11.3, -99.8, 0.68],
-        [4.8, 11.3, -99.8, 0.68],
-        [-9.2, 24.5, -133.5, 0.72],
-        [9.2, 24.5, -133.5, 0.72],
+        [-5.2, 0.95, 4.4, 0.78], // Foreground left framing spawn
+        [5.2, 0.95, 4.4, 0.76],  // Foreground right framing spawn
+        [-4.5, 1.0, -3.6, 0.68],
+        [4.5, 1.0, -3.6, 0.65],
+        [-4.2, 1.6, -19.2, 0.62],
+        [4.2, 1.6, -25.8, 0.6],
+        [-3.6, 9.3, -37.2, 0.64],
+        [3.6, 9.3, -57.0, 0.64],
+        [-8.0, -3.5, -7.2, 0.92],
+        [-13.5, -3.5, -26.5, 0.95],
+        [-4.8, 11.3, -99.8, 0.7],
+        [4.8, 11.3, -99.8, 0.7],
+        [-9.2, 24.5, -133.5, 0.75],
+        [9.2, 24.5, -133.5, 0.75],
       ];
       const ruinRockGeo = this.createDisplacedRockGeometry(0.85, 6.2);
-      const ruinInst = new THREE.InstancedMesh(ruinRockGeo, tTopMat, templeDecorSpots.length);
-      const broadLeafGeo = new THREE.ConeGeometry(0.45, 2.0, 5);
+      const ruinInst = new THREE.InstancedMesh(ruinRockGeo, tWetStoneMat, templeDecorSpots.length);
+      const broadLeafGeo = this.createCurvedLeafGeometry(2.1, 0.68);
       const broadLeafInst = new THREE.InstancedMesh(broadLeafGeo, leafEmerald, templeDecorSpots.length * 6);
       const flowerPetalGeo = new THREE.ConeGeometry(0.24, 0.34, 6);
       const flowerMat = new THREE.MeshStandardMaterial({
@@ -2919,9 +3774,9 @@ export class GameEngine {
         const lz = rz + 0.35 * rs;
         for (let f = 0; f < 6; f++) {
           const ang = (f / 6) * Math.PI * 2 + i * 0.5;
-          dummy.position.set(lx + Math.cos(ang) * 0.45 * rs, ry + 0.68 * rs, lz + Math.sin(ang) * 0.45 * rs);
-          dummy.rotation.set(0, -ang, -0.75);
-          dummy.scale.set(rs * 1.15, rs, rs * 0.16);
+          dummy.position.set(lx + Math.cos(ang) * 0.25 * rs, ry + 0.35 * rs, lz + Math.sin(ang) * 0.25 * rs);
+          dummy.rotation.set(0.95, ang, 0);
+          dummy.scale.setScalar(rs * 0.92);
           dummy.updateMatrix();
           broadLeafInst.setMatrixAt(blIdx, dummy.matrix);
           _color.setHex(f % 2 === 0 ? 0x5ca832 : 0x2f7520);
@@ -2981,22 +3836,24 @@ export class GameEngine {
       lotusInst.computeBoundingSphere();
       this.levelGroup.add(padInst, lotusInst);
 
-      // 8. VOLUMETRIC-STYLE GOLDEN CANOPY SUNBEAMS
+      // 8. VOLUMETRIC GOLDEN CANOPY SUNBEAMS PIERCING THROUGH TREES & TEMPLE GATES
       const beamMat = new THREE.MeshBasicMaterial({
         color: 0xfef3c7,
         transparent: true,
-        opacity: this.isSoftwareGl ? 0.045 : 0.065,
+        opacity: this.isSoftwareGl ? 0.05 : 0.075,
         blending: THREE.AdditiveBlending,
         depthWrite: false,
         side: THREE.DoubleSide,
       });
-      const beamGeo = new THREE.ConeGeometry(4.8, 36, 10, 1, true);
+      const beamGeo = new THREE.ConeGeometry(5.0, 38, 10, 1, true);
       const beamCoords: [number, number, number][] = [
-        [-4, 14, -14],
-        [-14, 13, -36],
-        [8, 18, -50],
+        [-3.5, 13, -6],
+        [-4, 14, -18],
+        [-18, 13, -36],
+        [10, 18, -50],
         [-2, 20, -82],
         [0, 26, -120],
+        [0, 32, -140],
       ];
       for (const [bx, by, bz] of beamCoords) {
         const beam = new THREE.Mesh(beamGeo, beamMat);
@@ -3005,12 +3862,12 @@ export class GameEngine {
         this.levelGroup.add(beam);
       }
 
-      // 9. FALLING FLUTTERING JUNGLE LEAVES (InstancedMesh animated in tick)
-      const leafCount = this.isSoftwareGl ? 28 : 64;
-      const fallLeafGeo = new THREE.PlaneGeometry(0.48, 0.24);
+      // 9. FALLING FLUTTERING CURVED JUNGLE LEAVES (InstancedMesh animated in tick)
+      const leafCount = this.isSoftwareGl ? 32 : 76;
+      const fallLeafGeo = this.createCurvedLeafGeometry(0.56, 0.26);
       const fallLeafMat = new THREE.MeshStandardMaterial({
         color: 0xffffff,
-        roughness: 0.65,
+        roughness: 0.62,
         side: THREE.DoubleSide,
       });
       const fallLeaves = new THREE.InstancedMesh(fallLeafGeo, fallLeafMat, leafCount);
@@ -3018,14 +3875,14 @@ export class GameEngine {
       fallLeaves.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
       this.templeLeafStates = [];
       for (let i = 0; i < leafCount; i++) {
-        const lx = (Math.random() - 0.5) * 44;
-        const ly = Math.random() * 24 + 2;
-        const lz = -Math.random() * 145;
+        const lx = (Math.random() - 0.5) * 48;
+        const ly = Math.random() * 26 + 2;
+        const lz = -Math.random() * 148;
         this.templeLeafStates.push({
           x: lx,
           y: ly,
           z: lz,
-          fallSpeed: 0.9 + Math.random() * 0.9,
+          fallSpeed: 0.85 + Math.random() * 0.9,
           swayPhase: Math.random() * Math.PI * 2,
           rotSpeed: 1.4 + Math.random() * 2.0,
         });
@@ -3038,13 +3895,13 @@ export class GameEngine {
       this.levelGroup.add(fallLeaves);
 
       // 10. LUMINOUS JUNGLE FIREFLIES (Custom Additive Shader Points)
-      const ffCount = this.isSoftwareGl ? 36 : 84;
+      const ffCount = this.isSoftwareGl ? 40 : 96;
       const ffPos = new Float32Array(ffCount * 3);
       const ffPhase = new Float32Array(ffCount);
       for (let i = 0; i < ffCount; i++) {
-        ffPos[i * 3] = (Math.random() - 0.5) * 50;
-        ffPos[i * 3 + 1] = level.theme.hazardFloorY + 1.2 + Math.random() * 22;
-        ffPos[i * 3 + 2] = -Math.random() * 142;
+        ffPos[i * 3] = (Math.random() - 0.5) * 52;
+        ffPos[i * 3 + 1] = level.theme.hazardFloorY + 1.2 + Math.random() * 24;
+        ffPos[i * 3 + 2] = -Math.random() * 145;
         ffPhase[i] = Math.random() * Math.PI * 2;
       }
       const ffGeo = new THREE.BufferGeometry();
@@ -3086,83 +3943,419 @@ export class GameEngine {
       ffPoints.frustumCulled = false;
       this.levelGroup.add(ffPoints);
     } else if (biome === 'ice') {
-      // Asymmetric Alaskan Arctic Fjord Mountain Horizons (snow-covered peaks + dark slate coastal cliffs)
-      this.addHorizonMountainRing(-24, -55, level.theme.hazardFloorY - 2, 110, 200, 62, 0x6eaee0, 0xf8fcff, 5.2, 0.72);
-      this.addHorizonMountainRing(-24, -55, level.theme.hazardFloorY - 1, 76, 122, 28, 0x164266, 0x9bd2f2, 3.4, 0.85);
+      // =====================================================================
+      // NIVEL 03: GLACIAR AURORA — Monumental Polar Peaks, Translucent Glaciers,
+      // Aurora Borealis Sky Curtains, Ice Caves, Frozen Waterfalls & Blizzards
+      // =====================================================================
 
-      // Sculpted 3D Floating Glacial Icebergs (Translucent Turquoise Base + Sunlit Snow Cap)
-      const bergCount = 52;
-      const bergBaseGeo = this.createDisplacedRockGeometry(3.4, 2.3);
-      const bergBaseMat = new THREE.MeshPhysicalMaterial({
-        map: this.textures.iceSide,
-        bumpMap: this.textures.iceBump,
-        bumpScale: 0.14,
-        color: 0xffffff,
-        roughness: 0.16,
-        metalness: 0.08,
-        clearcoat: 0.92,
+      // 1. MULTI-LAYERED POLAR FJORD MOUNTAIN RINGS & ANIMATED 3D AURORA BOREALIS CURTAINS
+      this.addHorizonMountainRing(-24, -58, level.theme.hazardFloorY - 2, 122, 224, 68, 0x164168, 0xe8f7ff, 5.2, 0.78);
+      this.addHorizonMountainRing(-24, -55, level.theme.hazardFloorY - 1, 82, 134, 34, 0x0e2a45, 0x86ccf0, 3.4, 0.86);
+
+      const auroraConfigs: [number, number, number, number, number, number, number][] = [
+        [-22, 52, -92, 230, 30, 0x34d399, 0x22d3ee],
+        [-14, 58, -145, 250, 34, 0x22d3ee, 0xa78bfa],
+        [-32, 47, -45, 200, 26, 0x10b981, 0x38bdf8],
+      ];
+      for (let a = 0; a < auroraConfigs.length; a++) {
+        const [ax, ay, az, width, height, colA, colB] = auroraConfigs[a];
+        const aurGeo = new THREE.PlaneGeometry(width, height, 48, 6);
+        const aPos = aurGeo.attributes.position;
+        for (let i = 0; i < aPos.count; i++) {
+          const px = aPos.getX(i);
+          const u = (px / width) + 0.5;
+          // Sweep curtain into a deep celestial arc across the polar horizon
+          aPos.setZ(i, Math.sin(u * Math.PI * 1.4 + a * 1.1) * 28 - Math.cos(u * Math.PI) * 16);
+        }
+        aurGeo.computeVertexNormals();
+        const aurMat = createAuroraCurtainMaterial(
+          this.textures.auroraCurtainTex,
+          this.shaderTimeUniform,
+          colA,
+          colB,
+          0xa78bfa,
+          a * 2.1,
+          0.66 - a * 0.08
+        );
+        const aurMesh = new THREE.Mesh(aurGeo, aurMat);
+        aurMesh.position.set(ax, ay, az);
+        aurMesh.rotation.y = (a - 1) * 0.26;
+        aurMesh.renderOrder = 2;
+        this.levelGroup.add(aurMesh);
+      }
+
+      // Shared PBR & Translucent Optical Ice / Snow-Crusted Slate Materials
+      const polarSlateMat = new THREE.MeshStandardMaterial({
+        map: this.textures.glacialRock,
+        bumpMap: this.textures.glacialRockBump,
+        bumpScale: 0.24,
+        roughnessMap: this.textures.stoneRoughness,
+        roughness: 0.82,
+        metalness: 0.06,
       });
-      const bergSnowGeo = this.createDisplacedRockGeometry(2.9, 4.1);
-      const bergSnowMat = new THREE.MeshStandardMaterial({
+      const snowDriftMat = new THREE.MeshStandardMaterial({
         map: this.textures.iceCrystal,
         bumpMap: this.textures.iceBump,
-        bumpScale: 0.08,
+        bumpScale: 0.1,
         color: 0xf4fbff,
-        roughness: 0.45,
+        roughness: 0.52,
+        metalness: 0.02,
+      });
+      const translucentGlacierMat = new THREE.MeshPhysicalMaterial({
+        map: this.textures.iceSide,
+        bumpMap: this.textures.iceBump,
+        bumpScale: 0.16,
+        color: 0x99e2ff,
+        emissive: 0x064c73,
+        emissiveIntensity: 0.24,
+        roughness: 0.1,
+        metalness: 0.08,
+        clearcoat: 1.0,
+        clearcoatRoughness: 0.06,
+        transmission: this.isSoftwareGl ? 0 : 0.45,
+        ior: 1.31,
+        thickness: 1.8,
+        attenuationColor: new THREE.Color(0x0284c7),
+        attenuationDistance: 4.5,
+        transparent: true,
+        opacity: this.isSoftwareGl ? 0.82 : 0.96,
+        envMapIntensity: 1.65,
+      });
+      applyGlacialIceSheenShader(translucentGlacierMat, this.shaderTimeUniform, 0.48);
+
+      const darkCavernVoidMat = new THREE.MeshStandardMaterial({
+        color: 0x051526,
+        roughness: 0.96,
+        metalness: 0.02,
+      });
+      const crystalBeaconMat = new THREE.MeshStandardMaterial({
+        color: 0xa5f3fc,
+        emissive: 0x06b6d4,
+        emissiveIntensity: 1.85,
+        roughness: 0.15,
+      });
+      const auroraEmeraldCrystalMat = new THREE.MeshStandardMaterial({
+        color: 0x6ee7b7,
+        emissive: 0x10b981,
+        emissiveIntensity: 1.75,
+        roughness: 0.15,
       });
 
-      const bergBases = new THREE.InstancedMesh(bergBaseGeo, bergBaseMat, bergCount);
-      const bergSnows = new THREE.InstancedMesh(bergSnowGeo, bergSnowMat, bergCount);
+      // 2. SCULPTED NATURAL SNOWY POLAR MOUNTAINS & GLACIER CLIFF MASSIFS (flanking both sides)
+      const mountainSpecs: [number, number, number, number, number][] = [
+        [-38, -13, -12, 16, 36],
+        [34, -13, -18, 15, 34],
+        [-36, -13, -64, 17, 40],
+        [32, -13, -58, 18, 42],
+        [-76, -13, -60, 18, 42],
+        [-14, -13, -86, 16, 36],
+        [-82, -13, -104, 19, 44],
+        [-14, -13, -122, 17, 38],
+        [-48, -13, -148, 22, 48],
+      ];
+      for (let i = 0; i < mountainSpecs.length; i++) {
+        const [mx, my, mz, mRad, mH] = mountainSpecs[i];
+        const peakGeo = this.createGlacierPeakGeometry(mRad, mH, i * 1.7 + 0.6);
+        const peakMesh = new THREE.Mesh(peakGeo, polarSlateMat);
+        peakMesh.position.set(mx, my + mH * 0.46, mz);
+        peakMesh.receiveShadow = true;
+        peakMesh.castShadow = !this.isSoftwareGl;
+        this.levelGroup.add(peakMesh);
+
+        // Translucent glacier ice buttress hugging mountain foot
+        const iceButtress = new THREE.Mesh(
+          this.createGlacierPeakGeometry(mRad * 0.72, mH * 0.56, i * 2.3 + 1.1),
+          translucentGlacierMat
+        );
+        iceButtress.position.set(mx + (mx < -40 ? 4.5 : -4.5), my + mH * 0.24, mz + 3.2);
+        this.levelGroup.add(iceButtress);
+      }
+
+      // 3. MONUMENTAL MURALLA 2D GLACIAL WALL & DARK CAVERN ALCOVES (behind z = -41, strictly at z <= -45.2!)
+      const wallGroup = new THREE.Group();
+      const murallaColumns: [number, number, number, number][] = [
+        [3.5, 22, 6.2, -49.8],
+        [-5.5, 24, 7.0, -49.2],
+        [-14.5, 21, 6.4, -49.8],
+        [-23.5, 26, 7.4, -49.0],
+        [-32.5, 22, 6.6, -49.8],
+        [-41.5, 25, 7.2, -49.2],
+        [-50.5, 26, 6.8, -49.6],
+      ];
+      for (let i = 0; i < murallaColumns.length; i++) {
+        const [wx, wh, ww, wz] = murallaColumns[i];
+        const wallSeg = new THREE.Mesh(
+          this.createJaggedRockFormationGeometry(ww * 0.68, wh, i * 1.5 + 0.8),
+          i % 2 === 0 ? translucentGlacierMat : polarSlateMat
+        );
+        wallSeg.scale.set(1.25, 1.0, 0.8);
+        wallSeg.position.set(wx, -13 + wh * 0.5, wz);
+        wallSeg.receiveShadow = true;
+        wallGroup.add(wallSeg);
+
+        // Deep dark shadowed ice-cave alcoves between glacier bastions for dramatic light/dark contrast
+        if (i < murallaColumns.length - 1) {
+          const ax = wx - 4.5;
+          const alcoveBack = new THREE.Mesh(new THREE.BoxGeometry(5.6, 12.0, 2.2), darkCavernVoidMat);
+          alcoveBack.position.set(ax, 4.2, -48.6);
+          wallGroup.add(alcoveBack);
+
+          // Luminous emerald/cyan aurora crystal cluster inside each shadowed recess
+          const cMat = (i % 2 === 0 ? crystalBeaconMat : auroraEmeraldCrystalMat).clone();
+          const cMesh = new THREE.Mesh(new THREE.OctahedronGeometry(0.55, 0), cMat);
+          cMesh.scale.set(0.6, 2.1, 0.6);
+          cMesh.position.set(ax, 3.2 + (i % 2) * 1.4, -47.2);
+          cMesh.rotation.z = (i % 2 === 0 ? 1 : -1) * 0.22;
+          wallGroup.add(cMesh);
+          this.iceCrystalClusters.push({ mesh: cMesh, mat: cMat, phase: i * 1.1 });
+
+          // Overhanging translucent icicle curtain high overhead (y = 11.4..14.8, well above player jumps!)
+          for (let ic = 0; ic < 3; ic++) {
+            const icH = 2.0 + ((i + ic) % 3) * 0.8;
+            const icicle = new THREE.Mesh(new THREE.ConeGeometry(0.42, icH, 6), translucentGlacierMat);
+            icicle.rotation.x = Math.PI;
+            icicle.position.set(ax - 1.5 + ic * 1.5, 14.5 - icH * 0.45, -46.2);
+            wallGroup.add(icicle);
+          }
+        }
+      }
+      this.levelGroup.add(wallGroup);
+
+      // 4. ICE CAVES & GLACIAL ARCHWAYS (Pre-2D Entry Cave, Secret Crystal Sanctuary, Western Grotto, Boss Citadel)
+      // 4A. Pre-2D Glacier Cavern Portal framing i-step-pre2d (z = -33.5, y >= 11 clearance)
+      const pre2dArchGeo = this.createDesertRockArchGeometry(12.8, 12.2, 2.1, 3.4);
+      const pre2dArch = new THREE.Mesh(pre2dArchGeo, translucentGlacierMat);
+      pre2dArch.position.set(0, 1.2, -35.5);
+      this.levelGroup.add(pre2dArch);
+
+      // 4B. Secret Crystal Sanctuary Cave framing i-3d-side & i-elev-secret (east flank x = -27..-24, z = -52..-68)
+      const secretCaveGroup = new THREE.Group();
+      const caveWallBack = new THREE.Mesh(this.createJaggedRockFormationGeometry(5.8, 26, 4.2), polarSlateMat);
+      caveWallBack.position.set(-24.5, 0, -59.5);
+      const caveInnerShadow = new THREE.Mesh(new THREE.BoxGeometry(2.6, 11.5, 14.5), darkCavernVoidMat);
+      caveInnerShadow.position.set(-26.8, 9.2, -59.5);
+      const caveArch = new THREE.Mesh(this.createDesertRockArchGeometry(14.0, 11.5, 1.9, 5.1), translucentGlacierMat);
+      caveArch.rotation.y = Math.PI / 2;
+      caveArch.position.set(-28.5, 5.8, -59.5);
+      secretCaveGroup.add(caveWallBack, caveInnerShadow, caveArch);
+
+      // Crystal Mechanism Conduit linking Switch sw-i1 ([-33, 7.4, -52.8]) to Elevator i-elev-secret ([-33, 7.2, -64])
+      const conduitMat = new THREE.MeshStandardMaterial({
+        color: 0x38bdf8,
+        emissive: 0x0284c7,
+        emissiveIntensity: 0.75,
+        roughness: 0.2,
+      });
+      const conduitCurve = new THREE.CatmullRomCurve3([
+        new THREE.Vector3(-33, 7.4, -52.8),
+        new THREE.Vector3(-30.5, 6.9, -58.4),
+        new THREE.Vector3(-33, 7.2, -64.0),
+      ]);
+      const conduitBeam = new THREE.Mesh(new THREE.TubeGeometry(conduitCurve, 16, 0.14, 6, false), conduitMat);
+      this.iceMechanismBeam = { mesh: conduitBeam, mat: conduitMat };
+      secretCaveGroup.add(conduitBeam);
+
+      for (let c = 0; c < 5; c++) {
+        const cm = auroraEmeraldCrystalMat.clone();
+        const cr = new THREE.Mesh(new THREE.OctahedronGeometry(0.6 + (c % 2) * 0.25, 0), cm);
+        cr.scale.set(0.65, 2.2, 0.65);
+        cr.position.set(-27.2, 7.8 + (c % 3) * 1.4, -53.5 - c * 3.1);
+        cr.rotation.z = 0.28;
+        secretCaveGroup.add(cr);
+        this.iceCrystalClusters.push({ mesh: cr, mat: cm, phase: c * 0.9 });
+      }
+      this.levelGroup.add(secretCaveGroup);
+
+      // 4C. Western Secret Ice Grotto behind i-dis-side ([-66, 8.4, -83])
+      const westGrotto = new THREE.Group();
+      const grottoCliff = new THREE.Mesh(this.createJaggedRockFormationGeometry(6.4, 24, 7.3), polarSlateMat);
+      grottoCliff.position.set(-74.5, -0.5, -83);
+      const grottoShadow = new THREE.Mesh(new THREE.BoxGeometry(2.4, 8.5, 9.2), darkCavernVoidMat);
+      grottoShadow.position.set(-71.8, 9.8, -83);
+      const grottoArch = new THREE.Mesh(this.createDesertRockArchGeometry(10.5, 9.6, 1.7, 6.4), translucentGlacierMat);
+      grottoArch.rotation.y = Math.PI / 2;
+      grottoArch.position.set(-71.2, 6.4, -83);
+      westGrotto.add(grottoCliff, grottoShadow, grottoArch);
+      for (let c = 0; c < 3; c++) {
+        const cm = crystalBeaconMat.clone();
+        const cr = new THREE.Mesh(new THREE.OctahedronGeometry(0.55, 0), cm);
+        cr.scale.set(0.6, 2.1, 0.6);
+        cr.position.set(-71.2, 9.2 + (c % 2) * 1.1, -85.4 + c * 2.4);
+        cr.rotation.z = -0.3;
+        westGrotto.add(cr);
+        this.iceCrystalClusters.push({ mesh: cr, mat: cm, phase: c * 1.4 + 2.0 });
+      }
+      this.levelGroup.add(westGrotto);
+
+      // 4D. Cryogenic Cathedral Amphitheater & Dark Ice Vault behind Boss Arena ([-48, 12.0, -113])
+      const citadelGroup = new THREE.Group();
+      for (let s = 0; s < 9; s++) {
+        const ang = -Math.PI * 0.85 + (s / 8) * Math.PI * 0.7;
+        const dist = 17.5 + (s % 2) * 2.8;
+        const sx = -48 + Math.cos(ang) * dist;
+        const sz = -113 + Math.sin(ang) * dist;
+        const spireH = 18 + (s % 3) * 5.5;
+        const spire = new THREE.Mesh(
+          this.createGlacierPeakGeometry(3.8 + (s % 2) * 1.1, spireH, s * 1.6),
+          s % 2 === 0 ? translucentGlacierMat : polarSlateMat
+        );
+        spire.position.set(sx, 2.0 + spireH * 0.45, sz);
+        spire.castShadow = !this.isSoftwareGl;
+        citadelGroup.add(spire);
+
+        const cm = (s % 2 === 0 ? crystalBeaconMat : auroraEmeraldCrystalMat).clone();
+        const beacon = new THREE.Mesh(new THREE.OctahedronGeometry(0.65, 0), cm);
+        beacon.scale.set(0.65, 2.3, 0.65);
+        beacon.position.set(sx * 0.96 - 48 * 0.04, 13.8 + (s % 2) * 1.8, sz * 0.96 - 113 * 0.04);
+        citadelGroup.add(beacon);
+        this.iceCrystalClusters.push({ mesh: beacon, mat: cm, phase: s * 0.75 });
+      }
+      // Deep shadowed glacial sanctuary archway framing the Goal Portal at z = -124.5
+      const goalCavernArch = new THREE.Mesh(this.createDesertRockArchGeometry(15.5, 11.5, 2.2, 8.2), translucentGlacierMat);
+      goalCavernArch.position.set(-48, 11.2, -124.5);
+      const goalCavernRecess = new THREE.Mesh(new THREE.BoxGeometry(10.5, 9.5, 3.2), darkCavernVoidMat);
+      goalCavernRecess.position.set(-48, 15.8, -127.8);
+      citadelGroup.add(goalCavernArch, goalCavernRecess);
+      this.levelGroup.add(citadelGroup);
+
+      // 5. PARTIALLY FROZEN WATERFALLS & COLD VAPOR PLUNGE BASINS
+      const frozenFallMat = new THREE.MeshPhysicalMaterial({
+        map: this.textures.waterfallSurface,
+        bumpMap: this.textures.iceBump,
+        bumpScale: 0.14,
+        color: 0xa5f3fc,
+        emissive: 0x075985,
+        emissiveIntensity: 0.35,
+        roughness: 0.12,
+        clearcoat: 1.0,
+        transparent: true,
+        opacity: 0.88,
+      });
+      const vaporMat = new THREE.MeshBasicMaterial({
+        color: 0xe0f7ff,
+        transparent: true,
+        opacity: 0.24,
+        depthWrite: false,
+      });
+
+      const waterfallSpots: [number, number, number, number, number][] = [
+        [-24, 14, -15, 1.0, 0.8],
+        [24, 14, -26, -1.0, 0.8],
+        [-68, 18, -68, 1.0, 0.9],
+        [-26, 18, -96, -1.0, 0.85],
+      ];
+      for (let w = 0; w < waterfallSpots.length; w++) {
+        const [wx, wy, wz, dirX, rotY] = waterfallSpots[w];
+        const fg = new THREE.Group();
+        fg.position.set(wx, -13, wz);
+        fg.rotation.y = dirX > 0 ? rotY * 0.45 : -rotY * 0.45;
+
+        const cliffBack = new THREE.Mesh(this.createJaggedRockFormationGeometry(4.8, wy + 15, w * 2.1 + 1.3), polarSlateMat);
+        cliffBack.position.y = (wy + 15) * 0.5;
+        fg.add(cliffBack);
+
+        // Frozen stepped cascade ice sheet + ribbed icicle columns
+        const fallH = wy + 13;
+        const fallSheet = new THREE.Mesh(new THREE.CylinderGeometry(1.4, 2.5, fallH, 10), frozenFallMat);
+        fallSheet.scale.set(1.5, 1.0, 0.52);
+        fallSheet.position.set(dirX * 2.4, fallH * 0.5, 0);
+        fg.add(fallSheet);
+
+        for (let r = -1; r <= 1; r++) {
+          const icicleCol = new THREE.Mesh(new THREE.ConeGeometry(0.45, fallH * 0.72, 6), translucentGlacierMat);
+          icicleCol.rotation.x = Math.PI;
+          icicleCol.position.set(dirX * 3.1, fallH * 0.62, r * 1.15);
+          fg.add(icicleCol);
+        }
+
+        // Cold frost vapor mist cloud drifting at waterfall base
+        const mist = new THREE.Mesh(new THREE.SphereGeometry(3.4, 12, 8), vaporMat);
+        mist.scale.set(1.5, 0.52, 1.4);
+        mist.position.set(dirX * 3.4, 1.2, 0);
+        fg.add(mist);
+        this.iceVaporPlumes.push({ mesh: mist, baseY: 1.2, phase: w * 1.6 });
+
+        this.levelGroup.add(fg);
+      }
+
+      // 6. SCULPTED TRANSLUCENT ICEBERGS, FROZEN LAKE ICE FLOES & SNOW-DUSTED SLATE ROCKS
+      const bergCount = 46;
+      const bergSlateGeo = this.createDisplacedRockGeometry(3.2, 2.3);
+      const bergIceGeo = this.createGlacierPeakGeometry(2.8, 6.2, 3.1);
+      const bergSnowGeo = this.createDisplacedRockGeometry(2.6, 4.1);
+
+      const bergSlates = new THREE.InstancedMesh(bergSlateGeo, polarSlateMat, bergCount);
+      const bergIces = new THREE.InstancedMesh(bergIceGeo, translucentGlacierMat, bergCount);
+      const bergSnows = new THREE.InstancedMesh(bergSnowGeo, snowDriftMat, bergCount);
       for (let i = 0; i < bergCount; i++) {
         const side = i % 2 === 0 ? 1 : -1;
-        const dist = 22 + ((i * 19) % 62);
-        const z = 12 - ((i * 21) % 134);
+        const dist = 24 + ((i * 19) % 62);
+        const z = 14 - ((i * 21) % 140);
         const x = (i % 2 === 0 ? -48 : 0) + side * dist;
         const sc = 0.85 + (i % 5) * 0.34;
         const isTallPeak = i % 3 === 0;
-        const hScale = isTallPeak ? sc * 1.95 : sc * 0.72;
-        const baseY = level.theme.hazardFloorY + (isTallPeak ? 1.8 * sc : 0.4 * sc);
+        const hScale = isTallPeak ? sc * 1.85 : sc * 0.75;
+        const baseY = level.theme.hazardFloorY;
 
-        dummy.position.set(x, baseY, z);
-        dummy.rotation.set((i % 3) * 0.12, i * 0.8, (i % 2) * 0.08);
-        dummy.scale.set(sc * 1.25, hScale, sc * 1.15);
+        dummy.position.set(x, baseY + 0.5 * sc, z);
+        dummy.rotation.set(0.08, i * 0.8, 0.06);
+        dummy.scale.set(sc * 1.35, sc * 0.85, sc * 1.25);
         dummy.updateMatrix();
-        bergBases.setMatrixAt(i, dummy.matrix);
-        _color.setHex(i % 2 === 0 ? 0xa3defc : 0x7ac7f2);
-        bergBases.setColorAt(i, _color);
+        bergSlates.setMatrixAt(i, dummy.matrix);
 
-        dummy.position.set(x, baseY + hScale * 2.1, z);
+        dummy.position.set(x, baseY + hScale * 2.2, z);
+        dummy.rotation.set((i % 3) * 0.1, i * 0.8, (i % 2) * 0.08);
+        dummy.scale.set(sc * 1.22, hScale, sc * 1.15);
+        dummy.updateMatrix();
+        bergIces.setMatrixAt(i, dummy.matrix);
+
+        dummy.position.set(x, baseY + hScale * 3.6, z);
         dummy.rotation.set(0, i * 0.8, 0);
-        dummy.scale.set(sc * 1.12, hScale * 0.48, sc * 1.05);
+        dummy.scale.set(sc * 1.05, hScale * 0.38, sc * 1.0);
         dummy.updateMatrix();
         bergSnows.setMatrixAt(i, dummy.matrix);
       }
-      for (const im of [bergBases, bergSnows]) {
+      for (const im of [bergSlates, bergIces, bergSnows]) {
         im.instanceMatrix.needsUpdate = true;
-        if (im.instanceColor) im.instanceColor.needsUpdate = true;
         im.computeBoundingSphere();
       }
-      this.levelGroup.add(bergBases, bergSnows);
+      this.levelGroup.add(bergSlates, bergIces, bergSnows);
 
-      // Flat Sea-Ice Floes drifting on the calm fjord water
-      const floeCount = 36;
-      const floeGeo = new THREE.CylinderGeometry(3.2, 3.6, 0.45, 7);
-      const floes = new THREE.InstancedMesh(floeGeo, bergSnowMat, floeCount);
+      // Frozen Lake Ice Floe Plates & Vapor Plumes across the Polar Fjord
+      const floeCount = 34;
+      const floeGeo = new THREE.CylinderGeometry(3.4, 3.8, 0.42, 8);
+      const floes = new THREE.InstancedMesh(floeGeo, snowDriftMat, floeCount);
       for (let i = 0; i < floeCount; i++) {
         const side = i % 2 === 0 ? 1 : -1;
         const dist = 16 + ((i * 23) % 58);
-        const z = 14 - ((i * 25) % 136);
+        const z = 14 - ((i * 25) % 138);
         const x = (i % 2 === 0 ? -46 : 0) + side * dist;
-        const sc = 0.7 + (i % 4) * 0.35;
-        dummy.position.set(x, level.theme.hazardFloorY + 0.16, z);
+        const sc = 0.72 + (i % 4) * 0.36;
+        dummy.position.set(x, level.theme.hazardFloorY + 0.14, z);
         dummy.rotation.set(0, i * 0.65, 0);
-        dummy.scale.set(sc * 1.3, 1, sc);
+        dummy.scale.set(sc * 1.32, 1, sc);
         dummy.updateMatrix();
         floes.setMatrixAt(i, dummy.matrix);
       }
       floes.instanceMatrix.needsUpdate = true;
       floes.computeBoundingSphere();
       this.levelGroup.add(floes);
+
+      // Cold vapor mist banks hovering over the frozen lake & secret cavern entrances
+      const lakeVaporSpots: [number, number, number][] = [
+        [-14, -12.1, -14],
+        [12, -12.1, -24],
+        [-33, 6.9, -59],
+        [-70, 8.6, -83],
+      ];
+      for (let v = 0; v < lakeVaporSpots.length; v++) {
+        const [vx, vy, vz] = lakeVaporSpots[v];
+        const vMesh = new THREE.Mesh(new THREE.SphereGeometry(3.2, 12, 8), vaporMat);
+        vMesh.scale.set(1.6, 0.35, 1.3);
+        vMesh.position.set(vx, vy, vz);
+        this.levelGroup.add(vMesh);
+        this.iceVaporPlumes.push({ mesh: vMesh, baseY: vy, phase: v * 1.9 + 0.5 });
+      }
 
       // Snow-Dusted Dark Arctic Slate Rocks on safe platform corners
       const iceRockSpots: [number, number, number, number][] = [
@@ -3175,14 +4368,8 @@ export class GameEngine {
         [-43.8, 12.9, -114.2, 0.7],
       ];
       const slateGeo = this.createDisplacedRockGeometry(0.9, 6.7);
-      const slateMat = new THREE.MeshStandardMaterial({
-        color: 0x264869,
-        bumpMap: this.textures.stoneBump,
-        bumpScale: 0.16,
-        roughness: 0.85,
-      });
-      const slateInst = new THREE.InstancedMesh(slateGeo, slateMat, iceRockSpots.length);
-      const snowCapInst = new THREE.InstancedMesh(this.createDisplacedRockGeometry(0.72, 2.9), bergSnowMat, iceRockSpots.length);
+      const slateInst = new THREE.InstancedMesh(slateGeo, polarSlateMat, iceRockSpots.length);
+      const snowCapInst = new THREE.InstancedMesh(this.createDisplacedRockGeometry(0.72, 2.9), snowDriftMat, iceRockSpots.length);
       for (let i = 0; i < iceRockSpots.length; i++) {
         const [rx, ry, rz, rs] = iceRockSpots[i];
         dummy.position.set(rx, ry + 0.25 * rs, rz);
@@ -3201,103 +4388,309 @@ export class GameEngine {
       snowCapInst.instanceMatrix.needsUpdate = true;
       snowCapInst.computeBoundingSphere();
       this.levelGroup.add(slateInst, snowCapInst);
-    } else if (biome === 'volcanic') {
-      // Jagged Dark Obsidian Caldera Horizon Ring
-      this.addHorizonMountainRing(0, -115, level.theme.hazardFloorY - 2, 105, 195, 58, 0x160c0e, 0x7c1d12, 7.7, 0.92);
 
-      // Fractured Obsidian Rock Cliffs with Glowing Magma Fissures
-      const colCount = 56;
-      const colGeo = new THREE.CylinderGeometry(2.1, 3.6, 22, 6);
-      const colMat = new THREE.MeshStandardMaterial({
-        map: this.textures.volcanicSide,
-        emissiveMap: this.textures.volcanicSideEmissive,
-        emissive: 0xff6a00,
-        emissiveIntensity: 1.5,
-        bumpMap: this.textures.basaltBump,
-        bumpScale: 0.22,
-        roughness: 0.86,
-        metalness: 0.16,
+      // 7. DYNAMIC BLIZZARD SNOW-SQUALL VEIL BANDS
+      const blizzardMat = new THREE.MeshBasicMaterial({
+        color: 0xdbeafe,
+        transparent: true,
+        opacity: 0.14,
+        depthWrite: false,
+        side: THREE.DoubleSide,
       });
-      const cols = new THREE.InstancedMesh(colGeo, colMat, colCount);
-      for (let i = 0; i < colCount; i++) {
-        const side = i % 2 === 0 ? 1 : -1;
-        const dist = 24 + ((i * 23) % 66);
-        const z = 10 - i * 4.5;
-        const scale = 0.85 + (i % 4) * 0.38;
-        dummy.position.set(side * dist, -5 + (i % 3) * 1.4, z);
-        dummy.rotation.set((i % 3 - 1) * 0.06, i * 0.5, (i % 2) * 0.05);
-        dummy.scale.set(scale, scale * 1.15, scale);
-        dummy.updateMatrix();
-        cols.setMatrixAt(i, dummy.matrix);
+      for (let b = 0; b < 6; b++) {
+        const bMesh = new THREE.Mesh(new THREE.PlaneGeometry(34, 8), blizzardMat);
+        bMesh.rotation.y = 0.22 * (b % 2 === 0 ? 1 : -1);
+        bMesh.position.set(-22 + (b % 2 === 0 ? -10 : 10), 4 + (b % 3) * 4, -16 - b * 19);
+        this.levelGroup.add(bMesh);
+        this.iceBlizzardBands.push({
+          mesh: bMesh,
+          baseX: bMesh.position.x,
+          baseZ: bMesh.position.z,
+          phase: b * 1.25,
+          speed: 3.4 + (b % 3) * 1.1,
+        });
       }
-      cols.instanceMatrix.needsUpdate = true;
-      cols.computeBoundingSphere();
-      this.levelGroup.add(cols);
+    } else if (biome === 'volcanic') {
+      // CAÑÓN VOLCÁNICO: Monumental Basalt Cliffs, Hexagonal Basalt Columns, Natural Stone Bridges,
+      // Lit Volcanic Caves, Luminous Magma Fissures, Erupting Volcanoes, Geysers, Smoke, Ash, Falling Rocks & Heat Waves
+      this.addHorizonMountainRing(0, -125, level.theme.hazardFloorY - 2, 118, 215, 62, 0x12090b, 0x8f1d14, 7.7, 0.94);
 
-      // Hero Erupting Volcanoes (faceted obsidian cones + glowing magma craters + lava fountain bursts + lava streams)
-      const volcMat = new THREE.MeshStandardMaterial({
+      const basaltCliffMat = new THREE.MeshStandardMaterial({
         map: this.textures.volcanicSide,
         emissiveMap: this.textures.volcanicSideEmissive,
         emissive: 0xff5a00,
-        emissiveIntensity: 1.65,
+        emissiveIntensity: 1.42,
         bumpMap: this.textures.basaltBump,
         bumpScale: 0.24,
-        roughness: 0.88,
+        roughness: 0.87,
+        metalness: 0.16,
+      });
+      const basaltTopRockMat = new THREE.MeshStandardMaterial({
+        map: this.textures.volcanicBasalt,
+        emissiveMap: this.textures.volcanicEmissive,
+        emissive: 0xff5a00,
+        emissiveIntensity: 1.35,
+        bumpMap: this.textures.basaltBump,
+        bumpScale: 0.2,
+        roughness: 0.85,
+        metalness: 0.14,
       });
       const magmaPoolMat = new THREE.MeshStandardMaterial({
         color: 0xfef08a,
         emissive: 0xf97316,
-        emissiveIntensity: 2.8,
+        emissiveIntensity: 2.9,
         roughness: 0.2,
       });
       const lavaJetMat = new THREE.MeshBasicMaterial({ color: 0xfde047 });
 
+      // 1. Sculpted Irregular Basalt Canyon Walls flanking both sides (keeping 2D camera view +X @ z=-38..-84 completely clear!)
+      const canyonWallPlacements: [number, number, number, number, number, number][] = [];
+      for (let z = 14; z >= -268; z -= 14) {
+        const in2DCamClearZone = z <= -36 && z >= -86;
+        // West canyon cliff (-X): visible right behind 2D ridge & framing full canyon
+        const wx = -25 - Math.abs(Math.sin(z * 0.045)) * 11;
+        canyonWallPlacements.push([wx, -2 + Math.cos(z * 0.07) * 2.5, z, 8.5, 22 + Math.abs(Math.sin(z * 0.11)) * 12, 10.5]);
+        // Outer high basalt ridge behind West cliff
+        canyonWallPlacements.push([wx - 13, 8, z - 6, 12, 30, 14]);
+
+        // East canyon cliff (+X): skip close foreground during 2D ridge camera zone (z = -36..-86) so camera at +13.5 is unobstructed
+        if (!in2DCamClearZone) {
+          const ex = 26 + Math.abs(Math.cos(z * 0.05)) * 10;
+          canyonWallPlacements.push([ex, -1 + Math.sin(z * 0.08) * 2.5, z, 8.5, 22 + Math.abs(Math.cos(z * 0.09)) * 12, 10.5]);
+          canyonWallPlacements.push([ex + 13, 9, z - 5, 12, 30, 14]);
+        } else {
+          // Far behind the 2D camera (+X >= 42) still place rugged distant silhouette peaks
+          canyonWallPlacements.push([46, 5, z, 11, 26, 13]);
+        }
+      }
+      const wallGeo = this.createDisplacedRockGeometry(1.0, 6.4);
+      const canyonWalls = new THREE.InstancedMesh(wallGeo, basaltCliffMat, canyonWallPlacements.length);
+      for (let i = 0; i < canyonWallPlacements.length; i++) {
+        const [wx, wy, wz, sx, sy, sz] = canyonWallPlacements[i];
+        dummy.position.set(wx, wy, wz);
+        dummy.rotation.set(0.06 * Math.sin(i), i * 0.9, 0.05 * Math.cos(i));
+        dummy.scale.set(sx, sy * 0.52, sz);
+        dummy.updateMatrix();
+        canyonWalls.setMatrixAt(i, dummy.matrix);
+      }
+      canyonWalls.instanceMatrix.needsUpdate = true;
+      canyonWalls.computeBoundingSphere();
+      this.levelGroup.add(canyonWalls);
+
+      // 2. Dense Hexagonal Columnar Basalt Formations emerging from lava along cliffs & island flanks
+      const hexSpecs: [number, number, number, number][] = [];
+      for (let i = 0; i < 96; i++) {
+        const side = i % 2 === 0 ? 1 : -1;
+        const z = 12 - i * 2.9;
+        const in2DCamClear = z <= -36 && z >= -86 && side > 0;
+        const dist = in2DCamClear ? 40 + ((i * 11) % 18) : 17.5 + ((i * 17) % 24);
+        const hScale = 0.65 + (i % 5) * 0.34;
+        const yOff = -7.5 + (i % 4) * 1.4;
+        hexSpecs.push([side * dist, yOff, z, hScale]);
+      }
+      const hexGeo = new THREE.CylinderGeometry(1.5, 2.1, 18, 6);
+      const hexCols = new THREE.InstancedMesh(hexGeo, basaltCliffMat, hexSpecs.length);
+      for (let i = 0; i < hexSpecs.length; i++) {
+        const [hx, hy, hz, sc] = hexSpecs[i];
+        dummy.position.set(hx, hy, hz);
+        dummy.rotation.set((i % 3 - 1) * 0.04, (i * 0.52) % Math.PI, (i % 2 === 0 ? 1 : -1) * 0.03);
+        dummy.scale.set(0.75 + (i % 3) * 0.25, sc, 0.75 + (i % 3) * 0.25);
+        dummy.updateMatrix();
+        hexCols.setMatrixAt(i, dummy.matrix);
+      }
+      hexCols.instanceMatrix.needsUpdate = true;
+      hexCols.computeBoundingSphere();
+      this.levelGroup.add(hexCols);
+
+      // 3. Monumental Natural Basalt Stone Bridges / Arches spanning high over Canyon & Rocket Flight Corridor
+      const archSpecs: { z: number; halfSpan: number; apexY: number; baseY: number; thickness: number }[] = [
+        { z: -11.5, halfSpan: 15.5, apexY: 14.5, baseY: -9.5, thickness: 1.55 },
+        { z: -114, halfSpan: 19.5, apexY: 20.5, baseY: -9.5, thickness: 1.85 },
+        { z: -148, halfSpan: 20.5, apexY: 22.0, baseY: -9.5, thickness: 1.95 },
+        { z: -184, halfSpan: 19.5, apexY: 21.0, baseY: -9.5, thickness: 1.85 },
+        { z: -226, halfSpan: 17.5, apexY: 22.5, baseY: -4.0, thickness: 1.7 },
+      ];
+      for (let a = 0; a < archSpecs.length; a++) {
+        const spec = archSpecs[a];
+        const archPts = [
+          new THREE.Vector3(-spec.halfSpan, spec.baseY, spec.z),
+          new THREE.Vector3(-spec.halfSpan * 0.62, (spec.baseY + spec.apexY) * 0.48, spec.z + (a % 2 === 0 ? 1.2 : -1.2)),
+          new THREE.Vector3(0, spec.apexY, spec.z),
+          new THREE.Vector3(spec.halfSpan * 0.62, (spec.baseY + spec.apexY) * 0.48, spec.z - (a % 2 === 0 ? 1.2 : -1.2)),
+          new THREE.Vector3(spec.halfSpan, spec.baseY, spec.z),
+        ];
+        const archCurve = new THREE.CatmullRomCurve3(archPts);
+        const archMesh = new THREE.Mesh(
+          new THREE.TubeGeometry(archCurve, 22, spec.thickness, 7, false),
+          basaltCliffMat
+        );
+        archMesh.scale.set(1, 0.85, 1.35);
+        this.levelGroup.add(archMesh);
+
+        // Glowing underside magma vein tracing the underside of each stone arch
+        const veinPts = archPts.map((pt, idx) =>
+          new THREE.Vector3(pt.x, pt.y - (idx === 2 ? spec.thickness * 0.72 : 0.4), pt.z)
+        );
+        const veinMat = new THREE.MeshStandardMaterial({
+          color: 0xfef08a,
+          emissive: 0xf97316,
+          emissiveIntensity: 1.9,
+          roughness: 0.22,
+        });
+        const veinMesh = new THREE.Mesh(
+          new THREE.TubeGeometry(new THREE.CatmullRomCurve3(veinPts), 18, 0.22, 5, false),
+          veinMat
+        );
+        this.levelGroup.add(veinMesh);
+        this.volcanicFissureGlows.push({ mat: veinMat, phase: a * 1.1 });
+
+        // Craggy rock buttresses anchoring both arch feet
+        for (const sx of [-1, 1]) {
+          const foot = new THREE.Mesh(this.createDisplacedRockGeometry(3.2, a * 2 + (sx > 0 ? 1 : 0)), basaltCliffMat);
+          foot.position.set(sx * spec.halfSpan, -6.5, spec.z);
+          foot.scale.set(1.2, 2.2, 1.3);
+          this.levelGroup.add(foot);
+        }
+      }
+
+      // 4. Lit Volcanic Caves / Magma Grottoes recessed into Canyon Cliffs (including Forja Secreta grotto behind v-secret-forge!)
+      const caveSpecs: { pos: [number, number, number]; rotY: number; scale: number }[] = [
+        { pos: [-22.5, -1.8, -22], rotY: Math.PI * 0.45, scale: 1.15 },
+        { pos: [-22.5, 1.2, -60], rotY: Math.PI * 0.5, scale: 1.2 }, // Visible behind 2D ridge!
+        { pos: [22.8, 8.6, -212], rotY: -Math.PI * 0.5, scale: 1.25 }, // Lit forge cave framing v-secret-forge!
+        { pos: [-23.5, 7.6, -234], rotY: Math.PI * 0.42, scale: 1.3 },
+      ];
+      for (let c = 0; c < caveSpecs.length; c++) {
+        const cs = caveSpecs[c];
+        const cg = new THREE.Group();
+        cg.position.set(...cs.pos);
+        cg.rotation.y = cs.rotY;
+        cg.scale.setScalar(cs.scale);
+
+        // Dark outer basalt cave hood arch + flanking jagged pillars
+        const hood = new THREE.Mesh(
+          new THREE.TorusGeometry(4.4, 1.45, 7, 14, Math.PI),
+          basaltCliffMat
+        );
+        hood.position.set(0, 2.2, 0);
+        cg.add(hood);
+
+        for (const sx of [-1, 1]) {
+          const jam = new THREE.Mesh(new THREE.CylinderGeometry(1.1, 1.45, 5.2, 6), basaltCliffMat);
+          jam.position.set(sx * 4.2, 0.2, 0.3);
+          cg.add(jam);
+        }
+
+        // Deep dark recessed cave chamber shell behind opening
+        const darkWallMat = new THREE.MeshStandardMaterial({ color: 0x090406, roughness: 0.96 });
+        const chamber = new THREE.Mesh(new THREE.CylinderGeometry(4.2, 4.6, 5.8, 10, 1, true, 0, Math.PI), darkWallMat);
+        chamber.rotation.y = -Math.PI / 2;
+        chamber.position.set(0, 2.4, -2.1);
+        cg.add(chamber);
+
+        // Glowing interior molten magma pool & radiant ember crystal clusters inside the cave
+        const cavePool = new THREE.Mesh(new THREE.CircleGeometry(3.3, 16), magmaPoolMat);
+        cavePool.rotation.x = -Math.PI / 2;
+        cavePool.position.set(0, -1.7, -1.6);
+        cg.add(cavePool);
+
+        for (let k = -1; k <= 1; k++) {
+          const shard = new THREE.Mesh(new THREE.OctahedronGeometry(0.65, 0), magmaPoolMat);
+          shard.scale.set(0.7, 2.1, 0.7);
+          shard.position.set(k * 1.65, -0.4, -2.4);
+          shard.rotation.z = k * 0.22;
+          cg.add(shard);
+        }
+
+        // Warm interior orange PointLight illuminating cave mouth & nearby stone (desktop/hardware GL)
+        if (!this.isSoftwareGl && c < 3) {
+          const caveLight = new THREE.PointLight(0xff7a18, 28, 22, 1.5);
+          caveLight.position.set(0, 1.4, -0.8);
+          cg.add(caveLight);
+        }
+        this.levelGroup.add(cg);
+      }
+
+      // 5. Hero Erupting Volcanoes (faceted obsidian cones + glowing craters + lava streams + fountain plumes + rising smoke columns)
+      const lavaFlowMat = new THREE.MeshStandardMaterial({
+        map: this.textures.lavaSurface,
+        emissiveMap: this.textures.lavaEmissive,
+        emissive: 0xff6a00,
+        emissiveIntensity: 2.3,
+        roughness: 0.25,
+      });
+      const smokeMatTemplate = new THREE.MeshBasicMaterial({
+        color: 0x261414,
+        transparent: true,
+        opacity: 0.42,
+        depthWrite: false,
+      });
+
       const volcSpots: [number, number, number, number][] = [
-        [-40, -12, -52, 1.1],
-        [42, -12, -112, 1.2],
-        [-42, -12, -172, 1.15],
-        [40, -12, -228, 1.25],
+        [-42, -12, -56, 1.15],
+        [44, -12, -116, 1.25],
+        [-44, -12, -172, 1.2],
+        [42, -12, -238, 1.3],
       ];
       for (let idx = 0; idx < volcSpots.length; idx++) {
         const [vx, vy, vz, sc] = volcSpots[idx];
         const vg = new THREE.Group();
         vg.position.set(vx, vy, vz);
 
-        const cone = new THREE.Mesh(new THREE.CylinderGeometry(4.8 * sc, 16.5 * sc, 26 * sc, 8, 1, true), volcMat);
-        cone.position.y = 13 * sc;
-        const craterGlow = new THREE.Mesh(new THREE.CylinderGeometry(4.5 * sc, 4.2 * sc, 1.0 * sc, 10), magmaPoolMat);
-        craterGlow.position.y = 25.4 * sc;
+        const cone = new THREE.Mesh(new THREE.CylinderGeometry(5.0 * sc, 17.5 * sc, 27 * sc, 9, 1, true), basaltCliffMat);
+        cone.position.y = 13.5 * sc;
+        const craterGlow = new THREE.Mesh(new THREE.CylinderGeometry(4.7 * sc, 4.3 * sc, 1.0 * sc, 10), magmaPoolMat);
+        craterGlow.position.y = 26.4 * sc;
         vg.add(cone, craterGlow);
 
-        // Glowing molten lava overflow stream pouring down the slope
-        const streamCurve = new THREE.CatmullRomCurve3([
-          new THREE.Vector3(0, 25.4 * sc, 4.2 * sc),
-          new THREE.Vector3(0.6 * sc, 14 * sc, 9.8 * sc),
-          new THREE.Vector3(-0.4 * sc, 1.0 * sc, 15.6 * sc),
-        ]);
-        const lavaFlow = new THREE.Mesh(new THREE.TubeGeometry(streamCurve, 10, 0.85 * sc, 6, false), magmaPoolMat);
-        lavaFlow.rotation.y = (vx < 0 ? 1 : -1) * 1.15;
-        vg.add(lavaFlow);
+        // Two glowing molten lava rivers pouring down opposing volcano ridges
+        for (let r = 0; r < 2; r++) {
+          const streamCurve = new THREE.CatmullRomCurve3([
+            new THREE.Vector3(0, 26.2 * sc, 4.4 * sc),
+            new THREE.Vector3((r === 0 ? 0.9 : -0.8) * sc, 14.5 * sc, 10.4 * sc),
+            new THREE.Vector3((r === 0 ? -0.5 : 0.7) * sc, 0.6 * sc, 16.4 * sc),
+          ]);
+          const lavaFlow = new THREE.Mesh(new THREE.TubeGeometry(streamCurve, 12, 0.9 * sc, 6, false), lavaFlowMat);
+          lavaFlow.rotation.y = (vx < 0 ? 1 : -1) * (1.05 + r * 0.85);
+          vg.add(lavaFlow);
+        }
 
-        // Sculpted Lava Eruption Fountain Plume (arcs & molten droplets bursting from crater)
+        // Sculpted Lava Eruption Fountain Plume
         for (let j = 0; j < 7; j++) {
           const jAng = (j / 7) * Math.PI * 2 + idx;
           const jCurve = new THREE.CatmullRomCurve3([
-            new THREE.Vector3(0, 25.5 * sc, 0),
-            new THREE.Vector3(Math.cos(jAng) * 2.4 * sc, (32 + (j % 3) * 2.5) * sc, Math.sin(jAng) * 2.4 * sc),
-            new THREE.Vector3(Math.cos(jAng) * 5.2 * sc, 24.5 * sc, Math.sin(jAng) * 5.2 * sc),
+            new THREE.Vector3(0, 26.4 * sc, 0),
+            new THREE.Vector3(Math.cos(jAng) * 2.5 * sc, (33 + (j % 3) * 2.5) * sc, Math.sin(jAng) * 2.5 * sc),
+            new THREE.Vector3(Math.cos(jAng) * 5.4 * sc, 25.4 * sc, Math.sin(jAng) * 5.4 * sc),
           ]);
-          vg.add(new THREE.Mesh(new THREE.TubeGeometry(jCurve, 8, (0.28 + (j % 2) * 0.14) * sc, 5, false), lavaJetMat));
+          vg.add(new THREE.Mesh(new THREE.TubeGeometry(jCurve, 8, (0.3 + (j % 2) * 0.14) * sc, 5, false), lavaJetMat));
 
-          const drop = new THREE.Mesh(this.createDisplacedRockGeometry(0.55 * sc, j + 1.5), magmaPoolMat);
-          drop.position.set(Math.cos(jAng) * 3.8 * sc, (33 + (j % 3) * 2.2) * sc, Math.sin(jAng) * 3.8 * sc);
+          const drop = new THREE.Mesh(this.createDisplacedRockGeometry(0.58 * sc, j + 1.5), magmaPoolMat);
+          drop.position.set(Math.cos(jAng) * 3.9 * sc, (34 + (j % 3) * 2.2) * sc, Math.sin(jAng) * 3.9 * sc);
           vg.add(drop);
         }
 
         this.levelGroup.add(vg);
+
+        // Towering billowing volcanic smoke column rising above crater
+        for (let p = 0; p < 5; p++) {
+          const sMat = smokeMatTemplate.clone();
+          const puff = new THREE.Mesh(new THREE.DodecahedronGeometry(3.4 * sc, 1), sMat);
+          this.levelGroup.add(puff);
+          this.volcanicSmokePuffs.push({
+            mesh: puff,
+            baseX: vx + (p % 2 === 0 ? 1 : -1) * 1.1,
+            baseY: vy + 28 * sc,
+            baseZ: vz + (p % 3 - 1) * 1.1,
+            riseH: 22 * sc,
+            speed: 0.24 + (p % 3) * 0.04,
+            phase: idx * 0.7 + p * 0.2,
+            baseScale: 0.9 + (p % 2) * 0.25,
+          });
+        }
       }
 
-      // Volcanic Obsidian Boulders along safe platform rims & emerging from molten lava river
+      // 6. Luminous Glowing Magma Cracks & Basalt Rocks emerging from the Lava River
       const vRockSpots: [number, number, number, number][] = [
         [-4.2, 1.0, 3.8, 0.72],
         [4.2, 1.0, 3.8, 0.68],
@@ -3307,237 +4700,887 @@ export class GameEngine {
         [4.8, 9.2, -216.8, 0.74],
         [-4.6, 11.4, -244.4, 0.8],
         [4.6, 11.4, -244.4, 0.75],
-        [-16, -11.5, -35, 1.9],
-        [17, -11.5, -75, 2.1],
-        [-18, -11.5, -135, 2.2],
-        [18, -11.5, -180, 2.0],
+        [-14, -11.4, -16, 2.2],
+        [15, -11.4, -28, 2.3],
+        [-14, -11.4, -52, 2.4],
+        [-15, -11.4, -76, 2.1],
+        [16, -11.4, -104, 2.5],
+        [-16, -11.4, -138, 2.6],
+        [17, -11.4, -170, 2.3],
+        [-17, -11.4, -198, 2.5],
+        [-19, -11.4, -230, 2.4],
+        [20, -11.4, -236, 2.5],
       ];
       const vRockGeo = this.createDisplacedRockGeometry(1.0, 8.1);
-      const vRockMat = new THREE.MeshStandardMaterial({
-        map: this.textures.volcanicBasalt,
-        emissiveMap: this.textures.volcanicEmissive,
-        emissive: 0xff5a00,
-        emissiveIntensity: 1.4,
-        bumpMap: this.textures.basaltBump,
-        bumpScale: 0.18,
-        roughness: 0.85,
-      });
-      const vRocksInst = new THREE.InstancedMesh(vRockGeo, vRockMat, vRockSpots.length);
+      const vRocksInst = new THREE.InstancedMesh(vRockGeo, basaltTopRockMat, vRockSpots.length);
       for (let i = 0; i < vRockSpots.length; i++) {
         const [rx, ry, rz, rs] = vRockSpots[i];
         dummy.position.set(rx, ry + 0.25 * rs, rz);
         dummy.rotation.set(0.1, i * 1.2, 0);
-        dummy.scale.set(rs * 1.25, rs * 0.75, rs);
+        dummy.scale.set(rs * 1.28, rs * 0.78, rs);
         dummy.updateMatrix();
         vRocksInst.setMatrixAt(i, dummy.matrix);
       }
       vRocksInst.instanceMatrix.needsUpdate = true;
       vRocksInst.computeBoundingSphere();
       this.levelGroup.add(vRocksInst);
-    } else if (biome === 'nebula') {
-      // NEBULA CITADEL: Sharp Indigo-Violet Crystal Mountains + Luminous Ringed Cyan Planet + Violet Rocks & Golden Pools
-      this.addHorizonMountainRing(16, -75, level.theme.hazardFloorY - 2, 112, 205, 54, 0x261a66, 0x6759e8, 9.9, 0.68);
 
-      // Faceted Indigo-Cyan Citadel Monoliths & Alien Purple Slate Outcrops
-      const spireCount = 52;
-      const monoGeo = new THREE.OctahedronGeometry(2.6, 0);
-      const monoMat = new THREE.MeshPhysicalMaterial({
-        color: 0x3b288f,
-        roughness: 0.24,
-        metalness: 0.62,
-        clearcoat: 0.85,
-      });
-      const monos = new THREE.InstancedMesh(monoGeo, monoMat, spireCount);
-      for (let i = 0; i < spireCount; i++) {
-        const side = i % 2 === 0 ? 1 : -1;
-        const dist = 30 + ((i * 19) % 68);
-        const z = 10 - i * 3.4;
-        const scale = 0.8 + (i % 5) * 0.35;
-        dummy.position.set(16 + side * dist, -3 + (i % 5) * 2.6, z);
-        dummy.rotation.set(0, i * 0.6, 0);
-        dummy.scale.set(scale * 0.75, scale * 2.4, scale * 0.75);
-        dummy.updateMatrix();
-        monos.setMatrixAt(i, dummy.matrix);
-        _color.setHex(i % 2 === 0 ? 0x4532a8 : 0x2b1d6e);
-        monos.setColorAt(i, _color);
+      // Glowing magma rings / fissures around emerged river rocks
+      for (let i = 8; i < vRockSpots.length; i++) {
+        const [rx, , rz, rs] = vRockSpots[i];
+        const fMat = new THREE.MeshStandardMaterial({
+          color: 0xfef08a,
+          emissive: 0xf97316,
+          emissiveIntensity: 1.9,
+          roughness: 0.2,
+        });
+        const fRing = new THREE.Mesh(new THREE.TorusGeometry(rs * 1.15, 0.14, 6, 16), fMat);
+        fRing.rotation.x = Math.PI / 2;
+        fRing.position.set(rx, level.theme.hazardFloorY + 0.14, rz);
+        this.levelGroup.add(fRing);
+        this.volcanicFissureGlows.push({ mat: fMat, phase: i * 0.65 });
       }
-      monos.instanceMatrix.needsUpdate = true;
-      if (monos.instanceColor) monos.instanceColor.needsUpdate = true;
-      monos.computeBoundingSphere();
-      this.levelGroup.add(monos);
 
-      // Alien Faceted Violet-Slate Rock Clusters + Glowing Golden-Amber Energy Pools on the violet plain
-      const alienRockSpots: [number, number, number, number][] = [
-        [-4.2, 1.0, 3.8, 0.68],
-        [4.2, 1.0, 3.8, 0.65],
-        [-12.6, 12.0, -125.6, 0.88],
-        [12.6, 12.0, -125.6, 0.85],
-        [-12.6, 12.0, -150.4, 0.9],
-        [12.6, 12.0, -150.4, 0.86],
-        [-18, -12.6, -24, 1.9],
-        [19, -12.6, -48, 2.1],
-        [-22, -12.6, -98, 2.2],
-        [52, -12.6, -78, 2.1],
-        [-26, -12.6, -138, 2.4],
-        [26, -12.6, -138, 2.3],
+      // 7. Animated Lava Bubbles & Popping Blisters along the magma chasm floor
+      const bubbleSpots: [number, number, number][] = [
+        [-8, -11.8, -8],
+        [8, -11.8, -18],
+        [-9, -11.8, -34],
+        [-7, -11.8, -50],
+        [6, -11.8, -62],
+        [-8, -11.8, -74],
+        [-10, -11.8, -106],
+        [10, -11.8, -124],
+        [-11, -11.8, -156],
+        [10, -11.8, -182],
+        [-11, -11.8, -216],
+        [12, -11.8, -232],
       ];
-      const alienRockGeo = this.createDisplacedRockGeometry(1.0, 4.7);
-      const alienRockMat = new THREE.MeshStandardMaterial({
-        color: 0x452b8c,
-        bumpMap: this.textures.stoneBump,
-        bumpScale: 0.16,
-        roughness: 0.82,
-        metalness: 0.18,
-      });
-      const alienRocksInst = new THREE.InstancedMesh(alienRockGeo, alienRockMat, alienRockSpots.length);
-      for (let i = 0; i < alienRockSpots.length; i++) {
-        const [rx, ry, rz, rs] = alienRockSpots[i];
-        dummy.position.set(rx, ry + 0.28 * rs, rz);
-        dummy.rotation.set(0.12, i * 1.1, 0);
-        dummy.scale.set(rs * 1.3, rs * 0.78, rs);
-        dummy.updateMatrix();
-        alienRocksInst.setMatrixAt(i, dummy.matrix);
-      }
-      alienRocksInst.instanceMatrix.needsUpdate = true;
-      alienRocksInst.computeBoundingSphere();
-      this.levelGroup.add(alienRocksInst);
-
-      // Glowing Golden-Amber Alien Pools scattered across the violet floor below
-      const poolCount = 24;
-      const poolGeo = new THREE.CylinderGeometry(2.4, 2.6, 0.14, 14);
-      const poolMat = new THREE.MeshStandardMaterial({
+      const bubbleMatBase = new THREE.MeshStandardMaterial({
         color: 0xfef08a,
-        emissive: 0xf59e0b,
-        emissiveIntensity: 2.2,
-        roughness: 0.2,
+        emissive: 0xf97316,
+        emissiveIntensity: 2.4,
+        roughness: 0.15,
       });
-      const poolsInst = new THREE.InstancedMesh(poolGeo, poolMat, poolCount);
-      for (let i = 0; i < poolCount; i++) {
-        const side = i % 2 === 0 ? 1 : -1;
-        const dist = 18 + ((i * 19) % 52);
-        const z = 8 - i * 7.2;
-        const sc = 0.75 + (i % 4) * 0.35;
-        dummy.position.set(12 + side * dist, level.theme.hazardFloorY + 0.08, z);
-        dummy.rotation.set(0, i * 0.7, 0);
-        dummy.scale.set(sc * 1.35, 1, sc * 0.8);
-        dummy.updateMatrix();
-        poolsInst.setMatrixAt(i, dummy.matrix);
+      for (let b = 0; b < bubbleSpots.length; b++) {
+        const [bx, by, bz] = bubbleSpots[b];
+        const bMesh = new THREE.Mesh(new THREE.SphereGeometry(1.0, 12, 8, 0, Math.PI * 2, 0, Math.PI * 0.55), bubbleMatBase.clone());
+        bMesh.position.set(bx, by, bz);
+        this.levelGroup.add(bMesh);
+        this.volcanicBubbles.push({
+          mesh: bMesh,
+          pos: new THREE.Vector3(bx, by, bz),
+          phase: b * 0.85,
+          period: 2.4 + (b % 3) * 0.55,
+          popped: false,
+          maxR: 1.05 + (b % 3) * 0.35,
+        });
       }
-      poolsInst.instanceMatrix.needsUpdate = true;
-      poolsInst.computeBoundingSphere();
-      this.levelGroup.add(poolsInst);
 
-      // Luminous 3D Ringed Cyan-White Gas Giant + Secondary Striped Moon in Sky
-      const planetGroup = new THREE.Group();
-      planetGroup.position.set(16, 46, -210);
-      const planet = new THREE.Mesh(
-        new THREE.SphereGeometry(22, 28, 22),
+      // 8. Lava & Steam Geysers erupting along canyon ledges & magma floor (well clear of 2D camera & flight path)
+      const geyserSpecs: { pos: [number, number, number]; kind: 'lava' | 'steam'; period: number }[] = [
+        { pos: [-11.5, -11.5, -14], kind: 'lava', period: 4.2 },
+        { pos: [12.5, -11.5, -32], kind: 'steam', period: 3.8 },
+        { pos: [-13.5, -11.5, -56], kind: 'lava', period: 4.4 },
+        { pos: [-14.5, -11.5, -72], kind: 'steam', period: 3.6 },
+        { pos: [14.5, -11.5, -122], kind: 'lava', period: 4.5 },
+        { pos: [-15.0, -11.5, -146], kind: 'steam', period: 4.0 },
+        { pos: [14.8, -11.5, -178], kind: 'lava', period: 4.3 },
+        { pos: [-15.5, -11.5, -220], kind: 'steam', period: 3.9 },
+      ];
+      for (let g = 0; g < geyserSpecs.length; g++) {
+        const gs = geyserSpecs[g];
+        const gGroup = new THREE.Group();
+        gGroup.position.set(...gs.pos);
+
+        const ventRock = new THREE.Mesh(new THREE.CylinderGeometry(1.3, 2.2, 1.4, 7), basaltCliffMat);
+        ventRock.position.y = 0.7;
+        gGroup.add(ventRock);
+
+        const isLava = gs.kind === 'lava';
+        const jetMat = new THREE.MeshBasicMaterial({
+          color: isLava ? 0xfdba74 : 0xd6d3d1,
+          transparent: true,
+          opacity: isLava ? 0.85 : 0.45,
+          depthWrite: false,
+        });
+        const lavaJet = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 1.05, 12, 8, 1, true), jetMat);
+        lavaJet.position.y = 6;
+        gGroup.add(lavaJet);
+
+        const steamMat = new THREE.MeshBasicMaterial({
+          color: isLava ? 0xf97316 : 0xe7e5e4,
+          transparent: true,
+          opacity: 0.36,
+          depthWrite: false,
+        });
+        const steamPlume = new THREE.Mesh(new THREE.DodecahedronGeometry(1.75, 1), steamMat);
+        steamPlume.position.y = 10;
+        gGroup.add(steamPlume);
+
+        this.levelGroup.add(gGroup);
+        this.volcanicGeysers.push({
+          lavaJet,
+          steamPlume,
+          pos: new THREE.Vector3(...gs.pos),
+          phase: g * 1.15,
+          period: gs.period,
+          kind: gs.kind,
+        });
+      }
+
+      // 9. Falling Canyon Rocks tumbling from outer cliffs into lava river with bright magma splashes
+      const rockFallSpots: [number, number, number][] = [
+        [-19, 18, -26],
+        [-20, 21, -66],
+        [18, 22, -118],
+        [-19, 23, -152],
+        [18, 22, -188],
+        [-20, 24, -228],
+      ];
+      const fallingRockGeo = this.createDisplacedRockGeometry(0.95, 3.3);
+      for (let r = 0; r < rockFallSpots.length; r++) {
+        const [rx, ry, rz] = rockFallSpots[r];
+        const fMesh = new THREE.Mesh(fallingRockGeo, basaltTopRockMat);
+        fMesh.position.set(rx, ry, rz);
+        fMesh.scale.setScalar(0.9 + (r % 2) * 0.3);
+        this.levelGroup.add(fMesh);
+        this.volcanicFallingRocks.push({
+          mesh: fMesh,
+          startX: rx,
+          startY: ry,
+          startZ: rz,
+          phase: r * 1.1,
+          period: 3.6 + (r % 3) * 0.7,
+          splashed: false,
+          rotAxis: new THREE.Vector3(0.7, 0.5, 0.4).normalize(),
+        });
+      }
+
+      // 10. Visible Heat Waves hovering over lava fissures, vents & forge cliff
+      const heatWaveSpots: [number, number, number, number, number][] = [
+        [0, -9.0, -16, 12, 6.5],
+        [-8, -8.5, -58, 10, 7.0],
+        [0, -8.5, -130, 14, 8.0],
+        [12.5, 9.6, -212, 6.5, 5.2],
+        [0, -8.5, -224, 14, 7.5],
+      ];
+      for (let h = 0; h < heatWaveSpots.length; h++) {
+        const [hx, hy, hz, hw, hh] = heatWaveSpots[h];
+        const hMat = createHeatWaveShaderMaterial(this.shaderTimeUniform, 0xfb923c, 0.24, h * 1.4);
+        const hMesh = new THREE.Mesh(new THREE.PlaneGeometry(hw, hh, 8, 8), hMat);
+        hMesh.position.set(hx, hy + hh * 0.5, hz);
+        hMesh.rotation.y = h === 3 ? Math.PI * 0.5 : (h % 2 === 0 ? 0.2 : -0.2);
+        this.levelGroup.add(hMesh);
+      }
+
+      // 11. Floating Volcanic Ash Flakes (InstancedMesh tumbling around player view)
+      const ashCount = this.isSoftwareGl ? 65 : 140;
+      const ashGeo = new THREE.PlaneGeometry(0.18, 0.24);
+      const ashMat = new THREE.MeshBasicMaterial({
+        color: 0x3b2626,
+        transparent: true,
+        opacity: 0.72,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+      });
+      this.volcanicAshMesh = new THREE.InstancedMesh(ashGeo, ashMat, ashCount);
+      this.volcanicAshMesh.frustumCulled = false;
+      this.volcanicAshStates = [];
+      for (let i = 0; i < ashCount; i++) {
+        const st = {
+          x: (Math.random() - 0.5) * 44,
+          y: Math.random() * 20 - 4,
+          z: (Math.random() - 0.5) * 44,
+          fallSpeed: 0.7 + Math.random() * 0.9,
+          swayPhase: Math.random() * Math.PI * 2,
+          rotSpeed: 1.4 + Math.random() * 2.2,
+        };
+        this.volcanicAshStates.push(st);
+        dummy.position.set(st.x, st.y, st.z);
+        dummy.updateMatrix();
+        this.volcanicAshMesh.setMatrixAt(i, dummy.matrix);
+      }
+      this.volcanicAshMesh.instanceMatrix.needsUpdate = true;
+      this.volcanicAshMesh.computeBoundingSphere();
+      this.levelGroup.add(this.volcanicAshMesh);
+    } else if (biome === 'nebula') {
+      // CIUDADELA NEBULOSA: Monumental Suspended Futuristic Sky-Civilization, Floating Islands + Void Waterfalls,
+      // Grand Orbital Stargates, Volumetric Clouds & Multi-Planet Cosmic Panorama
+      // Keep the 2D wall (+Z) camera corridor [x:-4..44, z:-75..-52, y>2] crystal clear!
+
+      const hullMat = new THREE.MeshStandardMaterial({
+        map: this.textures.nebulaSide,
+        bumpMap: this.textures.nebulaBump,
+        bumpScale: 0.12,
+        metalness: 0.78,
+        roughness: 0.24,
+      });
+      const deckMat = new THREE.MeshStandardMaterial({
+        map: this.textures.nebulaDeck,
+        bumpMap: this.textures.nebulaBump,
+        bumpScale: 0.1,
+        metalness: 0.65,
+        roughness: 0.26,
+      });
+      const chromeMat = new THREE.MeshStandardMaterial({
+        color: 0xe2e8f0,
+        metalness: 0.9,
+        roughness: 0.14,
+      });
+      const goldTechMat = new THREE.MeshStandardMaterial({
+        map: this.textures.goldTrim,
+        color: 0xfbbf24,
+        emissive: 0xb45309,
+        emissiveIntensity: 0.45,
+        metalness: 0.86,
+        roughness: 0.22,
+      });
+      const cyanGlowMat = new THREE.MeshStandardMaterial({
+        color: 0x67e8f9,
+        emissive: 0x06b6d4,
+        emissiveIntensity: 1.95,
+        roughness: 0.15,
+      });
+      const violetGlowMat = new THREE.MeshStandardMaterial({
+        color: 0xe879f9,
+        emissive: 0xa855f7,
+        emissiveIntensity: 1.85,
+        roughness: 0.18,
+      });
+      const glassDomeMat = new THREE.MeshPhysicalMaterial({
+        color: 0x7dd3fc,
+        emissive: 0x0e7490,
+        emissiveIntensity: 0.42,
+        roughness: 0.08,
+        metalness: 0.18,
+        clearcoat: 1.0,
+        transparent: true,
+        opacity: 0.82,
+      });
+      const holoCyanMat = createHologramShaderMaterial(this.shaderTimeUniform, 0x22d3ee, 0.52, 0.4);
+      const holoVioletMat = createHologramShaderMaterial(this.shaderTimeUniform, 0xc084fc, 0.46, 1.9);
+
+      // Helper: Sculpted Futuristic Sky-Citadel Tower / Floating Building (3 distinct original silhouettes)
+      const buildCitadelTower = (
+        x: number,
+        y: number,
+        z: number,
+        scale: number,
+        variant: 'spire' | 'observatory' | 'twinwing',
+        floatAmp = 0.42
+      ) => {
+        const g = new THREE.Group();
+        g.position.set(x, y, z);
+
+        // Anti-gravity thruster hull base tapering into a glowing energy needle below
+        const thrusterHull = new THREE.Mesh(new THREE.CylinderGeometry(2.8 * scale, 0.9 * scale, 4.6 * scale, 8), hullMat);
+        thrusterHull.position.y = -2.3 * scale;
+        const lowerSpire = new THREE.Mesh(new THREE.ConeGeometry(1.1 * scale, 5.2 * scale, 8), chromeMat);
+        lowerSpire.rotation.x = Math.PI;
+        lowerSpire.position.y = -7.1 * scale;
+        const coreCrystal = new THREE.Mesh(new THREE.OctahedronGeometry(0.95 * scale, 0), cyanGlowMat);
+        coreCrystal.scale.set(0.75, 1.8, 0.75);
+        coreCrystal.position.y = -10.1 * scale;
+        g.add(thrusterHull, lowerSpire, coreCrystal);
+
+        if (variant === 'spire') {
+          const midBody = new THREE.Mesh(new THREE.CylinderGeometry(1.9 * scale, 2.65 * scale, 9.5 * scale, 8), hullMat);
+          midBody.position.y = 4.7 * scale;
+          const upperShaft = new THREE.Mesh(new THREE.CylinderGeometry(0.85 * scale, 1.65 * scale, 8.2 * scale, 8), chromeMat);
+          upperShaft.position.y = 13.4 * scale;
+          const antenna = new THREE.Mesh(new THREE.ConeGeometry(0.45 * scale, 4.4 * scale, 6), cyanGlowMat);
+          antenna.position.y = 19.6 * scale;
+          g.add(midBody, upperShaft, antenna);
+
+          const halo = new THREE.Mesh(new THREE.TorusGeometry(3.2 * scale, 0.16 * scale, 8, 28), holoCyanMat);
+          halo.rotation.x = Math.PI / 2 + 0.18;
+          halo.position.y = 11.2 * scale;
+          g.add(halo);
+          this.nebulaSpinners.push({ obj: halo, speed: 0.65, axis: 'z' });
+        } else if (variant === 'observatory') {
+          const pedestal = new THREE.Mesh(new THREE.CylinderGeometry(2.6 * scale, 2.9 * scale, 5.8 * scale, 10), hullMat);
+          pedestal.position.y = 2.9 * scale;
+          const ringCollar = new THREE.Mesh(new THREE.TorusGeometry(3.3 * scale, 0.24 * scale, 8, 28), goldTechMat);
+          ringCollar.rotation.x = Math.PI / 2;
+          ringCollar.position.y = 5.9 * scale;
+          const dome = new THREE.Mesh(new THREE.SphereGeometry(2.45 * scale, 18, 12, 0, Math.PI * 2, 0, Math.PI * 0.56), glassDomeMat);
+          dome.position.y = 5.8 * scale;
+          const innerCore = new THREE.Mesh(new THREE.OctahedronGeometry(1.15 * scale, 0), violetGlowMat);
+          innerCore.position.y = 7.1 * scale;
+          g.add(pedestal, ringCollar, dome, innerCore);
+
+          const orbitRing = new THREE.Mesh(new THREE.TorusGeometry(4.1 * scale, 0.13 * scale, 8, 28), holoVioletMat);
+          orbitRing.position.y = 7.1 * scale;
+          orbitRing.rotation.set(0.42, 0.2, 0.15);
+          g.add(orbitRing);
+          this.nebulaSpinners.push({ obj: orbitRing, speed: 0.72, axis: 'y' });
+        } else {
+          // Cantilevered twin-wing floating skyscraper connected by glowing energy sky-ribs
+          for (const sx of [-1, 1]) {
+            const wing = new THREE.Mesh(new THREE.CylinderGeometry(1.15 * scale, 1.45 * scale, 12.2 * scale, 6), hullMat);
+            wing.position.set(sx * 1.65 * scale, 6.0 * scale, 0);
+            const cap = new THREE.Mesh(new THREE.OctahedronGeometry(0.62 * scale, 0), cyanGlowMat);
+            cap.scale.set(0.7, 1.9, 0.7);
+            cap.position.set(sx * 1.65 * scale, 12.9 * scale, 0);
+            g.add(wing, cap);
+          }
+          for (const by of [3.4, 7.6, 10.6]) {
+            const bridgeBar = new THREE.Mesh(new THREE.BoxGeometry(3.2 * scale, 0.35 * scale, 0.9 * scale), goldTechMat);
+            bridgeBar.position.y = by * scale;
+            g.add(bridgeBar);
+          }
+          const holoCrown = new THREE.Mesh(new THREE.TorusGeometry(2.9 * scale, 0.14 * scale, 8, 24), holoCyanMat);
+          holoCrown.rotation.x = Math.PI / 2;
+          holoCrown.position.y = 12.2 * scale;
+          g.add(holoCrown);
+          this.nebulaSpinners.push({ obj: holoCrown, speed: -0.55, axis: 'z' });
+        }
+
+        this.levelGroup.add(g);
+        this.nebulaFloatNodes.push({ obj: g, baseY: y, amp: floatAmp, speed: 0.75 + (Math.abs(x + z) % 5) * 0.12, phase: (x * 0.3 + z * 0.2) });
+        return g;
+      };
+
+      // Towering Futuristic Skyline flanking main skyways + hidden paths + behind 2D Nebula Wall (z < -85)
+      const towerPlacements: [number, number, number, number, 'spire' | 'observatory' | 'twinwing'][] = [
+        // Left & right horizon framing start & mid-citadel
+        [-22, -1, 4, 1.15, 'spire'],
+        [22, 0, 2, 1.1, 'observatory'],
+        [-26, 2, -26, 1.35, 'twinwing'],
+        [27, 3, -18, 1.2, 'spire'],
+        // Hidden path #1 twin buildings framing secret Switch Bridge -> Reliquary Dais [14, 4.4, -36]
+        [14, 2.5, -45.5, 0.72, 'observatory'],
+        [14, 2.5, -26.5, 0.72, 'observatory'],
+        // Mid skyway guardians
+        [-24, 5, -52, 1.25, 'spire'],
+        [-38, 1, -72, 1.45, 'twinwing'],
+        // Monumental Skyline BEHIND 2D Nebula Wall (z = -90..-108) -> dramatic backdrop in 2D camera view!
+        [4, 8, -94, 1.3, 'spire'],
+        [20, 9, -92, 1.15, 'observatory'],
+        [36, 10, -96, 1.4, 'twinwing'],
+        [52, 7, -80, 1.35, 'spire'],
+        // Hidden path #2 twin buildings framing n-app-side [-11, 11.4, -117]
+        [-11, 9.5, -126.5, 0.74, 'spire'],
+        [-11, 9.5, -107.5, 0.74, 'spire'],
+        // Grand Boss Citadel Perimeter Spires
+        [-28, 11, -138, 1.5, 'twinwing'],
+        [28, 11, -138, 1.5, 'twinwing'],
+        [-22, 12, -162, 1.4, 'spire'],
+        [22, 12, -162, 1.4, 'spire'],
+      ];
+      for (const [tx, ty, tz, ts, tv] of towerPlacements) {
+        buildCitadelTower(tx, ty, tz, ts, tv);
+      }
+
+      // Luminous High-Altitude Sky-Bridges spanning between distant towers & framing hidden corridors
+      const skyBridges: [number, number, number, number, number, number][] = [
+        // Overhead luminous archway framing Secret Switch route at [9.5, 9.2, -36]
+        [14, 10.6, -36, 0.45, 0.45, 19.0],
+        // Overhead luminous archway framing Hidden Disappearing Relic route at [-11, 16.8, -117]
+        [-11, 17.5, -117, 0.45, 0.45, 19.0],
+        // High skyline sky-bridge behind 2D wall
+        [20, 18.5, -94, 34, 0.4, 0.75],
+      ];
+      for (const [bx, by, bz, bw, bh, bd] of skyBridges) {
+        const beam = new THREE.Mesh(new THREE.BoxGeometry(bw, bh, bd), holoCyanMat);
+        beam.position.set(bx, by, bz);
+        this.levelGroup.add(beam);
+      }
+
+      // Grand Circular Orbital Stargates & Concentric Gyroscopes
+      const buildGrandCircularGate = (x: number, y: number, z: number, radius: number, rotY = 0) => {
+        const gate = new THREE.Group();
+        gate.position.set(x, y, z);
+        gate.rotation.y = rotY;
+
+        const outerRing = new THREE.Mesh(new THREE.TorusGeometry(radius, radius * 0.048, 10, 48), hullMat);
+        const midRing = new THREE.Mesh(new THREE.TorusGeometry(radius * 0.84, radius * 0.028, 8, 42), goldTechMat);
+        const holoRing = new THREE.Mesh(new THREE.TorusGeometry(radius * 0.72, radius * 0.032, 8, 36), holoCyanMat);
+        const innerRing = new THREE.Mesh(new THREE.TorusGeometry(radius * 0.56, radius * 0.022, 8, 32), holoVioletMat);
+        gate.add(outerRing, midRing, holoRing, innerRing);
+
+        // 4 cardinal node beacons on outer stargate ring
+        for (let k = 0; k < 4; k++) {
+          const a = (k / 4) * Math.PI * 2;
+          const node = new THREE.Mesh(new THREE.OctahedronGeometry(radius * 0.085, 0), cyanGlowMat);
+          node.position.set(Math.cos(a) * radius, Math.sin(a) * radius, 0);
+          gate.add(node);
+        }
+
+        this.levelGroup.add(gate);
+        this.nebulaSpinners.push({ obj: midRing, speed: 0.45, axis: 'z' });
+        this.nebulaSpinners.push({ obj: holoRing, speed: -0.78, axis: 'y' });
+        this.nebulaSpinners.push({ obj: innerRing, speed: 0.95, axis: 'x' });
+      };
+
+      // Stargate framing entry skyway above n-conv1 -> n-2d-entry (high archway clearance!)
+      buildGrandCircularGate(0, 12.6, -54, 8.8, 0);
+      // Giant backdrop astrolabe stargates behind 2D Nebula Wall (visible behind Astro in 2D section!)
+      buildGrandCircularGate(12, 16.5, -96, 10.5, 0.14);
+      buildGrandCircularGate(30, 18.0, -98, 9.2, -0.18);
+      // Colossal Citadel Halo behind Titán Kraxus Arena & Goal Portal
+      buildGrandCircularGate(0, 21.5, -162, 19.5, 0);
+
+      // Floating Sky-Islands with Elevated Sky-Gardens & Waterfalls Plunging into the Cosmic Void
+      const islandRockGeo = this.createDisplacedRockGeometry(1.0, 5.3);
+      const islandRockMat = new THREE.MeshStandardMaterial({
+        color: 0x312369,
+        bumpMap: this.textures.stoneBump,
+        bumpScale: 0.18,
+        roughness: 0.78,
+        metalness: 0.24,
+      });
+      const gardenTurfMat = new THREE.MeshStandardMaterial({
+        color: 0x14b8a6,
+        emissive: 0x0f766e,
+        emissiveIntensity: 0.35,
+        roughness: 0.7,
+      });
+      const silverTreeBarkMat = new THREE.MeshStandardMaterial({
+        color: 0xcbd5e1,
+        metalness: 0.48,
+        roughness: 0.45,
+      });
+      const islandCanopyMat = new THREE.MeshStandardMaterial({
+        color: 0x2dd4bf,
+        emissive: 0x0891b2,
+        emissiveIntensity: 0.62,
+        roughness: 0.42,
+      });
+
+      this.nebulaWaterfallTex = this.textures.waterfallSurface.clone();
+      this.nebulaWaterfallTex.repeat.set(1, 3.2);
+      this.nebulaWaterfallTex.needsUpdate = true;
+      const voidWaterfallMat = new THREE.MeshPhysicalMaterial({
+        map: this.nebulaWaterfallTex,
+        color: 0xa5f3fc,
+        emissive: 0x06b6d4,
+        emissiveIntensity: 0.72,
+        roughness: 0.08,
+        clearcoat: 1.0,
+        transparent: true,
+        opacity: 0.84,
+        side: THREE.DoubleSide,
+      });
+
+      const floatingIslands: [number, number, number, number, boolean][] = [
+        [-16.5, 1.5, -14, 3.2, true],
+        [17.5, 3.2, -20, 3.4, true],
+        [-18.0, 5.5, -44, 3.6, true],
+        [24.0, 6.2, -52, 3.8, false],
+        [-16.5, 10.5, -90, 4.0, true],
+        [46.0, 11.0, -92, 4.2, true],
+        [-22.0, 12.5, -128, 4.2, false],
+        [23.0, 12.8, -126, 4.4, true],
+        [0.0, 12.0, -172, 5.8, true],
+      ];
+
+      for (let i = 0; i < floatingIslands.length; i++) {
+        const [ix, iy, iz, ir, hasWaterfall] = floatingIslands[i];
+        const island = new THREE.Group();
+        island.position.set(ix, iy, iz);
+
+        // Inverted sculpted crag + astral rim terrace
+        const rockBody = new THREE.Mesh(islandRockGeo, islandRockMat);
+        rockBody.scale.set(ir * 1.15, ir * 1.35, ir * 1.15);
+        rockBody.rotation.set(Math.PI, i * 0.9, 0);
+        rockBody.position.y = -ir * 0.85;
+        island.add(rockBody);
+
+        const cap = new THREE.Mesh(new THREE.CylinderGeometry(ir * 1.06, ir * 0.96, 0.55, 10), deckMat);
+        cap.position.y = 0.25;
+        const turf = new THREE.Mesh(new THREE.CylinderGeometry(ir * 0.92, ir * 0.96, 0.2, 10), gardenTurfMat);
+        turf.position.y = 0.54;
+        const energyCore = new THREE.Mesh(new THREE.OctahedronGeometry(ir * 0.28, 0), cyanGlowMat);
+        energyCore.scale.set(0.7, 1.8, 0.7);
+        energyCore.position.y = -ir * 2.15;
+        island.add(cap, turf, energyCore);
+
+        // Elevated Sky-Garden celestial trees & crystal shrines atop each floating island
+        for (let t = 0; t < 2; t++) {
+          const ang = i * 1.1 + t * 2.5;
+          const tx = Math.cos(ang) * (ir * 0.42);
+          const tz = Math.sin(ang) * (ir * 0.42);
+          const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.26, 2.1, 7), silverTreeBarkMat);
+          trunk.position.set(tx, 1.55, tz);
+          trunk.rotation.z = t === 0 ? 0.12 : -0.14;
+          const c1 = new THREE.Mesh(new THREE.DodecahedronGeometry(0.95, 1), islandCanopyMat);
+          c1.scale.set(1.25, 0.72, 1.25);
+          c1.position.set(tx, 2.65, tz);
+          const c2 = new THREE.Mesh(new THREE.DodecahedronGeometry(0.65, 1), islandCanopyMat);
+          c2.scale.set(1.15, 0.68, 1.15);
+          c2.position.set(tx + 0.35, 3.1, tz - 0.2);
+          const bloom = new THREE.Mesh(new THREE.OctahedronGeometry(0.26, 0), violetGlowMat);
+          bloom.position.set(tx - 0.3, 2.95, tz + 0.25);
+          island.add(trunk, c1, c2, bloom);
+        }
+
+        // Waterfall spilling off the floating island rim down into the cosmic void below!
+        if (hasWaterfall) {
+          const faceTowardCenter = Math.atan2(-ix, -iz);
+          const wfW = ir * 0.56;
+          const wfH = Math.max(13, iy + 13.8);
+          const edgeR = ir * 0.96;
+          const ex = Math.sin(faceTowardCenter) * edgeR;
+          const ez = Math.cos(faceTowardCenter) * edgeR;
+
+          const springPool = new THREE.Mesh(new THREE.CylinderGeometry(wfW * 0.8, wfW * 0.8, 0.14, 12), voidWaterfallMat);
+          springPool.position.set(ex * 0.55, 0.62, ez * 0.55);
+          island.add(springPool);
+
+          const fallSheet = new THREE.Mesh(new THREE.PlaneGeometry(wfW, wfH, 1, 8), voidWaterfallMat);
+          fallSheet.position.set(ex, 0.55 - wfH * 0.5, ez);
+          fallSheet.rotation.y = faceTowardCenter;
+          island.add(fallSheet);
+
+          const lipMist = new THREE.Mesh(
+            new THREE.TorusGeometry(wfW * 0.48, 0.22, 7, 16),
+            new THREE.MeshBasicMaterial({ color: 0xe0f2fe, transparent: true, opacity: 0.42, depthWrite: false })
+          );
+          lipMist.rotation.x = Math.PI / 2;
+          lipMist.position.set(ex, 0.45, ez);
+          island.add(lipMist);
+
+          this.nebulaWaterfallDrops.push(new THREE.Vector3(ix + ex, iy + 0.4, iz + ez));
+        }
+
+        this.levelGroup.add(island);
+        this.nebulaFloatNodes.push({ obj: island, baseY: iy, amp: 0.38, speed: 0.68 + (i % 3) * 0.14, phase: i * 1.3 });
+      }
+
+      // Volumetric Drifting Cosmic Clouds at multiple altitudes (low abyss mist + mid-sky + upper aurora clouds)
+      const cloudDefs: [number, number, number, number, number, number][] = [
+        [-28, -6.5, -10, 1.4, 0.55, 0xa5f3fc],
+        [30, -5.8, -32, 1.5, -0.45, 0xc4b5fd],
+        [-32, -4.5, -62, 1.65, 0.42, 0x93c5fd],
+        [48, -4.8, -74, 1.55, -0.5, 0xe879f9],
+        [-26, -3.5, -104, 1.75, 0.48, 0xa5f3fc],
+        [34, -3.2, -122, 1.65, -0.4, 0xc4b5fd],
+        [-36, 22.0, -40, 1.85, 0.65, 0xbae6fd],
+        [38, 24.5, -68, 1.9, -0.55, 0xd8b4fe],
+        [-34, 26.0, -118, 2.0, 0.52, 0x99f6e4],
+        [36, 26.5, -148, 2.1, -0.6, 0xc4b5fd],
+      ];
+      for (let c = 0; c < cloudDefs.length; c++) {
+        const [cx, cy, cz, cs, cSpeed, cHex] = cloudDefs[c];
+        const cg = new THREE.Group();
+        cg.position.set(cx, cy, cz);
+        const cloudMat = new THREE.MeshBasicMaterial({
+          color: cHex,
+          transparent: true,
+          opacity: 0.24,
+          depthWrite: false,
+        });
+        for (let p = 0; p < 5; p++) {
+          const puff = new THREE.Mesh(new THREE.DodecahedronGeometry((2.4 + (p % 3) * 0.8) * cs, 1), cloudMat);
+          puff.scale.set(1.65, 0.55, 1.15);
+          puff.position.set((p - 2) * 2.2 * cs, (p % 2 === 0 ? 0.45 : -0.25) * cs, Math.sin(p * 1.4) * 1.4 * cs);
+          cg.add(puff);
+        }
+        this.levelGroup.add(cg);
+        this.nebulaCloudBanks.push({ group: cg, baseX: cx, baseY: cy, baseZ: cz, spanX: 7.5, speed: cSpeed, phase: c * 1.1 });
+      }
+
+      // Multi-Distance 3D Planets & Moons across the Cosmic Vista
+      // 1. Giant Luminous Ringed Cyan-Pearl Gas Giant
+      const gasGiant = new THREE.Group();
+      gasGiant.position.set(18, 46, -212);
+      const giantSphere = new THREE.Mesh(
+        new THREE.SphereGeometry(22, 32, 24),
         new THREE.MeshStandardMaterial({
           color: 0xa5f3fc,
-          emissive: 0x22a6c4,
-          emissiveIntensity: 0.75,
-          roughness: 0.45,
+          emissive: 0x0891b2,
+          emissiveIntensity: 0.72,
+          roughness: 0.38,
         })
       );
-      const pRing = new THREE.Mesh(
-        new THREE.TorusGeometry(35, 3.0, 8, 48),
-        new THREE.MeshBasicMaterial({ color: 0xcffafe, transparent: true, opacity: 0.65 })
+      const ringOuter = new THREE.Mesh(
+        new THREE.TorusGeometry(36, 2.8, 8, 56),
+        new THREE.MeshBasicMaterial({ color: 0xcffafe, transparent: true, opacity: 0.58 })
       );
-      pRing.rotation.set(1.22, 0.24, -0.26);
-      planetGroup.add(planet, pRing);
+      ringOuter.rotation.set(1.22, 0.24, -0.26);
+      const ringInner = new THREE.Mesh(
+        new THREE.TorusGeometry(28.5, 1.3, 8, 48),
+        new THREE.MeshBasicMaterial({ color: 0x67e8f9, transparent: true, opacity: 0.45 })
+      );
+      ringInner.rotation.set(1.22, 0.24, -0.26);
+      gasGiant.add(giantSphere, ringOuter, ringInner);
+      this.levelGroup.add(gasGiant);
+      this.nebulaSpinners.push({ obj: giantSphere, speed: 0.04, axis: 'y' });
 
-      const moon = new THREE.Mesh(
-        new THREE.SphereGeometry(7.5, 20, 16),
+      // 2. Amethyst-Indigo Ringed Moon (upper left horizon)
+      const amethystMoon = new THREE.Group();
+      amethystMoon.position.set(-78, 36, -160);
+      const aSphere = new THREE.Mesh(
+        new THREE.SphereGeometry(9.5, 24, 18),
         new THREE.MeshStandardMaterial({
-          color: 0xbae6fd,
-          emissive: 0x0ea5e9,
-          emissiveIntensity: 0.45,
-          roughness: 0.55,
+          color: 0xd8b4fe,
+          emissive: 0x6d28d9,
+          emissiveIntensity: 0.52,
+          roughness: 0.5,
         })
       );
-      moon.position.set(-72, 12, 32);
-      planetGroup.add(moon);
-      this.levelGroup.add(planetGroup);
+      const aHalo = new THREE.Mesh(
+        new THREE.TorusGeometry(14.5, 0.7, 6, 36),
+        new THREE.MeshBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.45 })
+      );
+      aHalo.rotation.set(1.1, -0.35, 0.2);
+      amethystMoon.add(aSphere, aHalo);
+      this.levelGroup.add(amethystMoon);
+
+      // 3. Distant Turquoise-Coral Exoplanet (right vista)
+      const coralPlanet = new THREE.Mesh(
+        new THREE.SphereGeometry(6.8, 20, 16),
+        new THREE.MeshStandardMaterial({
+          color: 0xfbcfe8,
+          emissive: 0xbe185d,
+          emissiveIntensity: 0.42,
+          roughness: 0.52,
+        })
+      );
+      coralPlanet.position.set(84, 30, -142);
+      this.levelGroup.add(coralPlanet);
     } else if (biome === 'paris') {
-      // Iconic Coral-Terracotta Eiffel Tower standing beneath the summit launch deck
+      const floorY = level.theme.hazardFloorY;
+
+      // Iconic Eiffel Tower standing beneath the summit launch deck & monumental Arc de Triomphe at Champs-Élysées Plaza
       const eiffel = createEiffelTowerMesh(this.textures.parisStone);
-      eiffel.position.set(0, level.theme.hazardFloorY, 0);
+      eiffel.position.set(0, floorY, 0);
       this.levelGroup.add(eiffel);
 
-      // Grand Arc de Triomphe framing the goal portal at Champs-Élysées Plaza
       const arc = createArcDeTriompheMesh(this.textures.parisStone);
       arc.position.set(0, 4.5, -367);
       this.levelGroup.add(arc);
 
-      // Champ de Mars Central Olive-Emerald Lawn Avenue (stretching from Eiffel Tower to Arc plaza)
-      const lawnDarkMat = new THREE.MeshStandardMaterial({
-        map: this.textures.jungleGrass,
-        color: 0x62962e,
-        roughness: 0.88,
+      // Shared golden-sunset Parisian architectural materials
+      const limestoneMat = new THREE.MeshStandardMaterial({
+        map: this.textures.parisStone,
+        bumpMap: this.textures.stoneBump,
+        bumpScale: 0.14,
+        roughness: 0.78,
+        metalness: 0.05,
       });
-      const lawnCenterMat = new THREE.MeshStandardMaterial({
-        color: 0x72ab38,
+      const facadeMat = new THREE.MeshStandardMaterial({
+        map: this.textures.parisFacade,
+        emissiveMap: this.textures.parisFacadeEmissive,
+        emissive: 0xffb347,
+        emissiveIntensity: 1.15,
+        bumpMap: this.textures.stoneBump,
+        bumpScale: 0.1,
+        roughness: 0.76,
+        metalness: 0.06,
+      });
+      const mansardRoofMat = new THREE.MeshStandardMaterial({
+        map: this.textures.parisRoof,
+        roughness: 0.48,
+        metalness: 0.42,
+      });
+      const copperDomeMat = new THREE.MeshStandardMaterial({
+        color: 0x3b8b7f,
+        emissive: 0x0f3d37,
+        emissiveIntensity: 0.16,
+        roughness: 0.36,
+        metalness: 0.56,
+      });
+      const giltMat = new THREE.MeshStandardMaterial({
+        map: this.textures.goldTrim,
+        color: 0xfbbf24,
+        emissive: 0x92400e,
+        emissiveIntensity: 0.38,
+        metalness: 0.86,
+        roughness: 0.22,
+      });
+      const ironMat = new THREE.MeshStandardMaterial({
+        color: 0x1e293b,
+        metalness: 0.82,
+        roughness: 0.3,
+      });
+      const warmWindowMat = new THREE.MeshStandardMaterial({
+        color: 0xfef3c7,
+        emissive: 0xf59e0b,
+        emissiveIntensity: 2.0,
+        roughness: 0.18,
+      });
+      const terracottaMat = new THREE.MeshStandardMaterial({
+        color: 0xc26546,
         roughness: 0.85,
       });
-      const centralLawn = new THREE.Mesh(new THREE.BoxGeometry(19.5, 0.45, 405), lawnDarkMat);
-      centralLawn.position.set(0, level.theme.hazardFloorY + 0.24, -182);
-      centralLawn.receiveShadow = true;
-      const centralStripe = new THREE.Mesh(new THREE.PlaneGeometry(8.2, 400), lawnCenterMat);
-      centralStripe.rotation.x = -Math.PI / 2;
-      centralStripe.position.set(0, level.theme.hazardFloorY + 0.48, -182);
-      this.levelGroup.add(centralLawn, centralStripe);
-
-      // Flanking Warm Ochre-Tan Gravel Promenades + Curb Borders
-      const ochrePathMat = new THREE.MeshStandardMaterial({
-        color: 0xc98b53,
-        roughness: 0.9,
+      const lawnDarkMat = new THREE.MeshStandardMaterial({
+        map: this.textures.jungleGrass,
+        color: 0x5c8f2b,
+        roughness: 0.86,
       });
-      const curbMat = new THREE.MeshStandardMaterial({
-        color: 0xa46d3d,
+      const lawnCenterMat = new THREE.MeshStandardMaterial({
+        color: 0x73ab38,
+        roughness: 0.84,
+      });
+      const ochrePathMat = new THREE.MeshStandardMaterial({
+        color: 0xd19a63,
         roughness: 0.88,
       });
-      for (const sx of [-1, 1]) {
-        const path = new THREE.Mesh(new THREE.BoxGeometry(6.8, 0.38, 405), ochrePathMat);
-        path.position.set(sx * 13.1, level.theme.hazardFloorY + 0.2, -182);
-        path.receiveShadow = true;
+      const flowerMatA = new THREE.MeshStandardMaterial({ color: 0xf43f5e, emissive: 0x881337, emissiveIntensity: 0.2, roughness: 0.6 });
+      const flowerMatB = new THREE.MeshStandardMaterial({ color: 0xfbbf24, emissive: 0x78350f, emissiveIntensity: 0.2, roughness: 0.6 });
 
-        const outerCurb = new THREE.Mesh(new THREE.BoxGeometry(0.9, 0.46, 405), curbMat);
-        outerCurb.position.set(sx * 16.8, level.theme.hazardFloorY + 0.24, -182);
-        this.levelGroup.add(path, outerCurb);
+      // Segmented Champ de Mars & Tuileries Avenue islands separated by 3 visible Seine River channels
+      const avenueSegments: [number, number][] = [
+        [-22, 92],   // z in [-68, +24]
+        [-140, 56],  // z in [-168, -112]
+        [-238, 48],  // z in [-262, -214]
+        [-345, 78],  // z in [-384, -306]
+      ];
+      for (const [segZ, segLen] of avenueSegments) {
+        const quayBase = new THREE.Mesh(new THREE.BoxGeometry(36.2, 0.9, segLen), limestoneMat);
+        quayBase.position.set(0, floorY + 0.12, segZ);
+        quayBase.receiveShadow = true;
+        this.levelGroup.add(quayBase);
+
+        const centralLawn = new THREE.Mesh(new THREE.BoxGeometry(18.5, 0.4, segLen - 1.2), lawnDarkMat);
+        centralLawn.position.set(0, floorY + 0.62, segZ);
+        centralLawn.receiveShadow = true;
+        const centralStripe = new THREE.Mesh(new THREE.PlaneGeometry(7.6, segLen - 2.4), lawnCenterMat);
+        centralStripe.rotation.x = -Math.PI / 2;
+        centralStripe.position.set(0, floorY + 0.84, segZ);
+        this.levelGroup.add(centralLawn, centralStripe);
+
+        for (const sx of [-1, 1]) {
+          const path = new THREE.Mesh(new THREE.BoxGeometry(6.8, 0.36, segLen - 0.6), ochrePathMat);
+          path.position.set(sx * 12.8, floorY + 0.58, segZ);
+          path.receiveShadow = true;
+          const quayCoping = new THREE.Mesh(new THREE.BoxGeometry(1.1, 0.62, segLen), limestoneMat);
+          quayCoping.position.set(sx * 17.5, floorY + 0.72, segZ);
+          this.levelGroup.add(path, quayCoping);
+        }
+
+        // Formal Tuileries floral parterres & wrought-iron streetlamps along segment edges
+        const lampStep = 18;
+        const zStart = segZ + segLen * 0.42;
+        const zEnd = segZ - segLen * 0.42;
+        for (let lz = zStart; lz >= zEnd; lz -= lampStep) {
+          for (const sx of [-1, 1]) {
+            const bed = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.22, 4.2), sx > 0 ? flowerMatA : flowerMatB);
+            bed.position.set(sx * 7.8, floorY + 0.88, lz);
+            const post = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.1, 2.6, 6), ironMat);
+            post.position.set(sx * 16.5, floorY + 2.0, lz);
+            const globe = new THREE.Mesh(new THREE.SphereGeometry(0.24, 8, 6), warmWindowMat);
+            globe.position.set(sx * 16.5, floorY + 3.4, lz);
+            this.levelGroup.add(bed, post, globe);
+          }
+        }
       }
 
-      // Twin Rows of Tall Sculpted Olive-Green Cypress & Park Trees along the Promenade
-      const treeCount = 60;
-      const trunkGeo = new THREE.CylinderGeometry(0.32, 0.44, 2.2, 7);
-      const trunkMat = new THREE.MeshStandardMaterial({ color: 0x854d2b, roughness: 0.9 });
-      const foliageGeo = this.createDisplacedRockGeometry(2.1, 3.7);
-      const foliageMat = new THREE.MeshStandardMaterial({ color: 0x5c8c26, roughness: 0.85 });
-      applyWindSwayShader(foliageMat, this.shaderTimeUniform, 0.18, 1.65);
+      // Flanking Parisian riverside quays along outer boulevards (framing the 3 Seine river waterways)
+      for (const sx of [-1, 1]) {
+        for (const [segZ, segLen] of avenueSegments) {
+          const outerQuay = new THREE.Mesh(new THREE.BoxGeometry(38, 1.4, segLen), limestoneMat);
+          outerQuay.position.set(sx * 39, floorY + 0.3, segZ);
+          outerQuay.receiveShadow = true;
+          this.levelGroup.add(outerQuay);
+        }
+      }
 
-      const tTrunks = new THREE.InstancedMesh(trunkGeo, trunkMat, treeCount);
-      const tFoliage = new THREE.InstancedMesh(foliageGeo, foliageMat, treeCount);
-      for (let i = 0; i < treeCount; i++) {
-        const side = i % 2 === 0 ? -1 : 1;
-        const row = Math.floor(i / 2);
-        const tz = 12 - row * 13.0;
-        const innerRow = row % 2 === 0;
-        const tx = side * (innerRow ? 10.6 : 15.4);
-        const hScale = 1.85 + (row % 3) * 0.35;
+      // 3 Monumental Arched Parisian Bridges spanning the Seine Channels (Pont Alexandre III & Pont Neuf style)
+      const bridgeZs = [-90, -191, -284];
+      for (const bz of bridgeZs) {
+        const bridgeGroup = new THREE.Group();
+        bridgeGroup.position.set(0, floorY, bz);
 
-        dummy.position.set(tx, level.theme.hazardFloorY + 1.3, tz);
+        // Bridge stone roadway deck spanning x in [-34, 34]
+        const deck = new THREE.Mesh(new THREE.BoxGeometry(68, 1.15, 11.4), limestoneMat);
+        deck.position.y = 2.65;
+        deck.receiveShadow = true;
+        bridgeGroup.add(deck);
+
+        // Triple curved masonry arches underneath
+        for (const archX of [-18, 0, 18]) {
+          const archPts = [
+            new THREE.Vector3(archX - 8.2, 0.1, 0),
+            new THREE.Vector3(archX, 2.2, 0),
+            new THREE.Vector3(archX + 8.2, 0.1, 0),
+          ];
+          const archRib = new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(archPts), 14, 0.65, 8, false), limestoneMat);
+          for (const fz of [-4.6, 4.6]) {
+            const archCopy = archRib.clone();
+            archCopy.position.z = fz;
+            bridgeGroup.add(archCopy);
+          }
+          // Stone bridge piers between arches
+          if (archX !== 18) {
+            const pier = new THREE.Mesh(new THREE.BoxGeometry(2.6, 3.2, 12.2), limestoneMat);
+            pier.position.set(archX + 9, 1.2, 0);
+            bridgeGroup.add(pier);
+          }
+        }
+
+        // Stone balustrades + gilded Pont Alexandre III winged monument pylons & warm lanterns
+        for (const sz of [-5.2, 5.2]) {
+          const rail = new THREE.Mesh(new THREE.BoxGeometry(66, 0.72, 0.38), limestoneMat);
+          rail.position.set(0, 3.55, sz);
+          bridgeGroup.add(rail);
+
+          for (const px of [-14.2, 14.2]) {
+            const pylon = new THREE.Mesh(new THREE.BoxGeometry(1.5, 4.2, 1.5), limestoneMat);
+            pylon.position.set(px, 4.6, sz);
+            const cap = new THREE.Mesh(new THREE.OctahedronGeometry(0.62, 0), giltMat);
+            cap.scale.set(0.9, 1.5, 0.9);
+            cap.position.set(px, 7.2, sz);
+            bridgeGroup.add(pylon, cap);
+          }
+          for (let lx = -24; lx <= 24; lx += 8) {
+            const lampPost = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.09, 1.65, 6), ironMat);
+            lampPost.position.set(lx, 4.35, sz);
+            const lampHead = new THREE.Mesh(new THREE.SphereGeometry(0.24, 8, 6), warmWindowMat);
+            lampHead.position.set(lx, 5.28, sz);
+            bridgeGroup.add(lampPost, lampHead);
+          }
+        }
+        this.levelGroup.add(bridgeGroup);
+      }
+
+      // Avenue Chestnut & Plane Trees along the garden segments (layered canopies swaying gently in sunset breeze)
+      const treePositions: [number, number, number][] = [];
+      for (const [segZ, segLen] of avenueSegments) {
+        const zA = segZ + segLen * 0.44;
+        const zB = segZ - segLen * 0.44;
+        for (let z = zA; z >= zB; z -= 10.5) {
+          treePositions.push([-10.2, z, 0.92 + ((Math.abs(z) % 3) * 0.14)]);
+          treePositions.push([10.2, z, 0.96 + ((Math.abs(z + 2) % 3) * 0.14)]);
+          treePositions.push([-15.6, z - 4.2, 1.05]);
+          treePositions.push([15.6, z - 4.2, 1.05]);
+        }
+      }
+      const trunkGeo = new THREE.CylinderGeometry(0.28, 0.44, 2.5, 7);
+      const trunkMat = new THREE.MeshStandardMaterial({ map: this.textures.barkTexture, color: 0x7c4a2b, roughness: 0.9 });
+      const foliageGeo = this.createDisplacedRockGeometry(2.15, 3.7);
+      const foliageMat = new THREE.MeshStandardMaterial({ color: 0x628b2c, roughness: 0.84 });
+      applyWindSwayShader(foliageMat, this.shaderTimeUniform, 0.16, 1.55);
+
+      const tTrunks = new THREE.InstancedMesh(trunkGeo, trunkMat, treePositions.length);
+      const tFoliage = new THREE.InstancedMesh(foliageGeo, foliageMat, treePositions.length * 2);
+      for (let i = 0; i < treePositions.length; i++) {
+        const [tx, tz, sc] = treePositions[i];
+        dummy.position.set(tx, floorY + 1.8, tz);
         dummy.rotation.set(0, 0, 0);
-        dummy.scale.set(1, 1, 1);
+        dummy.scale.set(sc, sc, sc);
         dummy.updateMatrix();
         tTrunks.setMatrixAt(i, dummy.matrix);
 
-        dummy.position.set(tx, level.theme.hazardFloorY + 4.8 + hScale * 0.9, tz);
-        dummy.rotation.set(0, i * 0.9, 0);
-        dummy.scale.set(0.92, hScale, 0.92);
+        dummy.position.set(tx, floorY + 4.2 * sc, tz);
+        dummy.rotation.set(0, i * 0.8, 0);
+        dummy.scale.set(sc * 1.08, sc * 0.95, sc * 1.08);
         dummy.updateMatrix();
-        tFoliage.setMatrixAt(i, dummy.matrix);
+        tFoliage.setMatrixAt(i * 2, dummy.matrix);
 
-        _color.setHex(i % 3 === 0 ? 0x629629 : i % 3 === 1 ? 0x538221 : 0x71a634);
-        tFoliage.setColorAt(i, _color);
+        dummy.position.set(tx + 0.45 * sc, floorY + 5.1 * sc, tz - 0.3 * sc);
+        dummy.rotation.set(0, i * 1.3, 0);
+        dummy.scale.set(sc * 0.78, sc * 0.75, sc * 0.78);
+        dummy.updateMatrix();
+        tFoliage.setMatrixAt(i * 2 + 1, dummy.matrix);
+
+        _color.setHex(i % 4 === 0 ? 0x8ca632 : i % 3 === 0 ? 0x5c8c29 : 0x729f33);
+        tFoliage.setColorAt(i * 2, _color);
+        _color.setHex(i % 5 === 0 ? 0xc28a36 : 0x6b9e2d);
+        tFoliage.setColorAt(i * 2 + 1, _color);
       }
       tTrunks.instanceMatrix.needsUpdate = true;
       tFoliage.instanceMatrix.needsUpdate = true;
@@ -3546,75 +5589,396 @@ export class GameEngine {
       tFoliage.computeBoundingSphere();
       this.levelGroup.add(tTrunks, tFoliage);
 
-      // Soft Pastel Lavender-Periwinkle Paris Skyline Silhouettes framing both horizons
-      const skylineMat = new THREE.MeshStandardMaterial({
-        color: 0x9aa4da,
-        roughness: 0.92,
-        metalness: 0.02,
+      // Helper to construct architecturally authentic Haussmann Parisian buildings, domed basilicas & astronomical clocktowers
+      const addHaussmannBuilding = (
+        bx: number,
+        bz: number,
+        bw: number,
+        bh: number,
+        bd: number,
+        variant: 'classic' | 'dome' | 'clock' | 'rotunda',
+        seed: number
+      ) => {
+        const bGroup = new THREE.Group();
+        bGroup.position.set(bx, floorY, bz);
+
+        // Ground stone rusticated base podium
+        const baseH = 3.2;
+        const baseBlock = new THREE.Mesh(new THREE.BoxGeometry(bw + 0.5, baseH, bd + 0.5), limestoneMat);
+        baseBlock.position.y = baseH * 0.5;
+        bGroup.add(baseBlock);
+
+        // Main Haussmann limestone facade with glowing dusk windows
+        const mainH = bh;
+        const mainBlock = new THREE.Mesh(new THREE.BoxGeometry(bw, mainH, bd), facadeMat);
+        mainBlock.position.y = baseH + mainH * 0.5;
+        mainBlock.castShadow = !this.isSoftwareGl;
+        mainBlock.receiveShadow = true;
+        bGroup.add(mainBlock);
+
+        // Horizontal stone stringcourses & wrought-iron Haussmann balconies (balcones)
+        const balconyLevels = [baseH + mainH * 0.34, baseH + mainH * 0.72];
+        for (const by of balconyLevels) {
+          const ledge = new THREE.Mesh(new THREE.BoxGeometry(bw + 0.9, 0.34, bd + 0.9), limestoneMat);
+          ledge.position.y = by;
+          const rail = new THREE.Mesh(new THREE.BoxGeometry(bw + 0.85, 0.42, bd + 0.85), ironMat);
+          rail.position.y = by + 0.34;
+          bGroup.add(ledge, rail);
+        }
+
+        // Top classical entablature cornice
+        const topCornice = new THREE.Mesh(new THREE.BoxGeometry(bw + 1.0, 0.6, bd + 1.0), limestoneMat);
+        topCornice.position.y = baseH + mainH + 0.25;
+        bGroup.add(topCornice);
+
+        const roofBaseY = baseH + mainH + 0.55;
+        const roofH = Math.min(4.6, Math.max(2.6, bw * 0.32));
+
+        // Sloped Parisian zinc mansard roof (4-sided frustum)
+        const mansard = new THREE.Mesh(
+          new THREE.CylinderGeometry(bw * 0.42, bw * 0.68, roofH, 4),
+          mansardRoofMat
+        );
+        mansard.rotation.y = Math.PI / 4;
+        mansard.scale.set(1, 1, bd / bw);
+        mansard.position.y = roofBaseY + roofH * 0.5;
+        bGroup.add(mansard);
+
+        // Dormer windows (buhardillas) + terracotta chimneys (chimeneas)
+        const dormerDir = bx < 0 ? 1 : -1;
+        for (const dz of [-bd * 0.24, bd * 0.24]) {
+          const dormer = new THREE.Mesh(new THREE.BoxGeometry(1.1, 1.35, 1.25), limestoneMat);
+          dormer.position.set(dormerDir * (bw * 0.36), roofBaseY + roofH * 0.44, dz);
+          const dormerWin = new THREE.Mesh(new THREE.BoxGeometry(0.18, 0.8, 0.72), warmWindowMat);
+          dormerWin.position.set(dormerDir * (bw * 0.36 + 0.52), roofBaseY + roofH * 0.42, dz);
+          const dormerCap = new THREE.Mesh(new THREE.ConeGeometry(0.95, 0.8, 4), mansardRoofMat);
+          dormerCap.rotation.y = Math.PI / 4;
+          dormerCap.position.set(dormerDir * (bw * 0.36), roofBaseY + roofH * 0.44 + 1.0, dz);
+          bGroup.add(dormer, dormerWin, dormerCap);
+        }
+        for (const [cx, cz] of [[-bw * 0.22, -bd * 0.2], [bw * 0.22, bd * 0.2]]) {
+          const chim = new THREE.Mesh(new THREE.BoxGeometry(0.85, 2.2, 0.85), terracottaMat);
+          chim.position.set(cx, roofBaseY + roofH + 0.6, cz);
+          const potA = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.2, 0.55, 6), terracottaMat);
+          potA.position.set(cx - 0.18, roofBaseY + roofH + 1.85, cz);
+          const potB = potA.clone();
+          potB.position.set(cx + 0.18, roofBaseY + roofH + 1.85, cz);
+          bGroup.add(chim, potA, potB);
+        }
+
+        // Architectural specializations: Monumental Dome, Astronomical Clocktower, or Corner Rotunda Turret
+        if (variant === 'dome') {
+          const drumR = Math.min(bw, bd) * 0.34;
+          const drum = new THREE.Mesh(new THREE.CylinderGeometry(drumR, drumR * 1.06, 3.2, 16), limestoneMat);
+          drum.position.y = roofBaseY + roofH + 1.3;
+          const cupola = new THREE.Mesh(
+            new THREE.SphereGeometry(drumR * 1.02, 18, 12, 0, Math.PI * 2, 0, Math.PI * 0.55),
+            copperDomeMat
+          );
+          cupola.scale.set(1, 1.3, 1);
+          cupola.position.y = roofBaseY + roofH + 2.8;
+          const lantern = new THREE.Mesh(new THREE.CylinderGeometry(drumR * 0.24, drumR * 0.28, 1.8, 10), giltMat);
+          lantern.position.y = roofBaseY + roofH + 2.8 + drumR * 1.32;
+          const spire = new THREE.Mesh(new THREE.ConeGeometry(drumR * 0.22, 2.2, 10), giltMat);
+          spire.position.y = roofBaseY + roofH + 2.8 + drumR * 1.32 + 1.8;
+          bGroup.add(drum, cupola, lantern, spire);
+        } else if (variant === 'clock') {
+          const towerW = Math.min(bw, bd) * 0.44;
+          const towerH = 6.2;
+          const tower = new THREE.Mesh(new THREE.BoxGeometry(towerW, towerH, towerW), limestoneMat);
+          tower.position.y = roofBaseY + roofH * 0.5 + towerH * 0.5;
+          const towerRoof = new THREE.Mesh(new THREE.ConeGeometry(towerW * 0.78, 3.6, 4), mansardRoofMat);
+          towerRoof.rotation.y = Math.PI / 4;
+          towerRoof.position.y = roofBaseY + roofH * 0.5 + towerH + 1.7;
+          const finial = new THREE.Mesh(new THREE.OctahedronGeometry(0.45, 0), giltMat);
+          finial.position.y = roofBaseY + roofH * 0.5 + towerH + 3.6;
+          bGroup.add(tower, towerRoof, finial);
+
+          // Glowing Parisian Clock Face on the boulevard-facing side
+          const faceX = dormerDir * (towerW * 0.5 + 0.08);
+          const faceY = roofBaseY + roofH * 0.5 + towerH * 0.58;
+          const clockBezel = new THREE.Mesh(new THREE.TorusGeometry(towerW * 0.38, 0.14, 8, 24), giltMat);
+          clockBezel.rotation.y = Math.PI / 2;
+          clockBezel.position.set(faceX, faceY, 0);
+          const clockDial = new THREE.Mesh(new THREE.CircleGeometry(towerW * 0.36, 22), warmWindowMat);
+          clockDial.rotation.y = dormerDir > 0 ? Math.PI / 2 : -Math.PI / 2;
+          clockDial.position.set(faceX + dormerDir * 0.02, faceY, 0);
+          bGroup.add(clockBezel, clockDial);
+
+          const handHub = new THREE.Group();
+          handHub.position.set(faceX + dormerDir * 0.08, faceY, 0);
+          const minGroup = new THREE.Group();
+          const minBar = new THREE.Mesh(new THREE.BoxGeometry(0.06, towerW * 0.28, 0.1), ironMat);
+          minBar.position.y = towerW * 0.13;
+          minGroup.add(minBar);
+          const hourGroup = new THREE.Group();
+          const hourBar = new THREE.Mesh(new THREE.BoxGeometry(0.06, towerW * 0.19, 0.12), ironMat);
+          hourBar.position.y = towerW * 0.09;
+          hourGroup.add(hourBar);
+          minGroup.rotation.x = seed * 1.5;
+          hourGroup.rotation.x = seed * 0.7;
+          handHub.add(minGroup, hourGroup);
+          bGroup.add(handHub);
+          this.parisClockHands.push({ hourHand: hourGroup, minuteHand: minGroup });
+        } else if (variant === 'rotunda') {
+          const turR = Math.min(bw, bd) * 0.32;
+          const turret = new THREE.Mesh(new THREE.CylinderGeometry(turR, turR * 1.04, mainH * 0.45 + 3.2, 14), facadeMat);
+          turret.position.set(dormerDir * (bw * 0.38), baseH + mainH * 0.78, 0);
+          const cone = new THREE.Mesh(new THREE.ConeGeometry(turR * 1.12, 4.4, 14), mansardRoofMat);
+          cone.position.set(dormerDir * (bw * 0.38), baseH + mainH + 3.8, 0);
+          const tip = new THREE.Mesh(new THREE.OctahedronGeometry(0.36, 0), giltMat);
+          tip.position.set(dormerDir * (bw * 0.38), baseH + mainH + 6.1, 0);
+          bGroup.add(turret, cone, tip);
+        }
+
+        this.levelGroup.add(bGroup);
+      };
+
+      // Tier 1: Inner Boulevard Haussmann Buildings framing the aerial glide corridor (|x| >= 22 keeps x in [-16.5, 16.5] clear!)
+      const innerVariants: ('classic' | 'dome' | 'clock' | 'rotunda')[] = [
+        'classic', 'rotunda', 'clock', 'classic', 'dome', 'classic', 'rotunda', 'clock',
+      ];
+      for (let i = 0; i < 16; i++) {
+        const bz = 4 - i * 24;
+        const leftVar = innerVariants[i % innerVariants.length];
+        const rightVar = innerVariants[(i + 3) % innerVariants.length];
+        addHaussmannBuilding(-24.5 - (i % 2) * 2.5, bz, 11.5, 16 + (i % 4) * 3.5, 15.5, leftVar, i * 0.7);
+        addHaussmannBuilding(24.5 + ((i + 1) % 2) * 2.5, bz - 8, 11.5, 15 + ((i + 2) % 4) * 3.8, 15.0, rightVar, i * 1.1 + 2);
+      }
+
+      // Tier 2: Mid-city Grand Landmarks (Basilica Domes, Opera Rotundas, Palais Clocktowers) & Distant Skyline
+      const midBuildings: [number, number, number, number, number, 'classic' | 'dome' | 'clock' | 'rotunda'][] = [
+        [-45, -24, 16, 24, 18, 'dome'],
+        [44, -46, 15, 22, 17, 'rotunda'],
+        [-46, -98, 18, 25, 20, 'dome'],
+        [45, -124, 15, 26, 16, 'clock'],
+        [-44, -172, 16, 22, 18, 'rotunda'],
+        [46, -206, 19, 27, 20, 'dome'],
+        [-45, -256, 15, 25, 16, 'clock'],
+        [44, -296, 17, 23, 18, 'dome'],
+        [-46, -346, 16, 22, 18, 'rotunda'],
+        [46, -352, 16, 24, 18, 'classic'],
+        [-28, -408, 16, 24, 16, 'dome'],
+        [28, -408, 16, 22, 16, 'rotunda'],
+        [0, -424, 22, 28, 18, 'dome'],
+      ];
+      midBuildings.forEach(([bx, bz, bw, bh, bd, v], idx) => {
+        addHaussmannBuilding(bx, bz, bw, bh, bd, v, idx + 12);
       });
-      const skyRoofMat = new THREE.MeshStandardMaterial({
-        color: 0x8691ce,
-        roughness: 0.9,
+
+      // Tier 3: Far Paris Horizon Mansard Skyline Silhouettes
+      const skySilMat = new THREE.MeshStandardMaterial({
+        map: this.textures.parisFacade,
+        emissiveMap: this.textures.parisFacadeEmissive,
+        emissive: 0xf59e0b,
+        emissiveIntensity: 0.72,
+        roughness: 0.88,
       });
-      const bGeo = new THREE.BoxGeometry(10, 14, 13);
-      const rGeo = new THREE.ConeGeometry(7.2, 3.6, 4);
-      rGeo.rotateY(Math.PI / 4);
-      const bCount = 50;
-      const bInst = new THREE.InstancedMesh(bGeo, skylineMat, bCount);
-      const rInst = new THREE.InstancedMesh(rGeo, skyRoofMat, bCount);
-      for (let i = 0; i < bCount; i++) {
+      const skyRoofMat = new THREE.MeshStandardMaterial({ color: 0x3b4466, roughness: 0.85 });
+      const sbGeo = new THREE.BoxGeometry(12, 18, 14);
+      const srGeo = new THREE.ConeGeometry(8.6, 4.4, 4);
+      srGeo.rotateY(Math.PI / 4);
+      const sbCount = 38;
+      const sbInst = new THREE.InstancedMesh(sbGeo, skySilMat, sbCount);
+      const srInst = new THREE.InstancedMesh(srGeo, skyRoofMat, sbCount);
+      for (let i = 0; i < sbCount; i++) {
         const side = i % 2 === 0 ? -1 : 1;
         const row = Math.floor(i / 2);
-        const bz = 16 - row * 16.5;
-        const layerOffset = (row % 3) * 9.5;
-        const bx = side * (32 + layerOffset);
-        const scH = 0.95 + ((i * 7) % 6) * 0.28;
-
-        dummy.position.set(bx, level.theme.hazardFloorY + 7 * scH - 0.5, bz);
+        const bz = 14 - row * 22.0;
+        const bx = side * (66 + (row % 3) * 11.5);
+        const scH = 0.9 + ((i * 5) % 5) * 0.3;
+        dummy.position.set(bx, floorY + 9 * scH, bz);
         dummy.rotation.set(0, 0, 0);
-        dummy.scale.set(1 + (row % 2) * 0.25, scH, 1);
+        dummy.scale.set(1.1, scH, 1.05);
         dummy.updateMatrix();
-        bInst.setMatrixAt(i, dummy.matrix);
-        _color.setHex(row % 3 === 0 ? 0xa3ade2 : row % 3 === 1 ? 0x949fd7 : 0xb2bbe8);
-        bInst.setColorAt(i, _color);
-
-        dummy.position.set(bx, level.theme.hazardFloorY + 14 * scH + 1.0, bz);
-        dummy.scale.set(1 + (row % 2) * 0.25, row % 2 === 0 ? 0.8 : 0.05, 1);
+        sbInst.setMatrixAt(i, dummy.matrix);
+        dummy.position.set(bx, floorY + 18 * scH + 1.8, bz);
+        dummy.scale.set(1.1, 0.9, 1.05);
         dummy.updateMatrix();
-        rInst.setMatrixAt(i, dummy.matrix);
+        srInst.setMatrixAt(i, dummy.matrix);
       }
-      bInst.instanceMatrix.needsUpdate = true;
-      if (bInst.instanceColor) bInst.instanceColor.needsUpdate = true;
-      bInst.computeBoundingSphere();
-      rInst.instanceMatrix.needsUpdate = true;
-      rInst.computeBoundingSphere();
-      this.levelGroup.add(bInst, rInst);
+      sbInst.instanceMatrix.needsUpdate = true;
+      srInst.instanceMatrix.needsUpdate = true;
+      sbInst.computeBoundingSphere();
+      srInst.computeBoundingSphere();
+      this.levelGroup.add(sbInst, srInst);
 
-      // Stylized Bright White Billowing Sky Clouds flanking the flight corridor
-      const cloudGeo = new THREE.SphereGeometry(2.8, 14, 12);
-      const cloudMat = new THREE.MeshStandardMaterial({
-        color: 0xffffff,
-        emissive: 0xe6f4ff,
-        emissiveIntensity: 0.28,
-        roughness: 0.95,
+      // 3 Interactive Aerial Thermal Updraft Currents along alternate glide lanes (rewarding side exploration!)
+      const aerialUpdraftSpots: [number, number, number][] = [
+        [-10.2, 18.0, -78],
+        [10.4, 14.5, -155],
+        [-9.8, 9.5, -242],
+      ];
+      for (const [ux, uy, uz] of aerialUpdraftSpots) {
+        const wm = createParisWindUpdraftMesh(2.3, 12.5, this.textures);
+        wm.group.position.set(ux, uy - 5.5, uz);
+        this.levelGroup.add(wm.group);
+        this.parisThermalRibbons.push(...wm.ribbons);
+        this.parisUpdraftZones.push({
+          pos: new THREE.Vector3(ux, uy, uz),
+          radius: 3.1,
+          height: 12.5,
+          triggeredCooldown: 0,
+        });
+      }
+
+      // Scenic & Alternate-Lane Montgolfier Hot-Air Balloons drifting in the golden sunset sky
+      const balloonPalette = [
+        [0xe11d48, 0xfef3c7],
+        [0x2563eb, 0xfbbf24],
+        [0xf97316, 0xfef08a],
+        [0x7c3aed, 0xfde68a],
+      ];
+      const balloonDefs: { pos: [number, number, number]; scale: number; isObstacle: boolean }[] = [
+        { pos: [-20, 26, -42], scale: 1.35, isObstacle: false },
+        { pos: [21, 28, -96], scale: 1.45, isObstacle: false },
+        { pos: [-22, 23, -178], scale: 1.35, isObstacle: false },
+        { pos: [20, 20, -252], scale: 1.4, isObstacle: false },
+        { pos: [-19, 17, -318], scale: 1.5, isObstacle: false },
+        { pos: [21, 19, -338], scale: 1.3, isObstacle: false },
+        // 3 Readable Sky-Obstacle Balloons along offset alternate lanes (never blocking main boost rings)
+        { pos: [-12.2, 23.5, -108], scale: 0.92, isObstacle: true },
+        { pos: [12.0, 18.5, -196], scale: 0.92, isObstacle: true },
+        { pos: [-11.8, 12.0, -278], scale: 0.92, isObstacle: true },
+      ];
+      const basketMat = new THREE.MeshStandardMaterial({ color: 0x92400e, roughness: 0.85 });
+      balloonDefs.forEach((bd, idx) => {
+        const [colA, colB] = balloonPalette[idx % balloonPalette.length];
+        const bg = new THREE.Group();
+        const envMatA = new THREE.MeshStandardMaterial({ color: colA, emissive: colA, emissiveIntensity: 0.16, roughness: 0.55 });
+        const envMatB = new THREE.MeshStandardMaterial({ color: colB, emissive: colB, emissiveIntensity: 0.14, roughness: 0.55 });
+        const bulb = new THREE.Mesh(new THREE.SphereGeometry(2.1 * bd.scale, 16, 12), envMatA);
+        bulb.scale.set(1, 1.24, 1);
+        bulb.position.y = 2.6 * bd.scale;
+        const band = new THREE.Mesh(new THREE.TorusGeometry(2.04 * bd.scale, 0.28 * bd.scale, 8, 22), envMatB);
+        band.rotation.x = Math.PI / 2;
+        band.position.y = 2.65 * bd.scale;
+        const basket = new THREE.Mesh(new THREE.BoxGeometry(1.0 * bd.scale, 0.85 * bd.scale, 1.0 * bd.scale), basketMat);
+        basket.position.y = -0.35 * bd.scale;
+        const burnerGlow = new THREE.Mesh(new THREE.SphereGeometry(0.28 * bd.scale, 8, 6), warmWindowMat);
+        burnerGlow.position.y = 0.45 * bd.scale;
+        for (const sx of [-0.42, 0.42]) {
+          for (const sz of [-0.42, 0.42]) {
+            const rope = new THREE.Mesh(new THREE.CylinderGeometry(0.03, 0.03, 1.3 * bd.scale, 5), ironMat);
+            rope.position.set(sx * bd.scale, 0.65 * bd.scale, sz * bd.scale);
+            bg.add(rope);
+          }
+        }
+        bg.add(bulb, band, basket, burnerGlow);
+        bg.position.set(...bd.pos);
+        this.levelGroup.add(bg);
+        this.parisBalloons.push({
+          group: bg,
+          baseX: bd.pos[0],
+          baseY: bd.pos[1],
+          baseZ: bd.pos[2],
+          swayAmp: bd.isObstacle ? 0.65 : 1.35,
+          phase: idx * 1.15,
+          isObstacle: bd.isObstacle,
+          radius: 2.35 * bd.scale,
+        });
       });
-      const cloudCount = 36;
-      const cloudInst = new THREE.InstancedMesh(cloudGeo, cloudMat, cloudCount);
-      for (let i = 0; i < cloudCount; i++) {
-        const side = i % 2 === 0 ? -1 : 1;
-        dummy.position.set(
-          side * (16 + (i % 4) * 7.5),
-          15 + (i % 5) * 4.2,
-          -16 - i * 10.0
-        );
-        dummy.rotation.set(0, i * 0.6, 0);
-        dummy.scale.set(2.2 + (i % 3) * 0.6, 0.58, 1.35);
-        dummy.updateMatrix();
-        cloudInst.setMatrixAt(i, dummy.matrix);
+
+      // Animated Flocks of Birds soaring over the Seine & Eiffel Tower
+      const birdMat = new THREE.MeshStandardMaterial({ color: 0x334155, roughness: 0.7 });
+      const birdWingGeo = new THREE.BoxGeometry(0.58, 0.05, 0.22);
+      birdWingGeo.translate(0.29, 0, 0);
+      const birdCenters: [number, number, number, number][] = [
+        [-8, 32, -36, 9],
+        [10, 26, -92, 11],
+        [-9, 22, -162, 10],
+        [8, 18, -242, 10],
+        [-6, 15, -315, 9],
+        [6, 12, -356, 8],
+      ];
+      for (let i = 0; i < 14; i++) {
+        const [cx, cy, cz, cr] = birdCenters[i % birdCenters.length];
+        const bird = new THREE.Group();
+        const body = new THREE.Mesh(new THREE.ConeGeometry(0.11, 0.46, 6), birdMat);
+        body.rotation.x = Math.PI / 2;
+        const wingL = new THREE.Mesh(birdWingGeo, birdMat);
+        const wingR = new THREE.Mesh(birdWingGeo, birdMat);
+        wingR.scale.x = -1;
+        bird.add(body, wingL, wingR);
+        this.levelGroup.add(bird);
+        this.parisBirds.push({
+          group: bird,
+          wingL,
+          wingR,
+          center: new THREE.Vector3(cx, cy + (i % 3) * 1.4, cz),
+          radius: cr + (i % 2) * 2.5,
+          speed: 0.48 + (i % 4) * 0.12,
+          phase: i * 1.3,
+        });
       }
-      cloudInst.instanceMatrix.needsUpdate = true;
-      cloudInst.computeBoundingSphere();
-      this.levelGroup.add(cloudInst);
+
+      // Volumetric Golden-Sunset Clouds drifting gently across the skyline
+      const cloudPuffGeo = new THREE.DodecahedronGeometry(2.6, 1);
+      const sunsetCloudMat = new THREE.MeshStandardMaterial({
+        color: 0xffedd5,
+        emissive: 0xfb923c,
+        emissiveIntensity: 0.34,
+        roughness: 0.94,
+        transparent: true,
+        opacity: 0.88,
+      });
+      for (let i = 0; i < 24; i++) {
+        const side = i % 2 === 0 ? -1 : 1;
+        const cg = new THREE.Group();
+        const puffOffsets: [number, number, number, number][] = [
+          [0, 0, 0, 1.35],
+          [-2.3, -0.35, 0.4, 0.95],
+          [2.4, -0.25, -0.3, 1.0],
+          [0.4, 0.6, 0.2, 0.85],
+        ];
+        for (const [px, py, pz, ps] of puffOffsets) {
+          const puff = new THREE.Mesh(cloudPuffGeo, sunsetCloudMat);
+          puff.scale.set(ps * 1.4, ps * 0.55, ps * 1.05);
+          puff.position.set(px, py, pz);
+          cg.add(puff);
+        }
+        const cx = side * (22 + (i % 4) * 9.5);
+        const cy = 22 + (i % 5) * 3.8;
+        const cz = -14 - i * 15.5;
+        cg.position.set(cx, cy, cz);
+        this.levelGroup.add(cg);
+        this.parisClouds.push({
+          group: cg,
+          baseX: cx,
+          baseY: cy,
+          baseZ: cz,
+          spanX: 3.4 + (i % 3) * 1.2,
+          speed: 0.16 + (i % 3) * 0.05,
+          phase: i * 0.9,
+        });
+      }
+
+      // Drifting Golden Autumn Plane-Tree Leaves & Sunset Dust in the air
+      const leafCount = this.isSoftwareGl ? 32 : 88;
+      const leafGeo = new THREE.PlaneGeometry(0.24, 0.16);
+      const leafMat = new THREE.MeshStandardMaterial({
+        color: 0xfbbf24,
+        emissive: 0xd97706,
+        emissiveIntensity: 0.35,
+        roughness: 0.7,
+        side: THREE.DoubleSide,
+      });
+      this.parisLeafMesh = new THREE.InstancedMesh(leafGeo, leafMat, leafCount);
+      this.parisLeafMesh.frustumCulled = false;
+      for (let i = 0; i < leafCount; i++) {
+        this.parisLeafStates.push({
+          x: (Math.random() - 0.5) * 32,
+          y: (Math.random() - 0.2) * 16,
+          z: (Math.random() - 0.5) * 32,
+          fallSpeed: 0.85 + Math.random() * 0.9,
+          swayPhase: Math.random() * Math.PI * 2,
+          rotSpeed: 1.4 + Math.random() * 2.2,
+        });
+        _color.setHex(i % 3 === 0 ? 0xfbbf24 : i % 3 === 1 ? 0xf97316 : 0xfde047);
+        this.parisLeafMesh.setColorAt(i, _color);
+      }
+      if (this.parisLeafMesh.instanceColor) this.parisLeafMesh.instanceColor.needsUpdate = true;
+      this.levelGroup.add(this.parisLeafMesh);
     } else if (biome === 'rapids') {
       // Mist-shrouded Blue Mountain Peak & Lush Rainforest Slopes (Selva Esmeralda aesthetic)
       this.addHorizonMountainRing(0, -145, level.theme.hazardFloorY - 2, 142, 230, 64, 0x355f7d, 0x9cc0d9, 3.1, 0.88);
@@ -4024,8 +6388,8 @@ export class GameEngine {
     const seaGeo = new THREE.PlaneGeometry(
       520,
       520,
-      animatedWaterBiome ? 42 : 1,
-      animatedWaterBiome ? 42 : 1
+      animatedWaterBiome || theme.biome === 'desert' ? 46 : 1,
+      animatedWaterBiome || theme.biome === 'desert' ? 46 : 1
     );
     const seaTex =
       theme.biome === 'jungle' || theme.biome === 'temple'
@@ -4045,7 +6409,7 @@ export class GameEngine {
     const seaMat = new THREE.MeshStandardMaterial({
       map: seaTex,
       bumpMap:
-        theme.biome === 'jungle' || theme.biome === 'temple' || theme.biome === 'ice'
+        theme.biome === 'jungle' || theme.biome === 'temple' || theme.biome === 'ice' || theme.biome === 'paris'
           ? this.textures.waterBump
           : theme.biome === 'desert'
             ? this.textures.sandBump
@@ -4056,68 +6420,97 @@ export class GameEngine {
         theme.biome === 'jungle' || theme.biome === 'temple' || theme.biome === 'nebula'
           ? 0.14
           : theme.biome === 'desert'
-            ? 0.18
-            : theme.biome === 'ice'
-              ? 0.08
-              : 0,
+            ? 0.22
+            : theme.biome === 'paris'
+              ? 0.1
+              : theme.biome === 'ice'
+                ? 0.08
+                : 0,
       roughness:
         theme.biome === 'desert'
-          ? 0.88
+          ? 0.85
           : theme.biome === 'ice'
             ? 0.08
             : theme.biome === 'jungle'
               ? 0.08
-              : theme.biome === 'temple'
-                ? 0.11
-                : theme.biome === 'nebula'
-                  ? 0.78
-                  : 0.35,
+              : theme.biome === 'paris'
+                ? 0.1
+                : theme.biome === 'temple'
+                  ? 0.11
+                  : theme.biome === 'nebula'
+                    ? 0.34
+                    : 0.35,
       metalness:
         theme.biome === 'ice'
           ? 0.35
-          : theme.biome === 'jungle'
+          : theme.biome === 'jungle' || theme.biome === 'paris'
             ? 0.34
             : theme.biome === 'temple'
               ? 0.28
               : theme.biome === 'nebula'
-                ? 0.12
+                ? 0.38
                 : 0.06,
       envMapIntensity:
-        theme.biome === 'ice' ? 1.5 : theme.biome === 'jungle' ? 1.6 : theme.biome === 'temple' ? 1.45 : 0.9,
+        theme.biome === 'ice'
+          ? 1.5
+          : theme.biome === 'jungle'
+            ? 1.6
+            : theme.biome === 'paris'
+              ? 1.55
+              : theme.biome === 'temple'
+                ? 1.45
+                : theme.biome === 'nebula'
+                  ? 1.35
+                  : 0.9,
       emissiveMap:
         theme.biome === 'volcanic'
           ? this.textures.lavaEmissive
           : theme.biome === 'nebula'
             ? this.textures.nebulaSeaEmissive
             : undefined,
-      emissive: theme.biome === 'volcanic' ? 0xff6a00 : theme.biome === 'nebula' ? 0xffb703 : 0x000000,
-      emissiveIntensity: theme.biome === 'volcanic' ? 1.55 : theme.biome === 'nebula' ? 1.2 : 0,
+      emissive: theme.biome === 'volcanic' ? 0xff6a00 : theme.biome === 'nebula' ? 0x38bdf8 : 0x000000,
+      emissiveIntensity: theme.biome === 'volcanic' ? 1.55 : theme.biome === 'nebula' ? 0.92 : 0,
     });
-    if (animatedWaterBiome) {
-      applyWaterSurfaceShader(seaMat, this.shaderTimeUniform, {
-        waveAmp: theme.biome === 'volcanic' ? 0.28 : theme.biome === 'ice' ? 0.08 : 0.14,
-        waveFreq: theme.biome === 'volcanic' ? 0.12 : 0.16,
-        speed: theme.biome === 'volcanic' ? 1.6 : 2.1,
-        fresnelColor:
-          theme.biome === 'volcanic'
-            ? 0xfb923c
-            : theme.biome === 'ice'
-              ? 0xe0f2fe
-              : theme.biome === 'temple'
-                ? 0xa7f3d0
-                : theme.biome === 'jungle'
-                  ? 0x99f6e4
-                  : 0x7dd3fc,
-        fresnelStrength: theme.biome === 'volcanic' ? 0.36 : theme.biome === 'jungle' ? 0.64 : 0.56,
-        foamStrength: theme.biome === 'volcanic' ? 0.08 : theme.biome === 'jungle' ? 0.28 : 0.22,
+    if (theme.biome === 'volcanic') {
+      applyMoltenLavaShader(seaMat, this.shaderTimeUniform, {
+        swellAmp: 0.34,
+        swellFreq: 0.11,
+        speed: 1.5,
       });
+    } else if (animatedWaterBiome) {
+      applyWaterSurfaceShader(seaMat, this.shaderTimeUniform, {
+        waveAmp: theme.biome === 'ice' ? 0.07 : theme.biome === 'paris' ? 0.1 : 0.14,
+        waveFreq: 0.16,
+        speed: 2.1,
+        fresnelColor:
+          theme.biome === 'ice'
+            ? 0x67e8f9
+            : theme.biome === 'temple'
+              ? 0xa7f3d0
+              : theme.biome === 'jungle'
+                ? 0x99f6e4
+                : theme.biome === 'paris'
+                  ? 0xfdba74
+                  : 0x7dd3fc,
+        fresnelStrength: theme.biome === 'ice' || theme.biome === 'paris' ? 0.72 : theme.biome === 'jungle' ? 0.64 : 0.56,
+        foamStrength: theme.biome === 'ice' ? 0.3 : theme.biome === 'jungle' ? 0.28 : 0.22,
+      });
+    } else if (theme.biome === 'desert') {
+      applyShiftingSandShader(seaMat, this.shaderTimeUniform, {
+        duneAmp: 0.85,
+        duneFreq: 0.052,
+        speed: 0.58,
+        glintColor: 0xfde68a,
+      });
+    } else if (theme.biome === 'nebula') {
+      applyNebulaVoidShader(seaMat, this.shaderTimeUniform);
     }
     this.hazardSeaMesh = new THREE.Mesh(seaGeo, seaMat);
     this.hazardSeaMesh.rotation.x = -Math.PI / 2;
     this.hazardSeaMesh.position.set(0, theme.hazardFloorY, -95);
     this.levelGroup.add(this.hazardSeaMesh);
 
-    this.ambientMotes = createBiomeAmbientParticles(theme.biome, this.isSoftwareGl ? 70 : 160);
+    this.ambientMotes = createBiomeAmbientParticles(theme.biome, this.isSoftwareGl ? 70 : theme.biome === 'ice' ? 240 : theme.biome === 'volcanic' ? 220 : theme.biome === 'nebula' ? 220 : 160);
     this.scene.add(this.ambientMotes.points);
 
     this.buildBiomeScenery(level);
@@ -4130,14 +6523,23 @@ export class GameEngine {
         this.textures,
         (d) => this.createPlatformMaterial(d),
         this.isSoftwareGl,
-        { emeraldJungleV2: level.index === 0 }
+        {
+          emeraldJungleV2: level.index === 0,
+          desertDunesV2: level.index === 1,
+          auroraGlacierV2: level.index === 2,
+          monkeyTempleV2: level.index === 3,
+          volcanicCanyonV2: level.index === 4,
+          nebulaCitadelV2: level.index === 5,
+          parisSkyV2: level.index === 6,
+        }
       );
-      if (startsInactive || pDef.kind === 'disappearing') {
+      if (startsInactive || pDef.kind === 'disappearing' || (level.index === 1 && pDef.kind === 'crumble')) {
         const list = Array.isArray(mesh.material) ? mesh.material : [mesh.material];
         for (const m of list) {
           m.transparent = true;
           if (startsInactive) m.opacity = 0.16;
         }
+        if (startsInactive) this.setPlatformOpacity(mesh, 0.16);
       }
       if (startsInactive) {
         mesh.castShadow = false;
@@ -4479,17 +6881,97 @@ export class GameEngine {
 
     if (level.windZones) {
       for (const wz of level.windZones) {
-        const wm = createWindZoneMesh(wz.radius, wz.height);
-        wm.group.position.set(...wz.pos);
-        this.levelGroup.add(wm.group);
-        this.windZones.push({
-          group: wm.group,
-          swirls: wm.swirls,
-          pos: new THREE.Vector3(...wz.pos),
-          radius: wz.radius,
-          height: wz.height,
-          liftSpeed: wz.liftSpeed ?? 11.5,
-        });
+        if (theme.biome === 'desert') {
+          const wm = createDesertThermalUpdraftMesh(wz.radius, wz.height, this.textures);
+          wm.group.position.set(...wz.pos);
+          this.levelGroup.add(wm.group);
+          this.desertThermalRibbons.push(...wm.ribbons);
+          this.windZones.push({
+            group: wm.group,
+            swirls: wm.swirls,
+            pos: new THREE.Vector3(...wz.pos),
+            radius: wz.radius,
+            height: wz.height,
+            liftSpeed: wz.liftSpeed ?? 11.5,
+          });
+        } else if (theme.biome === 'ice') {
+          const wm = createPolarWindUpdraftMesh(wz.radius, wz.height, this.textures);
+          wm.group.position.set(...wz.pos);
+          this.levelGroup.add(wm.group);
+          this.iceThermalRibbons.push(...wm.ribbons);
+          this.windZones.push({
+            group: wm.group,
+            swirls: wm.swirls,
+            pos: new THREE.Vector3(...wz.pos),
+            radius: wz.radius,
+            height: wz.height,
+            liftSpeed: wz.liftSpeed ?? 11.5,
+          });
+        } else if (theme.biome === 'temple') {
+          const wm = createTempleWindUpdraftMesh(wz.radius, wz.height, this.textures);
+          wm.group.position.set(...wz.pos);
+          this.levelGroup.add(wm.group);
+          this.templeThermalRibbons.push(...wm.ribbons);
+          this.windZones.push({
+            group: wm.group,
+            swirls: wm.swirls,
+            pos: new THREE.Vector3(...wz.pos),
+            radius: wz.radius,
+            height: wz.height,
+            liftSpeed: wz.liftSpeed ?? 11.5,
+          });
+        } else if (theme.biome === 'volcanic') {
+          const wm = createVolcanicThermalUpdraftMesh(wz.radius, wz.height, this.textures);
+          wm.group.position.set(...wz.pos);
+          this.levelGroup.add(wm.group);
+          this.volcanicThermalRibbons.push(...wm.ribbons);
+          this.windZones.push({
+            group: wm.group,
+            swirls: wm.swirls,
+            pos: new THREE.Vector3(...wz.pos),
+            radius: wz.radius,
+            height: wz.height,
+            liftSpeed: wz.liftSpeed ?? 11.5,
+          });
+        } else if (theme.biome === 'nebula') {
+          const wm = createNebulaGravityUpdraftMesh(wz.radius, wz.height, this.textures);
+          wm.group.position.set(...wz.pos);
+          this.levelGroup.add(wm.group);
+          this.nebulaThermalRibbons.push(...wm.ribbons);
+          this.windZones.push({
+            group: wm.group,
+            swirls: wm.swirls,
+            pos: new THREE.Vector3(...wz.pos),
+            radius: wz.radius,
+            height: wz.height,
+            liftSpeed: wz.liftSpeed ?? 11.5,
+          });
+        } else if (theme.biome === 'paris') {
+          const wm = createParisWindUpdraftMesh(wz.radius, wz.height, this.textures);
+          wm.group.position.set(...wz.pos);
+          this.levelGroup.add(wm.group);
+          this.parisThermalRibbons.push(...wm.ribbons);
+          this.windZones.push({
+            group: wm.group,
+            swirls: wm.swirls,
+            pos: new THREE.Vector3(...wz.pos),
+            radius: wz.radius,
+            height: wz.height,
+            liftSpeed: wz.liftSpeed ?? 11.5,
+          });
+        } else {
+          const wm = createWindZoneMesh(wz.radius, wz.height);
+          wm.group.position.set(...wz.pos);
+          this.levelGroup.add(wm.group);
+          this.windZones.push({
+            group: wm.group,
+            swirls: wm.swirls,
+            pos: new THREE.Vector3(...wz.pos),
+            radius: wz.radius,
+            height: wz.height,
+            liftSpeed: wz.liftSpeed ?? 11.5,
+          });
+        }
       }
     }
 
@@ -4760,18 +7242,20 @@ export class GameEngine {
       const topMat = new THREE.MeshStandardMaterial({
         map: this.textures.nebulaDeck,
         bumpMap: this.textures.nebulaBump,
-        bumpScale: 0.1,
+        bumpScale: 0.12,
         roughnessMap: this.textures.metalRoughness,
-        roughness: 0.28,
-        metalness: 0.52,
+        roughness: 0.22,
+        metalness: 0.64,
+        envMapIntensity: 1.45,
       });
       const sideMat = new THREE.MeshStandardMaterial({
         map: this.textures.nebulaSide,
-        bumpMap: this.textures.stoneBump,
-        bumpScale: 0.16,
-        roughnessMap: this.textures.stoneRoughness,
-        roughness: 0.82,
-        metalness: 0.18,
+        bumpMap: this.textures.nebulaBump,
+        bumpScale: 0.14,
+        roughnessMap: this.textures.metalRoughness,
+        roughness: 0.28,
+        metalness: 0.72,
+        envMapIntensity: 1.35,
       });
       return [sideMat, sideMat, topMat, sideMat, sideMat, sideMat];
     }
@@ -4866,6 +7350,14 @@ export class GameEngine {
     for (const mat of mats) {
       if ('opacity' in mat) {
         (mat as THREE.MeshStandardMaterial).opacity = opacity;
+      }
+    }
+    const fadeMats = mesh.userData.fadeMats as THREE.Material[] | undefined;
+    if (fadeMats) {
+      for (const fm of fadeMats) {
+        if ('opacity' in fm) {
+          (fm as THREE.MeshStandardMaterial).opacity = opacity;
+        }
       }
     }
   }
@@ -5050,6 +7542,9 @@ export class GameEngine {
         if (biome === 'volcanic') {
           this.textures.lavaEmissive.offset.copy(this.hazardSeaTex.offset);
         }
+      } else if (biome === 'desert') {
+        this.hazardSeaTex.offset.x = (this.totalTime * 0.008) % 1;
+        this.hazardSeaTex.offset.y = (this.totalTime * 0.003) % 1;
       } else {
         this.hazardSeaTex.offset.set(0, 0);
       }
@@ -5111,6 +7606,327 @@ export class GameEngine {
         ring.rotation.y = Math.sin(this.totalTime * 0.9 + i) * 0.18;
       }
     }
+    if (this.templeThermalRibbons.length > 0) {
+      for (const rb of this.templeThermalRibbons) {
+        rb.rotation.y = this.totalTime * 2.2;
+      }
+    }
+    if (this.templeMistPlumes.length > 0) {
+      for (const mp of this.templeMistPlumes) {
+        const w = Math.sin(this.totalTime * 1.2 + mp.phase);
+        mp.mesh.position.y = mp.baseY + w * 0.42;
+        mp.mesh.scale.set(mp.baseScale * (1.0 + w * 0.12), mp.baseScale * (0.4 + w * 0.05), mp.baseScale * (0.9 - w * 0.08));
+      }
+    }
+    if (this.templeRuneGlows.length > 0) {
+      for (const rg of this.templeRuneGlows) {
+        rg.mat.emissiveIntensity = 1.45 + Math.sin(this.totalTime * 2.6 + rg.phase) * 0.55;
+      }
+    }
+
+    // Animate Dunas del Desierto dynamic phenomena (dust devils, hot-air geysers, sandstorms, astrolabes, crumbling masonry)
+    if (this.desertMechanismSpinners.length > 0) {
+      for (let i = 0; i < this.desertMechanismSpinners.length; i++) {
+        const sp = this.desertMechanismSpinners[i];
+        sp.rotation.z = this.totalTime * (i % 2 === 0 ? 0.65 : -0.65);
+        sp.rotation.y = Math.sin(this.totalTime * 0.8 + i) * 0.22;
+      }
+    }
+    if (this.desertThermalRibbons.length > 0) {
+      for (const rb of this.desertThermalRibbons) {
+        rb.rotation.y = this.totalTime * 2.2;
+      }
+    }
+    if (this.desertDustDevils.length > 0) {
+      for (const dd of this.desertDustDevils) {
+        const ang = this.totalTime * dd.speed + dd.phase;
+        dd.group.position.x = dd.baseX + Math.cos(ang) * dd.radius;
+        dd.group.position.z = dd.baseZ + Math.sin(ang * 0.8) * dd.radius;
+        dd.group.rotation.y = this.totalTime * 4.5;
+        if (Math.random() < 0.12 && dd.group.position.distanceToSquared(this.playerPos) < 48 * 48) {
+          this.spawnBurst(
+            dd.group.position.x + (Math.random() - 0.5) * 2.4,
+            dd.group.position.y + 1.5 + Math.random() * 4.0,
+            dd.group.position.z + (Math.random() - 0.5) * 2.4,
+            0xfbbf24,
+            1,
+            3.2
+          );
+        }
+      }
+    }
+    if (this.desertGeysers.length > 0) {
+      for (const gy of this.desertGeysers) {
+        const cyc = ((((this.totalTime + gy.phase) % gy.period) + gy.period) % gy.period) / gy.period;
+        const erupt = cyc < 0.45 ? Math.sin((cyc / 0.45) * Math.PI) : 0.08;
+        gy.plume.scale.set(0.65 + erupt * 0.6, 0.22 + erupt * 1.15, 0.65 + erupt * 0.6);
+        gy.plume.position.y = 1.3 + gy.plume.scale.y * 5.2;
+        (gy.plume.material as THREE.MeshBasicMaterial).opacity = 0.1 + erupt * 0.36;
+        gy.ring.position.y = 1.4 + cyc * 9.5;
+        gy.ring.scale.setScalar(0.85 + cyc * 1.6);
+        if (erupt > 0.6 && Math.random() < 0.25 && gy.pos.distanceToSquared(this.playerPos) < 44 * 44) {
+          this.spawnBurst(gy.pos.x, gy.pos.y + 2.5, gy.pos.z, 0xfde047, 1, 4.5);
+        }
+      }
+    }
+    if (this.desertSandstormBands.length > 0) {
+      for (const sb of this.desertSandstormBands) {
+        sb.mesh.position.x = sb.baseX + Math.sin(this.totalTime * 0.35 + sb.phase) * 9.5;
+        sb.mesh.position.z = sb.baseZ + ((this.totalTime * sb.speed) % 24) - 12;
+      }
+    }
+    if (this.desertCollapsingMasonry.length > 0) {
+      for (const cm of this.desertCollapsingMasonry) {
+        const cyc = ((((this.totalTime + cm.phase) % cm.period) + cm.period) % cm.period) / cm.period;
+        if (cyc > 0.72 && cyc < 0.88) {
+          cm.mesh.position.x = cm.basePos.x + Math.sin(this.totalTime * 36) * 0.1;
+          cm.mesh.position.y = cm.basePos.y - (cyc - 0.72) * 2.2;
+          if (Math.random() < 0.18 && cm.basePos.distanceToSquared(this.playerPos) < 36 * 36) {
+            this.spawnBurst(cm.basePos.x + 0.6, cm.basePos.y - 0.5, cm.basePos.z, 0xd99b52, 1, 2.2);
+          }
+        } else {
+          cm.mesh.position.y = THREE.MathUtils.damp(cm.mesh.position.y, cm.basePos.y, 6, dt);
+          cm.mesh.position.x = cm.basePos.x;
+        }
+      }
+    }
+
+    // Animate Glaciar Aurora polar wind ribbons, blizzard squalls, cold vapor & glowing crystal clusters
+    if (this.iceThermalRibbons.length > 0) {
+      for (const rb of this.iceThermalRibbons) {
+        rb.rotation.y = this.totalTime * 2.5;
+      }
+    }
+    if (this.iceBlizzardBands.length > 0) {
+      for (const bb of this.iceBlizzardBands) {
+        bb.mesh.position.x = bb.baseX + Math.sin(this.totalTime * 0.48 + bb.phase) * 14.5;
+        bb.mesh.position.z = bb.baseZ + ((this.totalTime * bb.speed) % 24) - 12;
+      }
+    }
+    if (this.iceVaporPlumes.length > 0) {
+      for (const vp of this.iceVaporPlumes) {
+        const wave = Math.sin(this.totalTime * 1.15 + vp.phase);
+        vp.mesh.position.y = vp.baseY + wave * 0.35;
+        vp.mesh.scale.set(1.5 + wave * 0.14, 0.38 + wave * 0.06, 1.35 - wave * 0.1);
+      }
+    }
+    if (this.iceCrystalClusters.length > 0) {
+      for (const cc of this.iceCrystalClusters) {
+        cc.mat.emissiveIntensity = 1.25 + Math.sin(this.totalTime * 2.1 + cc.phase) * 0.65;
+      }
+    }
+    if (this.iceMechanismBeam) {
+      const swActive = this.switches.some((s) => s.id === 'sw-i1' && s.activated);
+      this.iceMechanismBeam.mat.color.setHex(swActive ? 0x6ee7b7 : 0x38bdf8);
+      this.iceMechanismBeam.mat.emissive.setHex(swActive ? 0x10b981 : 0x0284c7);
+      this.iceMechanismBeam.mat.emissiveIntensity = swActive ? 2.2 + Math.sin(this.totalTime * 5.0) * 0.5 : 0.7;
+    }
+
+    // Animate Cañón Volcánico magma bubbles, lava/steam geysers, smoke columns, falling rocks, fissures & drifting ash
+    if (this.volcanicThermalRibbons.length > 0) {
+      for (const rb of this.volcanicThermalRibbons) {
+        rb.rotation.y = this.totalTime * 2.6;
+      }
+    }
+    if (this.volcanicFissureGlows.length > 0) {
+      for (const fg of this.volcanicFissureGlows) {
+        fg.mat.emissiveIntensity = 1.65 + Math.sin(this.totalTime * 2.8 + fg.phase) * 0.65;
+      }
+    }
+    if (this.volcanicBubbles.length > 0) {
+      for (const vb of this.volcanicBubbles) {
+        const cyc = ((((this.totalTime + vb.phase) % vb.period) + vb.period) % vb.period) / vb.period;
+        if (cyc < 0.78) {
+          vb.popped = false;
+          const grow = cyc / 0.78;
+          const r = vb.maxR * (0.25 + grow * 0.85);
+          vb.mesh.visible = true;
+          vb.mesh.scale.set(r, r * (0.65 + grow * 0.35), r);
+          (vb.mesh.material as THREE.MeshStandardMaterial).emissiveIntensity = 1.6 + grow * 2.2;
+        } else {
+          vb.mesh.visible = false;
+          if (!vb.popped) {
+            vb.popped = true;
+            if (vb.pos.distanceToSquared(this.playerPos) < 48 * 48) {
+              this.spawnBurst(vb.pos.x, vb.pos.y + 0.45, vb.pos.z, 0xfef08a, 5, 4.2);
+            }
+          }
+        }
+      }
+    }
+    if (this.volcanicGeysers.length > 0) {
+      for (const gy of this.volcanicGeysers) {
+        const cyc = ((((this.totalTime + gy.phase) % gy.period) + gy.period) % gy.period) / gy.period;
+        const erupt = cyc < 0.46 ? Math.sin((cyc / 0.46) * Math.PI) : 0.06;
+        gy.lavaJet.scale.set(0.55 + erupt * 0.55, 0.14 + erupt * 1.18, 0.55 + erupt * 0.55);
+        gy.lavaJet.position.y = 0.9 + gy.lavaJet.scale.y * 5.6;
+        (gy.lavaJet.material as THREE.MeshBasicMaterial).opacity = gy.kind === 'lava' ? 0.18 + erupt * 0.68 : 0.1 + erupt * 0.38;
+
+        gy.steamPlume.position.y = 2.2 + cyc * 14.0;
+        gy.steamPlume.scale.setScalar(0.75 + cyc * 1.9);
+        (gy.steamPlume.material as THREE.MeshBasicMaterial).opacity = (1 - cyc) * (gy.kind === 'lava' ? 0.45 : 0.34);
+
+        if (erupt > 0.65 && Math.random() < 0.24 && gy.pos.distanceToSquared(this.playerPos) < 52 * 52) {
+          this.spawnBurst(
+            gy.pos.x + (Math.random() - 0.5) * 1.2,
+            gy.pos.y + 4.5 + Math.random() * 4.5,
+            gy.pos.z + (Math.random() - 0.5) * 1.2,
+            gy.kind === 'lava' ? 0xfb923c : 0xe7e5e4,
+            1,
+            4.8
+          );
+        }
+      }
+    }
+    if (this.volcanicSmokePuffs.length > 0) {
+      for (const sp of this.volcanicSmokePuffs) {
+        const cyc = (this.totalTime * sp.speed + sp.phase) % 1;
+        sp.mesh.position.set(
+          sp.baseX + Math.sin(this.totalTime * 0.6 + sp.phase * 6.0) * (1.2 + cyc * 2.4),
+          sp.baseY + cyc * sp.riseH,
+          sp.baseZ + Math.cos(this.totalTime * 0.5 + sp.phase * 5.0) * (1.2 + cyc * 2.2)
+        );
+        const s = sp.baseScale * (0.65 + cyc * 1.65);
+        sp.mesh.scale.setScalar(s);
+        (sp.mesh.material as THREE.MeshBasicMaterial).opacity = Math.sin(cyc * Math.PI) * 0.42;
+      }
+    }
+    if (this.volcanicFallingRocks.length > 0) {
+      for (const fr of this.volcanicFallingRocks) {
+        const cyc = ((((this.totalTime + fr.phase) % fr.period) + fr.period) % fr.period) / fr.period;
+        if (cyc < 0.68) {
+          fr.splashed = false;
+          const t = cyc / 0.68;
+          const curY = THREE.MathUtils.lerp(fr.startY, -12.2, t * t);
+          fr.mesh.visible = true;
+          fr.mesh.position.set(fr.startX + t * 1.4, curY, fr.startZ);
+          fr.mesh.rotateOnAxis(fr.rotAxis, dt * 4.2);
+        } else {
+          fr.mesh.visible = false;
+          if (!fr.splashed) {
+            fr.splashed = true;
+            if (fr.mesh.position.distanceToSquared(this.playerPos) < 55 * 55) {
+              this.spawnBurst(fr.startX + 1.4, -11.5, fr.startZ, 0xf97316, 8, 5.4);
+            }
+          }
+        }
+      }
+    }
+    if (this.volcanicAshMesh && this.volcanicAshStates.length > 0) {
+      for (let i = 0; i < this.volcanicAshStates.length; i++) {
+        const a = this.volcanicAshStates[i];
+        a.y -= a.fallSpeed * dt;
+        if (a.y < -10) a.y = 14;
+        const ax = this.playerPos.x + a.x + Math.sin(this.totalTime * 1.2 + a.swayPhase) * 1.6;
+        const az = this.playerPos.z + a.z + Math.cos(this.totalTime * 0.9 + a.swayPhase) * 1.6;
+        _vec3A.set(ax, Math.max(-10.5, this.playerPos.y + a.y), az);
+        _euler.set(this.totalTime * a.rotSpeed, a.swayPhase + this.totalTime * 0.7, this.totalTime * a.rotSpeed * 0.6);
+        _quat.setFromEuler(_euler);
+        _vec3B.set(1, 1, 1);
+        _mat4.compose(_vec3A, _quat, _vec3B);
+        this.volcanicAshMesh.setMatrixAt(i, _mat4);
+      }
+      this.volcanicAshMesh.instanceMatrix.needsUpdate = true;
+    }
+
+    // Animate Ciudadela Nebulosa orbital rings, floating sky-citadels/islands, volumetric clouds & void waterfalls
+    if (this.nebulaThermalRibbons.length > 0) {
+      for (const rb of this.nebulaThermalRibbons) {
+        rb.rotation.y = this.totalTime * 2.4;
+      }
+    }
+    if (this.nebulaSpinners.length > 0) {
+      for (const sp of this.nebulaSpinners) {
+        if (sp.axis === 'x') sp.obj.rotation.x += sp.speed * dt;
+        else if (sp.axis === 'y') sp.obj.rotation.y += sp.speed * dt;
+        else sp.obj.rotation.z += sp.speed * dt;
+      }
+    }
+    if (this.nebulaFloatNodes.length > 0) {
+      for (const fn of this.nebulaFloatNodes) {
+        fn.obj.position.y = fn.baseY + Math.sin(this.totalTime * fn.speed + fn.phase) * fn.amp;
+      }
+    }
+    if (this.nebulaCloudBanks.length > 0) {
+      for (const cb of this.nebulaCloudBanks) {
+        cb.group.position.x = cb.baseX + Math.sin(this.totalTime * 0.18 * Math.abs(cb.speed) + cb.phase) * cb.spanX;
+        cb.group.position.y = cb.baseY + Math.cos(this.totalTime * 0.35 + cb.phase) * 0.45;
+      }
+    }
+    if (this.nebulaWaterfallTex) {
+      this.nebulaWaterfallTex.offset.y -= dt * 1.15;
+    }
+    if (this.nebulaWaterfallDrops.length > 0 && Math.random() < 0.25) {
+      const wp = this.nebulaWaterfallDrops[Math.floor(Math.random() * this.nebulaWaterfallDrops.length)];
+      if (wp.distanceToSquared(this.playerPos) < 58 * 58) {
+        this.spawnBurst(
+          wp.x + (Math.random() - 0.5) * 1.1,
+          wp.y - Math.random() * 1.2,
+          wp.z + (Math.random() - 0.5) * 1.1,
+          0xa5f3fc,
+          1,
+          3.4
+        );
+      }
+    }
+
+    // Animate Cielos de París golden sunset balloons, soaring birds, drifting clouds, clocktower hands, thermal updrafts & falling leaves
+    if (this.parisThermalRibbons.length > 0) {
+      for (const rb of this.parisThermalRibbons) {
+        rb.rotation.y = this.totalTime * 2.25;
+      }
+    }
+    if (this.parisBalloons.length > 0) {
+      for (const b of this.parisBalloons) {
+        b.group.position.set(
+          b.baseX + Math.sin(this.totalTime * 0.45 + b.phase) * b.swayAmp,
+          b.baseY + Math.cos(this.totalTime * 0.8 + b.phase) * 0.85,
+          b.baseZ
+        );
+        b.group.rotation.y = Math.sin(this.totalTime * 0.3 + b.phase) * 0.18;
+      }
+    }
+    if (this.parisBirds.length > 0) {
+      for (const bd of this.parisBirds) {
+        const a = this.totalTime * bd.speed + bd.phase;
+        const bx = bd.center.x + Math.cos(a) * bd.radius;
+        const bz = bd.center.z + Math.sin(a) * bd.radius;
+        const by = bd.center.y + Math.sin(a * 2.1) * 0.9;
+        bd.group.position.set(bx, by, bz);
+        bd.group.rotation.y = -a;
+        const flap = Math.sin(this.totalTime * 9.5 + bd.phase) * 0.62;
+        bd.wingL.rotation.z = flap;
+        bd.wingR.rotation.z = -flap;
+      }
+    }
+    if (this.parisClouds.length > 0) {
+      for (const cl of this.parisClouds) {
+        cl.group.position.x = cl.baseX + Math.sin(this.totalTime * cl.speed + cl.phase) * cl.spanX;
+        cl.group.position.y = cl.baseY + Math.cos(this.totalTime * 0.35 + cl.phase) * 0.42;
+      }
+    }
+    if (this.parisClockHands.length > 0) {
+      for (const ch of this.parisClockHands) {
+        ch.minuteHand.rotation.x -= dt * 0.85;
+        ch.hourHand.rotation.x -= dt * 0.08;
+      }
+    }
+    if (this.parisLeafMesh && this.parisLeafStates.length > 0) {
+      for (let i = 0; i < this.parisLeafStates.length; i++) {
+        const lf = this.parisLeafStates[i];
+        lf.y -= lf.fallSpeed * dt;
+        if (lf.y < -8) lf.y = 12;
+        const lx = this.playerPos.x + lf.x + Math.sin(this.totalTime * 1.4 + lf.swayPhase) * 1.8;
+        const lz = this.playerPos.z + lf.z + Math.cos(this.totalTime * 1.0 + lf.swayPhase) * 1.5;
+        _vec3A.set(lx, Math.max(-5.2, this.playerPos.y + lf.y), lz);
+        _euler.set(this.totalTime * lf.rotSpeed, lf.swayPhase + this.totalTime * 0.8, this.totalTime * lf.rotSpeed * 0.7);
+        _quat.setFromEuler(_euler);
+        _vec3B.set(1, 1, 1);
+        _mat4.compose(_vec3A, _quat, _vec3B);
+        this.parisLeafMesh.setMatrixAt(i, _mat4);
+      }
+      this.parisLeafMesh.instanceMatrix.needsUpdate = true;
+    }
 
     this.renderer.render(this.scene, this.camera);
 
@@ -5119,6 +7935,7 @@ export class GameEngine {
   };
 
   private stepSimulation(dt: number) {
+    const isDesertV2 = this.currentLevel.index === 1;
     for (const p of this.platforms) {
       p.prevPos.copy(p.pos);
       p.prevRotAngle = p.rotAngle;
@@ -5176,21 +7993,112 @@ export class GameEngine {
             p.basePos.y - 0.04,
             p.basePos.z + (Math.random() - 0.5) * 0.14
           );
+          if (isDesertV2 && Math.random() < 0.45) {
+            this.spawnBurst(p.pos.x + (Math.random() - 0.5) * 2.2, p.pos.y - 0.3, p.pos.z + (Math.random() - 0.5) * 2.2, 0xe6a855, 1, 2.2);
+          }
           if (p.crumbleTimer <= 0) {
             p.crumbleState = 'fallen';
             p.crumbleTimer = 2.6;
             p.visible = false;
-            p.mesh.visible = false;
-            this.spawnBurst(p.pos.x, p.pos.y, p.pos.z, 0xf97316, 12, 3.5);
+            if (!isDesertV2) {
+              p.mesh.visible = false;
+            }
+            this.spawnBurst(p.pos.x, p.pos.y, p.pos.z, isDesertV2 ? 0xe6a855 : 0xf97316, 14, 3.6);
           }
         } else if (p.crumbleState === 'fallen') {
           p.crumbleTimer -= dt;
+          if (isDesertV2) {
+            // Smoothly sink into canyon sand and rise back smoothly before reforming
+            const elapsed = 2.6 - p.crumbleTimer;
+            if (elapsed < 0.7) {
+              const t = elapsed / 0.7;
+              p.mesh.visible = true;
+              p.mesh.position.set(p.basePos.x, p.basePos.y - t * 3.4, p.basePos.z);
+              this.setPlatformOpacity(p.mesh, Math.max(0.08, 1 - t));
+            } else if (p.crumbleTimer < 0.48) {
+              const t = p.crumbleTimer / 0.48;
+              p.mesh.visible = true;
+              p.mesh.position.set(p.basePos.x, p.basePos.y - t * 3.2, p.basePos.z);
+              this.setPlatformOpacity(p.mesh, 1 - t * 0.85);
+            } else {
+              p.mesh.visible = false;
+            }
+          }
           if (p.crumbleTimer <= 0) {
             p.crumbleState = 'idle';
             p.visible = true;
             p.mesh.visible = true;
             p.mesh.position.copy(p.basePos);
+            if (isDesertV2) this.setPlatformOpacity(p.mesh, 1.0);
           }
+        }
+      }
+
+      // Animate deploying/unfolding ancient sandstone & boreal crystal mechanism gears + ice fracture glow decay
+      if (isDesertV2 && p.mesh.userData.deployWings) {
+        const wings = p.mesh.userData.deployWings as THREE.Object3D[];
+        const targetFold = p.activated && p.visible ? 0 : 1.15;
+        for (let w = 0; w < wings.length; w++) {
+          const sign = w === 0 ? 1 : -1;
+          wings[w].rotation.z = THREE.MathUtils.damp(wings[w].rotation.z, sign * targetFold, 6, dt);
+        }
+      }
+      if ((isDesertV2 || this.currentLevel.index === 2 || this.currentLevel.index === 4) && p.mesh.userData.mechanismSpin) {
+        (p.mesh.userData.mechanismSpin as THREE.Object3D).rotation.z += dt * (p.activated ? 1.5 : 0.25);
+      }
+      if (this.currentLevel.index === 2 && p.mesh.userData.iceCrackSeams) {
+        const flash = Math.max(0, Number(p.mesh.userData.fractureFlash ?? 0) - dt * 1.8);
+        p.mesh.userData.fractureFlash = flash;
+        const seams = p.mesh.userData.iceCrackSeams as THREE.Mesh[];
+        const isWarn = p.def.kind === 'disappearing' && p.disappearState === 'warning';
+        const glow = isWarn ? 2.8 : 0.95 + flash * 2.2;
+        for (const s of seams) {
+          const m = s.material as THREE.MeshStandardMaterial;
+          m.emissiveIntensity = glow;
+          m.emissive.setHex(isWarn ? 0x22d3ee : 0x38bdf8);
+        }
+      }
+      if (this.currentLevel.index === 4 && p.mesh.userData.volcanicHeatMats) {
+        const mats = p.mesh.userData.volcanicHeatMats as THREE.MeshStandardMaterial[];
+        let heat = Number(p.mesh.userData.heatLevel ?? 0.22);
+        const isStanding = this.standingPlatform === p;
+        const isShaking = p.crumbleState === 'shaking';
+        const isWarn = p.def.kind === 'disappearing' && p.disappearState === 'warning';
+        if (isShaking) {
+          heat = Math.min(1.0, heat + dt * 2.4);
+          if (Math.random() < 0.35) {
+            this.spawnBurst(
+              p.pos.x + (Math.random() - 0.5) * 2.4,
+              p.pos.y + p.halfSize.y + 0.1,
+              p.pos.z + (Math.random() - 0.5) * 2.4,
+              0xfef08a,
+              1,
+              2.6
+            );
+          }
+        } else if (isWarn) {
+          heat = Math.min(1.0, heat + dt * 2.2);
+        } else if (isStanding) {
+          heat = Math.min(1.0, heat + dt * 0.85);
+          if (heat > 0.65 && Math.random() < 0.18) {
+            this.spawnBurst(
+              p.pos.x + (Math.random() - 0.5) * 2.0,
+              p.pos.y + p.halfSize.y + 0.08,
+              p.pos.z + (Math.random() - 0.5) * 2.0,
+              0xfb923c,
+              1,
+              2.0
+            );
+          }
+        } else {
+          heat = Math.max(0.2, heat - dt * 0.45);
+        }
+        p.mesh.userData.heatLevel = heat;
+        _color.setHex(0xea580c).lerp(new THREE.Color(0xfef08a), heat * 0.85);
+        const pulse = Math.sin(this.totalTime * 6.5) * 0.25 * heat;
+        for (const m of mats) {
+          m.emissive.copy(_color);
+          m.emissiveIntensity = 0.48 + heat * 2.8 + pulse;
         }
       }
     }
@@ -6009,6 +8917,7 @@ export class GameEngine {
       }
 
       if (!this.isClimbing) {
+        const prevGrounded = this.grounded;
         this.grounded = landedPlatform !== null || landedOnClimbWall || bestGroundShadowY >= this.playerPos.y - 0.05;
         this.standingPlatform = landedPlatform;
         if (this.grounded && this.botRocketTimer > 0) {
@@ -6017,6 +8926,15 @@ export class GameEngine {
           this.pushHud(true);
         }
         onIce = this.grounded && this.standingPlatform?.def.kind === 'ice';
+
+        if (!prevGrounded && this.grounded && this.currentLevel.index === 2 && landedPlatform) {
+          if (landedPlatform.mesh.userData.iceCrackSeams) {
+            landedPlatform.mesh.userData.fractureFlash = 1.0;
+            this.spawnBurst(this.playerPos.x, this.playerPos.y + 0.1, this.playerPos.z, 0xa5f3fc, 12, 3.8);
+          } else if (landedPlatform.def.kind === 'ice') {
+            this.spawnBurst(this.playerPos.x, this.playerPos.y + 0.1, this.playerPos.z, 0xe0f7ff, 7, 2.4);
+          }
+        }
 
         if (landedPlatform && landedPlatform.def.kind === 'crumble' && landedPlatform.crumbleState === 'idle') {
           landedPlatform.crumbleState = 'shaking';
@@ -6634,6 +9552,40 @@ export class GameEngine {
         soundEngine.playCoin();
         this.spawnBurst(rg.pos.x, rg.pos.y, rg.pos.z, 0xfacc15, 22, 6.5);
         this.pushHud(true);
+      }
+    }
+
+    // Paris aerial updraft currents along alternate sky lanes + readable side-lane balloon obstacle bumps
+    for (const up of this.parisUpdraftZones) {
+      if (up.triggeredCooldown > 0) up.triggeredCooldown = Math.max(0, up.triggeredCooldown - dt);
+      const dx = this.gliderPos.x - up.pos.x;
+      const dz = this.gliderPos.z - up.pos.z;
+      const dy = this.gliderPos.y - up.pos.y;
+      if (dx * dx + dz * dz < up.radius * up.radius && Math.abs(dy) < 6.5) {
+        this.gliderAltOffset = Math.min(6.0, this.gliderAltOffset + 7.5 * dt);
+        this.gliderVelY = Math.max(this.gliderVelY, 4.4);
+        if (up.triggeredCooldown <= 0) {
+          up.triggeredCooldown = 1.1;
+          this.gliderBoostTimer = Math.max(this.gliderBoostTimer, 0.45);
+          soundEngine.playWindWhoosh();
+          this.spawnBurst(this.gliderPos.x, this.gliderPos.y, this.gliderPos.z, 0xfde68a, 14, 5.2);
+        }
+      }
+    }
+    for (const b of this.parisBalloons) {
+      if (!b.isObstacle) continue;
+      const bx = b.group.position.x;
+      const by = b.group.position.y + 2.2;
+      const bz = b.group.position.z;
+      const dx = this.gliderPos.x - bx;
+      const dy = this.gliderPos.y - by;
+      const dz = this.gliderPos.z - bz;
+      if (dx * dx + dy * dy + dz * dz < b.radius * b.radius) {
+        const pushDir = dx >= 0 ? 1 : -1;
+        this.gliderVelX = pushDir * 8.5;
+        this.gliderPos.x = THREE.MathUtils.clamp(this.gliderPos.x + pushDir * 1.1, -16.5, 16.5);
+        soundEngine.playBounce();
+        this.spawnBurst(this.gliderPos.x, this.gliderPos.y, this.gliderPos.z, 0xfbbf24, 12, 4.5);
       }
     }
 

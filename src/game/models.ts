@@ -2198,16 +2198,46 @@ export function createEiffelTowerMesh(stoneTex?: THREE.Texture): THREE.Group {
     g.add(arch);
   });
 
-  // 1st & 2nd Observation Decks with warm coral & burgundy trim
+  // 1st & 2nd Observation Decks with warm wrought-iron filigree, sunlit glass pavilions & golden corner lanterns
   const deck1 = new THREE.Mesh(new THREE.BoxGeometry(15.6, 1.5, 15.6), warmIronMat);
   deck1.position.y = 11.2;
-  const deck1Trim = new THREE.Mesh(new THREE.BoxGeometry(16.0, 0.42, 16.0), burgundyMat);
+  const deck1Trim = new THREE.Mesh(new THREE.BoxGeometry(16.2, 0.42, 16.2), burgundyMat);
   deck1Trim.position.y = 12.1;
+  const deck1Glass = new THREE.Mesh(
+    new THREE.BoxGeometry(11.4, 1.35, 11.4),
+    new THREE.MeshPhysicalMaterial({
+      color: 0xffedd5,
+      emissive: 0xf59e0b,
+      emissiveIntensity: 0.72,
+      roughness: 0.12,
+      clearcoat: 1.0,
+    })
+  );
+  deck1Glass.position.y = 12.8;
 
   const deck2 = new THREE.Mesh(new THREE.BoxGeometry(10.6, 1.35, 10.6), warmIronMat);
   deck2.position.y = 21.5;
-  const deck2Trim = new THREE.Mesh(new THREE.BoxGeometry(11.0, 0.38, 11.0), burgundyMat);
+  const deck2Trim = new THREE.Mesh(new THREE.BoxGeometry(11.2, 0.38, 11.2), burgundyMat);
   deck2Trim.position.y = 22.3;
+  const deck2Glass = new THREE.Mesh(
+    new THREE.BoxGeometry(7.8, 1.15, 7.8),
+    new THREE.MeshPhysicalMaterial({
+      color: 0xffedd5,
+      emissive: 0xf59e0b,
+      emissiveIntensity: 0.78,
+      roughness: 0.12,
+      clearcoat: 1.0,
+    })
+  );
+  deck2Glass.position.y = 22.95;
+
+  for (const [lx, lz] of legCorners) {
+    const lantern1 = new THREE.Mesh(new THREE.OctahedronGeometry(0.45, 0), goldLightMat);
+    lantern1.position.set(lx * 7.6, 12.7, lz * 7.6);
+    const lantern2 = new THREE.Mesh(new THREE.OctahedronGeometry(0.36, 0), goldLightMat);
+    lantern2.position.set(lx * 5.1, 22.8, lz * 5.1);
+    g.add(lantern1, lantern2);
+  }
 
   // Open Eiffel Summit Balcony (local y = 37.8 -> world y = 32.0 when placed at y = -6)
   const summitFloor = new THREE.Mesh(new THREE.BoxGeometry(5.2, 0.42, 5.4), warmIronMat);
@@ -2242,15 +2272,18 @@ export function createEiffelTowerMesh(stoneTex?: THREE.Texture): THREE.Group {
     g.add(rung);
   }
 
-  // Iconic Tapered Eiffel Pinnacle Crown + Burgundy Spire rising cleanly behind spawn (+Z)
+  // Iconic Tapered Eiffel Pinnacle Crown + Golden Sunset Beacon Spire rising cleanly behind spawn (+Z)
   const spireBase = new THREE.Mesh(new THREE.CylinderGeometry(0.65, 1.35, 3.6, 4), warmIronMat);
   spireBase.rotation.y = Math.PI / 4;
   spireBase.position.set(0, 39.8, 2.35);
-  const spireCrown = new THREE.Mesh(new THREE.CylinderGeometry(0.55, 0.68, 0.65, 8), goldLightMat);
+  const spireCrown = new THREE.Mesh(new THREE.CylinderGeometry(0.62, 0.72, 0.72, 12), goldLightMat);
   spireCrown.position.set(0, 41.8, 2.35);
+  const spireHalo = new THREE.Mesh(new THREE.TorusGeometry(0.95, 0.08, 8, 24), goldLightMat);
+  spireHalo.rotation.x = Math.PI / 2;
+  spireHalo.position.set(0, 41.8, 2.35);
   const spireNeedle = new THREE.Mesh(new THREE.ConeGeometry(0.26, 3.8, 8), burgundyMat);
   spireNeedle.position.set(0, 43.9, 2.35);
-  g.add(deck1, deck1Trim, deck2, deck2Trim, summitFloor, spireBase, spireCrown, spireNeedle);
+  g.add(deck1, deck1Trim, deck1Glass, deck2, deck2Trim, deck2Glass, summitFloor, spireBase, spireCrown, spireHalo, spireNeedle);
 
   // Cross-bracing lattice horizontal & diagonal rings along shaft
   for (let h = 14.5; h <= 35.5; h += 3.5) {
@@ -2267,64 +2300,85 @@ export function createArcDeTriompheMesh(stoneTex?: THREE.Texture): THREE.Group {
   const g = new THREE.Group();
   const stoneMat = new THREE.MeshStandardMaterial({
     map: stoneTex,
-    color: 0xe8dfd1,
-    roughness: 0.78,
-    metalness: 0.04,
+    color: 0xeddcc4,
+    roughness: 0.72,
+    metalness: 0.06,
   });
   const corniceMat = new THREE.MeshStandardMaterial({
-    color: 0xd4c6b0,
-    roughness: 0.72,
-  });
-  const reliefMat = new THREE.MeshStandardMaterial({
-    color: 0xc2b29a,
+    color: 0xd6bfa0,
     roughness: 0.68,
   });
-  const flameMat = new THREE.MeshStandardMaterial({
+  const reliefMat = new THREE.MeshStandardMaterial({
+    color: 0xc2a582,
+    roughness: 0.64,
+  });
+  const goldMat = new THREE.MeshStandardMaterial({
     color: 0xfacc15,
+    emissive: 0xd97706,
+    emissiveIntensity: 0.55,
+    metalness: 0.85,
+    roughness: 0.2,
+  });
+  const flameMat = new THREE.MeshStandardMaterial({
+    color: 0xfef08a,
     emissive: 0xf97316,
-    emissiveIntensity: 2.2,
+    emissiveIntensity: 2.4,
   });
 
-  // Twin monumental stone piers framing the Goal Portal
-  const pierGeo = new THREE.BoxGeometry(3.8, 9.6, 5.2);
-  const pierL = new THREE.Mesh(pierGeo, stoneMat);
-  pierL.position.set(-4.6, 4.8, 0);
-  pierL.castShadow = true;
-  pierL.receiveShadow = true;
-  const pierR = pierL.clone();
-  pierR.position.x = 4.6;
-  g.add(pierL, pierR);
+  // Twin monumental stone piers with stepped plinths framing the Goal Portal
+  for (const sx of [-1, 1]) {
+    const plinth = new THREE.Mesh(new THREE.BoxGeometry(4.4, 0.9, 5.8), corniceMat);
+    plinth.position.set(sx * 4.6, 0.45, 0);
+    const pier = new THREE.Mesh(new THREE.BoxGeometry(3.8, 9.6, 5.2), stoneMat);
+    pier.position.set(sx * 4.6, 5.0, 0);
+    pier.castShadow = true;
+    pier.receiveShadow = true;
+    g.add(plinth, pier);
 
-  // Decorative relief plaques on front piers
-  const plaqueGeo = new THREE.BoxGeometry(2.2, 3.8, 0.25);
-  const plaqueL = new THREE.Mesh(plaqueGeo, reliefMat);
-  plaqueL.position.set(-4.6, 3.4, 2.65);
-  const plaqueR = plaqueL.clone();
-  plaqueR.position.x = 4.6;
-  g.add(plaqueL, plaqueR);
+    // Fluted classical corner pilasters & carved relief medallions on front & back
+    for (const px of [-1.45, 1.45]) {
+      const pilaster = new THREE.Mesh(new THREE.CylinderGeometry(0.28, 0.32, 8.8, 10), corniceMat);
+      pilaster.position.set(sx * 4.6 + px, 4.9, 2.58);
+      g.add(pilaster);
+    }
+    const plaque = new THREE.Mesh(new THREE.BoxGeometry(2.1, 3.8, 0.28), reliefMat);
+    plaque.position.set(sx * 4.6, 3.6, 2.66);
+    const medallion = new THREE.Mesh(new THREE.TorusGeometry(0.65, 0.12, 8, 20), goldMat);
+    medallion.position.set(sx * 4.6, 7.2, 2.68);
+    g.add(plaque, medallion);
+  }
 
-  // Central rounded arch vault
+  // Central coffered rounded arch vault
   const archSpan = new THREE.Mesh(new THREE.TorusGeometry(2.7, 0.9, 10, 24, Math.PI), corniceMat);
   archSpan.position.set(0, 6.2, 0);
   archSpan.scale.set(1, 1, 2.8);
-  g.add(archSpan);
+  const keystone = new THREE.Mesh(new THREE.BoxGeometry(0.85, 1.2, 5.5), goldMat);
+  keystone.position.set(0, 8.85, 0);
+  g.add(archSpan, keystone);
 
-  // Upper entablature & attic frieze crowning the arch
+  // Upper entablature, sculpted attic shields & rooftop balustrade
   const frieze = new THREE.Mesh(new THREE.BoxGeometry(13.6, 3.4, 5.5), stoneMat);
   frieze.position.set(0, 10.9, 0);
   frieze.castShadow = true;
-  const cornice = new THREE.Mesh(new THREE.BoxGeometry(14.4, 0.7, 6.1), corniceMat);
+  const cornice = new THREE.Mesh(new THREE.BoxGeometry(14.5, 0.72, 6.1), corniceMat);
   cornice.position.set(0, 9.3, 0);
-  const topCap = new THREE.Mesh(new THREE.BoxGeometry(14.2, 0.65, 5.9), corniceMat);
+  const topCap = new THREE.Mesh(new THREE.BoxGeometry(14.3, 0.65, 5.9), corniceMat);
   topCap.position.set(0, 12.8, 0);
   g.add(frieze, cornice, topCap);
 
+  for (let m = -2; m <= 2; m++) {
+    const shield = new THREE.Mesh(new THREE.CylinderGeometry(0.52, 0.52, 0.2, 12), goldMat);
+    shield.rotation.x = Math.PI / 2;
+    shield.position.set(m * 2.5, 11.1, 2.8);
+    g.add(shield);
+  }
+
   // Golden Eternal Flame torches flanking the arch
   for (const sx of [-4.6, 4.6]) {
-    const brazier = new THREE.Mesh(new THREE.CylinderGeometry(0.45, 0.32, 0.45, 12), corniceMat);
-    brazier.position.set(sx, 0.25, 3.2);
-    const flame = new THREE.Mesh(new THREE.ConeGeometry(0.28, 0.7, 8), flameMat);
-    flame.position.set(sx, 0.72, 3.2);
+    const brazier = new THREE.Mesh(new THREE.CylinderGeometry(0.48, 0.34, 0.55, 12), goldMat);
+    brazier.position.set(sx, 0.3, 3.3);
+    const flame = new THREE.Mesh(new THREE.ConeGeometry(0.3, 0.78, 8), flameMat);
+    flame.position.set(sx, 0.85, 3.3);
     g.add(brazier, flame);
   }
 
