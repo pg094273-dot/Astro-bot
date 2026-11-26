@@ -26,6 +26,10 @@ const INITIAL_HUD: HudSnapshot = {
   isSwinging: false,
   canWebTarget: false,
   spiderTransforming: false,
+  hasHulkSuit: false,
+  hulkLeapCharge: 0,
+  hulkCarrying: null,
+  hulkTransforming: false,
   challengeTimer: null,
   challengeProgress: null,
   boss: null,
@@ -317,6 +321,18 @@ export default function App() {
     engineRef.current?.releaseWeb(false);
   }, []);
 
+  const handleTouchHulkPunch = useCallback(() => {
+    engineRef.current?.triggerHulkPunch();
+  }, []);
+
+  const handleTouchHulkSlam = useCallback(() => {
+    engineRef.current?.triggerHulkSlam();
+  }, []);
+
+  const handleTouchHulkGrab = useCallback(() => {
+    engineRef.current?.triggerHulkGrabOrThrow();
+  }, []);
+
   return (
     <main className="relative h-screen w-screen overflow-hidden bg-[#060b19]">
       {/* Isolated WebGL Canvas Container */}
@@ -344,6 +360,9 @@ export default function App() {
         onTouchBow={handleTouchBow}
         onTouchWeb={handleTouchWeb}
         onTouchReleaseWeb={handleTouchReleaseWeb}
+        onTouchHulkPunch={handleTouchHulkPunch}
+        onTouchHulkSlam={handleTouchHulkSlam}
+        onTouchHulkGrab={handleTouchHulkGrab}
       />
 
       <GameMenus

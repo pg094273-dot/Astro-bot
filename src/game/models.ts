@@ -1,5 +1,6 @@
 import * as THREE from 'three';
-import { BossStyle, EnemyKind } from './types';
+import { BossStyle, DestructibleKind, EnemyKind, ThrowableKind } from './types';
+import { ProceduralTextures } from './textures';
 
 export interface AstroBotRig {
   root: THREE.Group;
@@ -26,6 +27,9 @@ export interface AstroBotRig {
   spiderEyeR: THREE.Mesh;
   webShooterL: THREE.Mesh;
   webShooterR: THREE.Mesh;
+  hulkParts: THREE.Object3D[];
+  hulkFistL: THREE.Group;
+  hulkFistR: THREE.Group;
   transformAura: THREE.Mesh;
   botRocketRig: THREE.Group;
 }
@@ -691,6 +695,217 @@ export function createAstroBot(): AstroBotRig {
   addSpiderLegParts(leftLeg);
   addSpiderLegParts(rightLeg);
 
+  // Full Hulk Transformation Suit (massive green musculature, giant clenched fists, purple tattered pants, furrowed brow & heavy jaw)
+  const hulkParts: THREE.Object3D[] = [];
+  const hulkSkinMat = new THREE.MeshStandardMaterial({
+    color: 0x3b8c25,
+    roughness: 0.48,
+    metalness: 0.04,
+  });
+  const hulkMuscleShadeMat = new THREE.MeshStandardMaterial({
+    color: 0x2c6e1b,
+    roughness: 0.52,
+    metalness: 0.04,
+  });
+  const hulkPantsMat = new THREE.MeshStandardMaterial({
+    color: 0x6d28d9,
+    roughness: 0.72,
+    metalness: 0.05,
+  });
+  const hulkHairMat = new THREE.MeshStandardMaterial({
+    color: 0x111827,
+    roughness: 0.78,
+    metalness: 0.06,
+  });
+  const hulkEyeMat = new THREE.MeshStandardMaterial({
+    color: 0xd9f99d,
+    emissive: 0x84cc16,
+    emissiveIntensity: 1.55,
+    roughness: 0.15,
+  });
+
+  // Hulk Sculpted Head with massive square jaw, heavy brow & dark hair
+  const hkCranium = new THREE.Mesh(new THREE.SphereGeometry(0.32, 18, 16), hulkSkinMat);
+  hkCranium.scale.set(1.04, 0.96, 1.0);
+  hkCranium.position.y = 0.06;
+  hkCranium.castShadow = true;
+  hkCranium.visible = false;
+  headGroup.add(hkCranium);
+  hulkParts.push(hkCranium);
+
+  const hkJaw = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.24, 0.42), hulkSkinMat);
+  hkJaw.position.set(0, -0.1, 0.06);
+  hkJaw.castShadow = true;
+  hkJaw.visible = false;
+  headGroup.add(hkJaw);
+  hulkParts.push(hkJaw);
+
+  const hkBrow = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.09, 0.16), hulkMuscleShadeMat);
+  hkBrow.position.set(0, 0.13, 0.26);
+  hkBrow.rotation.x = 0.22;
+  hkBrow.visible = false;
+  headGroup.add(hkBrow);
+  hulkParts.push(hkBrow);
+
+  const hkHair = new THREE.Mesh(new THREE.BoxGeometry(0.56, 0.18, 0.56), hulkHairMat);
+  hkHair.position.set(0, 0.28, -0.02);
+  hkHair.visible = false;
+  headGroup.add(hkHair);
+  hulkParts.push(hkHair);
+
+  for (let h = -2; h <= 2; h++) {
+    const spike = new THREE.Mesh(new THREE.ConeGeometry(0.11, 0.2, 6), hulkHairMat);
+    spike.position.set(h * 0.1, 0.34, 0.18 - Math.abs(h) * 0.04);
+    spike.rotation.x = 0.48;
+    spike.visible = false;
+    headGroup.add(spike);
+    hulkParts.push(spike);
+  }
+
+  const hkEyeL = new THREE.Mesh(new THREE.BoxGeometry(0.1, 0.045, 0.05), hulkEyeMat);
+  hkEyeL.position.set(-0.11, 0.07, 0.3);
+  hkEyeL.rotation.z = -0.18;
+  hkEyeL.visible = false;
+  const hkEyeR = hkEyeL.clone();
+  hkEyeR.position.x = 0.11;
+  hkEyeR.rotation.z = 0.18;
+  headGroup.add(hkEyeL, hkEyeR);
+  hulkParts.push(hkEyeL, hkEyeR);
+
+  // Gritted fierce mouth
+  const hkMouth = new THREE.Mesh(
+    new THREE.BoxGeometry(0.24, 0.045, 0.04),
+    new THREE.MeshStandardMaterial({ color: 0xf8fafc, roughness: 0.3 })
+  );
+  hkMouth.position.set(0, -0.1, 0.27);
+  hkMouth.visible = false;
+  headGroup.add(hkMouth);
+  hulkParts.push(hkMouth);
+
+  // Massive Hulking Chest, Traps, Pectorals, Abs & Purple Tattered Shorts Waist
+  const hkTorsoMain = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.29, 0.54, 12), hulkSkinMat);
+  hkTorsoMain.scale.set(1.18, 1.0, 0.92);
+  hkTorsoMain.position.set(0, 0.78, 0.01);
+  hkTorsoMain.castShadow = true;
+  hkTorsoMain.visible = false;
+  bodyGroup.add(hkTorsoMain);
+  hulkParts.push(hkTorsoMain);
+
+  const hkTraps = new THREE.Mesh(new THREE.SphereGeometry(0.32, 14, 12), hulkMuscleShadeMat);
+  hkTraps.scale.set(1.45, 0.72, 0.92);
+  hkTraps.position.set(0, 0.98, -0.02);
+  hkTraps.visible = false;
+  bodyGroup.add(hkTraps);
+  hulkParts.push(hkTraps);
+
+  for (const sx of [-1, 1]) {
+    const pec = new THREE.Mesh(new THREE.SphereGeometry(0.21, 12, 10), hulkSkinMat);
+    pec.scale.set(1.1, 0.85, 0.72);
+    pec.position.set(sx * 0.19, 0.84, 0.24);
+    pec.visible = false;
+    bodyGroup.add(pec);
+    hulkParts.push(pec);
+  }
+
+  for (let row = 0; row < 3; row++) {
+    for (const sx of [-0.09, 0.09]) {
+      const ab = new THREE.Mesh(new THREE.SphereGeometry(0.085, 8, 8), hulkMuscleShadeMat);
+      ab.scale.set(1.05, 0.78, 0.65);
+      ab.position.set(sx, 0.68 - row * 0.085, 0.26);
+      ab.visible = false;
+      bodyGroup.add(ab);
+      hulkParts.push(ab);
+    }
+  }
+
+  const hkPelvis = new THREE.Mesh(new THREE.CylinderGeometry(0.31, 0.33, 0.24, 12), hulkPantsMat);
+  hkPelvis.scale.set(1.12, 1, 0.95);
+  hkPelvis.position.set(0, 0.45, 0);
+  hkPelvis.castShadow = true;
+  hkPelvis.visible = false;
+  bodyGroup.add(hkPelvis);
+  hulkParts.push(hkPelvis);
+
+  // Huge Muscular Arms + Oversized Clenched Fists
+  const addHulkArmParts = (arm: THREE.Group, side: number): THREE.Group => {
+    const offsetX = side * 0.21;
+    const delt = new THREE.Mesh(new THREE.SphereGeometry(0.21, 12, 10), hulkSkinMat);
+    delt.position.set(offsetX * 0.8, 0.04, 0);
+    delt.castShadow = true;
+    delt.visible = false;
+    arm.add(delt);
+    hulkParts.push(delt);
+
+    const bicep = new THREE.Mesh(new THREE.CapsuleGeometry(0.145, 0.22, 6, 12), hulkSkinMat);
+    bicep.position.set(offsetX, -0.17, 0);
+    bicep.castShadow = true;
+    bicep.visible = false;
+    arm.add(bicep);
+    hulkParts.push(bicep);
+
+    const forearm = new THREE.Mesh(new THREE.CapsuleGeometry(0.155, 0.22, 6, 12), hulkMuscleShadeMat);
+    forearm.position.set(offsetX * 1.05, -0.37, 0.02);
+    forearm.castShadow = true;
+    forearm.visible = false;
+    arm.add(forearm);
+    hulkParts.push(forearm);
+
+    const fist = new THREE.Group();
+    fist.position.set(offsetX * 1.05, -0.54, 0.04);
+    fist.visible = false;
+    const fistBlock = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.25, 0.28), hulkSkinMat);
+    fistBlock.castShadow = true;
+    fist.add(fistBlock);
+    for (let k = -1; k <= 1; k++) {
+      const knuckle = new THREE.Mesh(new THREE.SphereGeometry(0.055, 8, 8), hulkMuscleShadeMat);
+      knuckle.position.set(k * 0.075, -0.05, 0.13);
+      fist.add(knuckle);
+    }
+    arm.add(fist);
+    hulkParts.push(fist);
+    return fist;
+  };
+  const hulkFistL = addHulkArmParts(leftArm, -1);
+  const hulkFistR = addHulkArmParts(rightArm, 1);
+
+  // Powerful Thighs in Purple Tattered Pants + Huge Green Calves & Bare Feet
+  const addHulkLegParts = (leg: THREE.Group, side: number) => {
+    const offsetX = side * 0.07;
+    const thigh = new THREE.Mesh(new THREE.CapsuleGeometry(0.165, 0.22, 6, 12), hulkPantsMat);
+    thigh.position.set(offsetX, -0.12, 0);
+    thigh.castShadow = true;
+    thigh.visible = false;
+    leg.add(thigh);
+    hulkParts.push(thigh);
+
+    // Jagged torn pants cuff flaps
+    for (let t = 0; t < 4; t++) {
+      const ang = (t / 4) * Math.PI * 2 + side * 0.4;
+      const shred = new THREE.Mesh(new THREE.ConeGeometry(0.08, 0.16, 4), hulkPantsMat);
+      shred.rotation.x = Math.PI;
+      shred.position.set(offsetX + Math.cos(ang) * 0.13, -0.27, Math.sin(ang) * 0.13);
+      shred.visible = false;
+      leg.add(shred);
+      hulkParts.push(shred);
+    }
+
+    const calf = new THREE.Mesh(new THREE.CapsuleGeometry(0.14, 0.18, 6, 12), hulkSkinMat);
+    calf.position.set(offsetX, -0.32, 0);
+    calf.castShadow = true;
+    calf.visible = false;
+    leg.add(calf);
+    hulkParts.push(calf);
+
+    const foot = new THREE.Mesh(new THREE.BoxGeometry(0.24, 0.13, 0.34), hulkMuscleShadeMat);
+    foot.position.set(offsetX, -0.44, 0.06);
+    foot.castShadow = true;
+    foot.visible = false;
+    leg.add(foot);
+    hulkParts.push(foot);
+  };
+  addHulkLegParts(leftLeg, -1);
+  addHulkLegParts(rightLeg, 1);
+
   // Transformation Energy Cocoon Sphere (animated during Level 09 start transformation)
   const transformAura = new THREE.Mesh(
     new THREE.IcosahedronGeometry(0.95, 1),
@@ -760,6 +975,9 @@ export function createAstroBot(): AstroBotRig {
     spiderEyeR,
     webShooterL,
     webShooterR,
+    hulkParts,
+    hulkFistL,
+    hulkFistR,
     transformAura,
     botRocketRig,
   };
@@ -1029,7 +1247,11 @@ export function createEnemyMesh(kind: EnemyKind): EnemyRig {
                 ? 0x9f1239
                 : kind === 'guardian'
                   ? 0x1e3a8a
-                  : 0x1e293b;
+                  : kind === 'armored_guard'
+                    ? 0x3f4c5e
+                    : kind === 'giant_mech'
+                      ? 0x1e293b
+                      : 0x1e293b;
 
   const trimColor =
     kind === 'spiky'
@@ -1046,7 +1268,11 @@ export function createEnemyMesh(kind: EnemyKind): EnemyRig {
                 ? 0xfbbf24
                 : kind === 'guardian'
                   ? 0x67e8f9
-                  : 0xf43f5e;
+                  : kind === 'armored_guard'
+                    ? 0x84cc16
+                    : kind === 'giant_mech'
+                      ? 0xa3e635
+                      : 0xf43f5e;
 
   const shellMat = new THREE.MeshPhysicalMaterial({
     color: shellColor,
@@ -1201,6 +1427,82 @@ export function createEnemyMesh(kind: EnemyKind): EnemyRig {
     group.add(shieldMesh);
 
     return { group, body, eyeMat, shieldMesh };
+  }
+
+  if (kind === 'armored_guard') {
+    // Heavy Gamma-City Armored Riot Trooper with steel breastplate, shoulder pauldrons & riot shield
+    const body = new THREE.Mesh(new THREE.BoxGeometry(0.86, 1.05, 0.64), shellMat);
+    body.position.y = 0.78;
+    body.castShadow = true;
+    group.add(body);
+
+    const head = new THREE.Mesh(new THREE.BoxGeometry(0.54, 0.44, 0.52), darkMat);
+    head.position.set(0, 1.48, 0.02);
+    const visor = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.14, 0.08), eyeMat);
+    visor.position.set(0, 1.48, 0.27);
+    group.add(head, visor);
+
+    for (const sx of [-1, 1]) {
+      const pauldron = new THREE.Mesh(new THREE.BoxGeometry(0.32, 0.34, 0.48), trimMat);
+      pauldron.position.set(sx * 0.56, 1.15, 0);
+      const leg = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.38, 0.36), darkMat);
+      leg.position.set(sx * 0.24, 0.19, 0);
+      group.add(pauldron, leg);
+    }
+
+    const shieldMat = new THREE.MeshStandardMaterial({
+      color: 0x1e293b,
+      metalness: 0.75,
+      roughness: 0.32,
+    });
+    const shieldMesh = new THREE.Mesh(new THREE.BoxGeometry(1.18, 1.32, 0.16), shieldMat);
+    shieldMesh.position.set(0, 0.85, 0.56);
+    const shieldTrim = new THREE.Mesh(new THREE.BoxGeometry(0.95, 0.22, 0.2), trimMat);
+    shieldTrim.position.set(0, 0.88, 0.56);
+    group.add(shieldMesh, shieldTrim);
+
+    return { group, body, eyeMat, shieldMesh };
+  }
+
+  if (kind === 'giant_mech') {
+    // Towering Industrial Gamma-Mech Sentinel with twin shoulder cannons & glowing gamma reactor chest
+    const reactorMat = new THREE.MeshStandardMaterial({
+      color: 0xa3e635,
+      emissive: 0x65a30d,
+      emissiveIntensity: 2.0,
+      roughness: 0.18,
+    });
+    const body = new THREE.Mesh(new THREE.BoxGeometry(1.55, 1.45, 1.15), shellMat);
+    body.position.y = 1.65;
+    body.castShadow = true;
+    group.add(body);
+
+    const core = new THREE.Mesh(new THREE.CylinderGeometry(0.34, 0.34, 0.22, 12), reactorMat);
+    core.rotation.x = Math.PI / 2;
+    core.position.set(0, 1.72, 0.56);
+    group.add(core);
+
+    const turretHead = new THREE.Group();
+    turretHead.position.set(0, 2.55, 0.08);
+    const helm = new THREE.Mesh(new THREE.BoxGeometry(0.76, 0.45, 0.68), darkMat);
+    const optic = new THREE.Mesh(new THREE.BoxGeometry(0.56, 0.14, 0.1), eyeMat);
+    optic.position.set(0, 0, 0.34);
+    turretHead.add(helm, optic);
+    group.add(turretHead);
+
+    for (const sx of [-1, 1]) {
+      const pod = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.52, 0.82), trimMat);
+      pod.position.set(sx * 0.96, 2.38, 0.08);
+      const arm = new THREE.Mesh(new THREE.BoxGeometry(0.42, 1.18, 0.46), darkMat);
+      arm.position.set(sx * 1.05, 1.38, 0.12);
+      const thigh = new THREE.Mesh(new THREE.BoxGeometry(0.46, 0.85, 0.48), darkMat);
+      thigh.position.set(sx * 0.48, 0.62, 0);
+      const foot = new THREE.Mesh(new THREE.BoxGeometry(0.56, 0.28, 0.78), trimMat);
+      foot.position.set(sx * 0.48, 0.14, 0.1);
+      group.add(pod, arm, thigh, foot);
+    }
+
+    return { group, body, eyeMat, turretHead };
   }
 
   if (kind === 'brute') {
@@ -1870,6 +2172,7 @@ export function createBossMesh(style: BossStyle = 'nebula'): BossRig {
     temple: { armor: 0x78350f, trim: 0xfbbf24, trimEmissive: 0x92400e, core: 0x34d399, eye: 0xf43f5e },
     volcanic: { armor: 0x270d0d, trim: 0xf97316, trimEmissive: 0xc2410c, core: 0xfef08a, eye: 0xff2a55 },
     nebula: { armor: 0x311042, trim: 0xf43f5e, trimEmissive: 0x881337, core: 0xfbbf24, eye: 0xff1e42 },
+    gammacity: { armor: 0x1f2937, trim: 0x84cc16, trimEmissive: 0x3f6212, core: 0xa3e635, eye: 0x22c55e },
   };
   const pal = palette[style];
 
@@ -1969,6 +2272,24 @@ export function createBossMesh(style: BossStyle = 'nebula'): BossRig {
       ray.position.set(Math.sin(ang) * 1.25, 0.45 + Math.cos(ang) * 1.15, -0.2);
       ray.rotation.z = -ang;
       headGroup.add(ray);
+    }
+  } else if (style === 'gammacity') {
+    // Coloso Gamma MK-X: Reactor Shoulder Exhaust Stacks & Gamma Battery Core Glow
+    coreMat.color.setHex(0xa3e635);
+    coreMat.emissive.setHex(0x65a30d);
+    armorMat.color.setHex(0x1f2937);
+    const gammaTankMat = new THREE.MeshStandardMaterial({
+      color: 0xa3e635,
+      emissive: 0x65a30d,
+      emissiveIntensity: 1.75,
+      roughness: 0.2,
+    });
+    for (const sx of [-1, 1]) {
+      const stack = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.3, 1.35, 10), darkMat);
+      stack.position.set(sx * 1.05, 3.65, -0.45);
+      const cell = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.26, 0.42, 10), gammaTankMat);
+      cell.position.set(sx * 1.05, 4.15, -0.45);
+      bodyGroup.add(stack, cell);
     }
   }
 
@@ -2916,6 +3237,245 @@ export function createChallengeGateMesh(activeColorHex = 0x22d3ee): THREE.Group 
   const ring = new THREE.Mesh(new THREE.TorusGeometry(2.1, 0.14, 10, 28), mat);
   g.add(ring);
   return g;
+}
+
+export function createHulkDestructibleMesh(
+  kind: DestructibleKind,
+  size: [number, number, number],
+  textures: ProceduralTextures
+): {
+  group: THREE.Group;
+  intactGroup: THREE.Group;
+  rubbleGroup: THREE.Group;
+  crackOverlay: THREE.Mesh;
+} {
+  const [w, h, d] = size;
+  const group = new THREE.Group();
+  const intactGroup = new THREE.Group();
+  const rubbleGroup = new THREE.Group();
+  rubbleGroup.visible = false;
+  group.add(intactGroup, rubbleGroup);
+
+  const concreteMat = new THREE.MeshStandardMaterial({
+    map: textures.gammaConcrete,
+    roughness: 0.85,
+    metalness: 0.08,
+  });
+  const brickMat = new THREE.MeshStandardMaterial({
+    map: textures.gammaBrickFactory,
+    roughness: 0.82,
+    metalness: 0.06,
+  });
+  const steelMat = new THREE.MeshStandardMaterial({
+    map: textures.gammaIndustrialSteel,
+    roughness: 0.38,
+    metalness: 0.72,
+  });
+  const hazardMat = new THREE.MeshStandardMaterial({
+    map: textures.gammaHazardStripe,
+    roughness: 0.45,
+    metalness: 0.28,
+  });
+  const gammaGlowMat = new THREE.MeshStandardMaterial({
+    color: 0xa3e635,
+    emissive: 0x65a30d,
+    emissiveIntensity: 1.55,
+    roughness: 0.2,
+  });
+
+  if (kind === 'factory_tank') {
+    const legH = h * 0.22;
+    for (const sx of [-1, 1]) {
+      for (const sz of [-1, 1]) {
+        const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.18, legH, 8), steelMat);
+        leg.position.set(sx * w * 0.34, legH * 0.5, sz * d * 0.34);
+        intactGroup.add(leg);
+      }
+    }
+    const tankR = Math.min(w, d) * 0.44;
+    const tankH = h * 0.78;
+    const tank = new THREE.Mesh(new THREE.CylinderGeometry(tankR, tankR, tankH, 16), steelMat);
+    tank.position.y = legH + tankH * 0.5;
+    tank.castShadow = true;
+    tank.receiveShadow = true;
+    const band = new THREE.Mesh(new THREE.CylinderGeometry(tankR * 1.03, tankR * 1.03, tankH * 0.22, 16), hazardMat);
+    band.position.y = legH + tankH * 0.55;
+    const vatWindow = new THREE.Mesh(new THREE.BoxGeometry(tankR * 0.65, tankH * 0.35, tankR * 2.04), gammaGlowMat);
+    vatWindow.position.y = legH + tankH * 0.55;
+    const cap = new THREE.Mesh(new THREE.SphereGeometry(tankR * 0.92, 14, 8, 0, Math.PI * 2, 0, Math.PI * 0.5), steelMat);
+    cap.position.y = legH + tankH;
+    intactGroup.add(tank, band, vatWindow, cap);
+  } else if (kind === 'pillar') {
+    const plinth = new THREE.Mesh(new THREE.BoxGeometry(w * 1.08, h * 0.16, d * 1.08), hazardMat);
+    plinth.position.y = h * 0.08;
+    const col = new THREE.Mesh(new THREE.CylinderGeometry(Math.min(w, d) * 0.42, Math.min(w, d) * 0.48, h * 0.84, 12), concreteMat);
+    col.position.y = h * 0.54;
+    col.castShadow = true;
+    col.receiveShadow = true;
+    intactGroup.add(plinth, col);
+  } else if (kind === 'barrier') {
+    const base = new THREE.Mesh(new THREE.BoxGeometry(w, h * 0.68, d), concreteMat);
+    base.position.y = h * 0.34;
+    base.castShadow = true;
+    base.receiveShadow = true;
+    const topBar = new THREE.Mesh(new THREE.BoxGeometry(w * 1.02, h * 0.32, d * 0.82), hazardMat);
+    topBar.position.y = h * 0.84;
+    intactGroup.add(base, topBar);
+  } else if (kind === 'bridge_span') {
+    const deck = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), concreteMat);
+    deck.position.y = h * 0.5;
+    deck.castShadow = true;
+    deck.receiveShadow = true;
+    const sideL = new THREE.Mesh(new THREE.BoxGeometry(0.32, h * 1.4, d), hazardMat);
+    sideL.position.set(-w * 0.46, h * 0.7, 0);
+    const sideR = sideL.clone();
+    sideR.position.x = w * 0.46;
+    intactGroup.add(deck, sideL, sideR);
+  } else if (kind === 'crate_stack') {
+    const crateMat = new THREE.MeshStandardMaterial({ color: 0x9a5b25, roughness: 0.75 });
+    const c1 = new THREE.Mesh(new THREE.BoxGeometry(w * 0.52, h * 0.52, d * 0.52), crateMat);
+    c1.position.set(-w * 0.22, h * 0.26, 0.08);
+    const c2 = new THREE.Mesh(new THREE.BoxGeometry(w * 0.48, h * 0.52, d * 0.48), steelMat);
+    c2.position.set(w * 0.23, h * 0.26, -0.06);
+    const c3 = new THREE.Mesh(new THREE.BoxGeometry(w * 0.54, h * 0.48, d * 0.54), hazardMat);
+    c3.position.set(0, h * 0.74, 0);
+    c1.castShadow = true;
+    c2.castShadow = true;
+    c3.castShadow = true;
+    intactGroup.add(c1, c2, c3);
+  } else {
+    // 'wall' or 'tower_facade'
+    const wallMat = kind === 'tower_facade' ? brickMat : concreteMat;
+    const body = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), wallMat);
+    body.position.y = h * 0.5;
+    body.castShadow = true;
+    body.receiveShadow = true;
+    const sill = new THREE.Mesh(new THREE.BoxGeometry(w * 1.03, Math.min(0.45, h * 0.14), d * 1.06), hazardMat);
+    sill.position.y = Math.min(0.3, h * 0.12);
+    const topCap = new THREE.Mesh(new THREE.BoxGeometry(w * 1.04, Math.min(0.35, h * 0.12), d * 1.06), steelMat);
+    topCap.position.y = h - Math.min(0.18, h * 0.06);
+    intactGroup.add(body, sill, topCap);
+  }
+
+  // Damage fracture overlay shown once damaged
+  const crackOverlay = new THREE.Mesh(
+    new THREE.PlaneGeometry(Math.max(w, d) * 0.9, Math.max(h, d) * 0.9),
+    new THREE.MeshBasicMaterial({
+      map: textures.gammaGroundCrack,
+      transparent: true,
+      opacity: 0.78,
+      depthWrite: false,
+      polygonOffset: true,
+      polygonOffsetFactor: -1,
+      polygonOffsetUnits: -1,
+    })
+  );
+  crackOverlay.position.set(0, h * 0.52, d * 0.5 + 0.04);
+  crackOverlay.visible = false;
+  intactGroup.add(crackOverlay);
+
+  // Scattered low-profile rubble stones left behind when shattered
+  for (let i = 0; i < 6; i++) {
+    const rx = ((i % 3) - 1) * (w * 0.32);
+    const rz = (Math.floor(i / 3) - 0.5) * (d * 0.5);
+    const chunk = new THREE.Mesh(new THREE.DodecahedronGeometry(0.28 + (i % 3) * 0.12, 0), concreteMat);
+    chunk.scale.set(1.3, 0.45, 1.1);
+    chunk.position.set(rx, 0.14, rz);
+    chunk.rotation.set(i * 0.7, i * 1.1, i * 0.4);
+    rubbleGroup.add(chunk);
+  }
+
+  return { group, intactGroup, rubbleGroup, crackOverlay };
+}
+
+export function createHulkThrowableMesh(kind: ThrowableKind, colorHex = 0xfacc15): THREE.Group {
+  const g = new THREE.Group();
+  if (kind === 'car') {
+    const car = createNycVehicleMesh(colorHex, colorHex === 0xfacc15);
+    car.scale.setScalar(0.76);
+    g.add(car);
+    return g;
+  }
+  if (kind === 'container') {
+    const boxMat = new THREE.MeshStandardMaterial({ color: colorHex, roughness: 0.42, metalness: 0.55 });
+    const trimMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, roughness: 0.5, metalness: 0.65 });
+    const box = new THREE.Mesh(new THREE.BoxGeometry(2.1, 1.45, 3.2), boxMat);
+    box.position.y = 0.725;
+    box.castShadow = true;
+    g.add(box);
+    for (let s = -1; s <= 1; s++) {
+      const rib = new THREE.Mesh(new THREE.BoxGeometry(2.18, 1.48, 0.16), trimMat);
+      rib.position.set(0, 0.74, s * 1.05);
+      g.add(rib);
+    }
+    return g;
+  }
+  if (kind === 'beam') {
+    const steelMat = new THREE.MeshStandardMaterial({ color: 0x991b1b, roughness: 0.36, metalness: 0.75 });
+    const web = new THREE.Mesh(new THREE.BoxGeometry(0.22, 0.56, 3.6), steelMat);
+    web.position.y = 0.34;
+    const topFlange = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.12, 3.6), steelMat);
+    topFlange.position.y = 0.62;
+    const botFlange = topFlange.clone();
+    botFlange.position.y = 0.06;
+    web.castShadow = true;
+    g.add(web, topFlange, botFlange);
+    return g;
+  }
+  if (kind === 'concrete') {
+    const concMat = new THREE.MeshStandardMaterial({ color: 0x64748b, roughness: 0.88, metalness: 0.08 });
+    const rebarMat = new THREE.MeshStandardMaterial({ color: 0x334155, metalness: 0.75, roughness: 0.4 });
+    const block = new THREE.Mesh(new THREE.BoxGeometry(1.75, 1.05, 1.45), concMat);
+    block.position.y = 0.525;
+    block.castShadow = true;
+    g.add(block);
+    for (const sx of [-0.45, 0.45]) {
+      const bar = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 2.25, 6), rebarMat);
+      bar.rotation.z = Math.PI / 2;
+      bar.position.set(0, 0.55, sx);
+      g.add(bar);
+    }
+    return g;
+  }
+  // 'rock'
+  const rockMat = new THREE.MeshStandardMaterial({ color: 0x57534e, roughness: 0.92, metalness: 0.06 });
+  const boulder = new THREE.Mesh(new THREE.DodecahedronGeometry(0.95, 1), rockMat);
+  boulder.scale.set(1.15, 0.86, 1.05);
+  boulder.position.y = 0.78;
+  boulder.castShadow = true;
+  g.add(boulder);
+  return g;
+}
+
+export function createShockwaveRingMesh(colorHex = 0x84cc16): THREE.Mesh {
+  const mat = new THREE.MeshBasicMaterial({
+    color: colorHex,
+    transparent: true,
+    opacity: 0.85,
+    side: THREE.DoubleSide,
+    depthWrite: false,
+    blending: THREE.AdditiveBlending,
+  });
+  const mesh = new THREE.Mesh(new THREE.RingGeometry(0.62, 1.0, 32), mat);
+  mesh.rotation.x = -Math.PI / 2;
+  mesh.visible = false;
+  return mesh;
+}
+
+export function createGroundCrackDecalMesh(crackTex: THREE.Texture): THREE.Mesh {
+  const mat = new THREE.MeshBasicMaterial({
+    map: crackTex,
+    transparent: true,
+    opacity: 0.92,
+    depthWrite: false,
+    polygonOffset: true,
+    polygonOffsetFactor: -2,
+    polygonOffsetUnits: -2,
+  });
+  const mesh = new THREE.Mesh(new THREE.PlaneGeometry(4.4, 4.4), mat);
+  mesh.rotation.x = -Math.PI / 2;
+  mesh.visible = false;
+  return mesh;
 }
 
 

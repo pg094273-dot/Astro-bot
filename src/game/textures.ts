@@ -81,6 +81,13 @@ export interface ProceduralTextures {
   nycAsphaltRoad: THREE.CanvasTexture;
   nycBillboardTex: THREE.CanvasTexture;
   skyNewYork: THREE.CanvasTexture;
+  gammaAsphalt: THREE.CanvasTexture;
+  gammaConcrete: THREE.CanvasTexture;
+  gammaIndustrialSteel: THREE.CanvasTexture;
+  gammaBrickFactory: THREE.CanvasTexture;
+  gammaHazardStripe: THREE.CanvasTexture;
+  gammaGroundCrack: THREE.CanvasTexture;
+  skyGammaCity: THREE.CanvasTexture;
 }
 
 function makeCanvas(w: number, h: number): [HTMLCanvasElement, CanvasRenderingContext2D] {
@@ -2764,6 +2771,216 @@ export function createProceduralTextures(maxAnisotropy: number): ProceduralTextu
     }
   });
 
+  // 21. GAMMA CITY: EL PODER DE HULK — Industrial Asphalt, Cracked Concrete, Hazard Steel, Factory Brick & Radial Ground Crack Decal
+  const gammaAsphalt = (() => {
+    const [canvas, ctx] = makeCanvas(512, 512);
+    ctx.fillStyle = '#262b33';
+    ctx.fillRect(0, 0, 512, 512);
+    for (let i = 0; i < 1800; i++) {
+      const x = (i * 197 + 19) % 512;
+      const y = (i * 131 + 43) % 512;
+      ctx.fillStyle = i % 3 === 0 ? 'rgba(148,163,184,0.1)' : 'rgba(15,23,42,0.22)';
+      ctx.fillRect(x, y, 3, 3);
+    }
+    // Double yellow industrial center divider & subtle green gamma spill stains
+    ctx.fillStyle = '#eab308';
+    ctx.fillRect(246, 0, 7, 512);
+    ctx.fillRect(259, 0, 7, 512);
+    ctx.fillStyle = 'rgba(226, 232, 240, 0.35)';
+    ctx.fillRect(24, 0, 8, 512);
+    ctx.fillRect(480, 0, 8, 512);
+    const stain = ctx.createRadialGradient(140, 320, 6, 140, 320, 62);
+    stain.addColorStop(0, 'rgba(132, 204, 22, 0.25)');
+    stain.addColorStop(1, 'rgba(132, 204, 22, 0)');
+    ctx.fillStyle = stain;
+    ctx.fillRect(70, 250, 140, 140);
+    return finalizeColorTexture(canvas, maxAnisotropy, 1, 1);
+  })();
+
+  const gammaConcrete = (() => {
+    const [canvas, ctx] = makeCanvas(512, 512);
+    ctx.fillStyle = '#5c646d';
+    ctx.fillRect(0, 0, 512, 512);
+    for (let i = 0; i < 1400; i++) {
+      const x = (i * 173 + 29) % 512;
+      const y = (i * 229 + 11) % 512;
+      ctx.fillStyle = i % 2 === 0 ? 'rgba(255,255,255,0.06)' : 'rgba(15,23,42,0.14)';
+      ctx.fillRect(x, y, 6, 6);
+    }
+    ctx.strokeStyle = 'rgba(30, 41, 59, 0.45)';
+    ctx.lineWidth = 3;
+    for (let g = 0; g <= 512; g += 128) {
+      ctx.beginPath();
+      ctx.moveTo(g, 0);
+      ctx.lineTo(g, 512);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(0, g);
+      ctx.lineTo(512, g);
+      ctx.stroke();
+    }
+    return finalizeColorTexture(canvas, maxAnisotropy, 1, 1);
+  })();
+
+  const gammaIndustrialSteel = (() => {
+    const [canvas, ctx] = makeCanvas(512, 512);
+    const g = ctx.createLinearGradient(0, 0, 512, 512);
+    g.addColorStop(0, '#334155');
+    g.addColorStop(0.5, '#475569');
+    g.addColorStop(1, '#1e293b');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, 512, 512);
+    ctx.strokeStyle = 'rgba(15, 23, 42, 0.65)';
+    ctx.lineWidth = 4;
+    for (let y = 0; y < 512; y += 64) {
+      ctx.strokeRect(4, y + 4, 504, 56);
+      for (let x = 24; x < 512; x += 64) {
+        ctx.fillStyle = '#94a3b8';
+        ctx.beginPath();
+        ctx.arc(x, y + 14, 3, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+    return finalizeColorTexture(canvas, maxAnisotropy, 1, 1);
+  })();
+
+  const gammaBrickFactory = (() => {
+    const [canvas, ctx] = makeCanvas(512, 512);
+    ctx.fillStyle = '#57362b';
+    ctx.fillRect(0, 0, 512, 512);
+    for (let row = 0; row < 16; row++) {
+      const y = row * 32;
+      const off = (row % 2) * 32;
+      for (let col = -1; col < 9; col++) {
+        const x = col * 64 + off;
+        const shade = ((row * 17 + col * 31) % 3) * 12;
+        ctx.fillStyle = `rgb(${112 + shade}, ${54 + Math.floor(shade * 0.5)}, ${40 + Math.floor(shade * 0.35)})`;
+        ctx.fillRect(x + 2, y + 2, 60, 28);
+      }
+    }
+    // Industrial warehouse lit grime windows
+    for (let wy = 72; wy < 430; wy += 160) {
+      for (let wx = 40; wx < 470; wx += 116) {
+        ctx.fillStyle = '#1e293b';
+        ctx.fillRect(wx - 4, wy - 4, 72, 80);
+        ctx.fillStyle = (wx + wy) % 3 === 0 ? '#a3e635' : '#fde047';
+        ctx.fillRect(wx, wy, 64, 72);
+        ctx.fillStyle = '#334155';
+        ctx.fillRect(wx + 30, wy, 4, 72);
+        ctx.fillRect(wx, wy + 34, 64, 4);
+      }
+    }
+    return finalizeColorTexture(canvas, maxAnisotropy, 1, 1);
+  })();
+
+  const gammaHazardStripe = (() => {
+    const [canvas, ctx] = makeCanvas(256, 256);
+    ctx.fillStyle = '#facc15';
+    ctx.fillRect(0, 0, 256, 256);
+    ctx.fillStyle = '#111827';
+    for (let i = -256; i < 512; i += 48) {
+      ctx.beginPath();
+      ctx.moveTo(i, 0);
+      ctx.lineTo(i + 24, 0);
+      ctx.lineTo(i + 280, 256);
+      ctx.lineTo(i + 256, 256);
+      ctx.closePath();
+      ctx.fill();
+    }
+    return finalizeColorTexture(canvas, maxAnisotropy, 2, 1);
+  })();
+
+  const gammaGroundCrack = (() => {
+    const [canvas, ctx] = makeCanvas(512, 512);
+    ctx.clearRect(0, 0, 512, 512);
+    const crater = ctx.createRadialGradient(256, 256, 8, 256, 256, 210);
+    crater.addColorStop(0, 'rgba(15, 23, 42, 0.72)');
+    crater.addColorStop(0.32, 'rgba(20, 30, 38, 0.42)');
+    crater.addColorStop(0.7, 'rgba(132, 204, 22, 0.14)');
+    crater.addColorStop(1, 'rgba(0, 0, 0, 0)');
+    ctx.fillStyle = crater;
+    ctx.fillRect(0, 0, 512, 512);
+
+    ctx.lineCap = 'round';
+    for (let ray = 0; ray < 14; ray++) {
+      const ang = (ray / 14) * Math.PI * 2 + (ray % 3) * 0.12;
+      let cx = 256;
+      let cy = 256;
+      ctx.strokeStyle = 'rgba(10, 14, 20, 0.88)';
+      ctx.lineWidth = 6 - (ray % 3);
+      ctx.beginPath();
+      ctx.moveTo(cx, cy);
+      for (let seg = 1; seg <= 5; seg++) {
+        const r = seg * 44;
+        const jit = ((ray * 13 + seg * 7) % 11 - 5) * 3.5;
+        cx = 256 + Math.cos(ang) * r + Math.cos(ang + 1.57) * jit;
+        cy = 256 + Math.sin(ang) * r + Math.sin(ang + 1.57) * jit;
+        ctx.lineTo(cx, cy);
+      }
+      ctx.stroke();
+
+      // Subtle inner green gamma fissure glow near center
+      ctx.strokeStyle = 'rgba(163, 230, 53, 0.42)';
+      ctx.lineWidth = 2.2;
+      ctx.beginPath();
+      ctx.moveTo(256, 256);
+      ctx.lineTo(256 + Math.cos(ang) * 95, 256 + Math.sin(ang) * 95);
+      ctx.stroke();
+    }
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    tex.anisotropy = maxAnisotropy;
+    tex.needsUpdate = true;
+    return tex;
+  })();
+
+  // GAMMA CITY INDUSTRIAL STORM & EMERALD AURORA SKY
+  const skyGammaCity = makePanoramicSky((ctx, w, h) => {
+    const g = ctx.createLinearGradient(0, 0, 0, h);
+    g.addColorStop(0, '#07120e');
+    g.addColorStop(0.26, '#132a24');
+    g.addColorStop(0.48, '#284539');
+    g.addColorStop(0.65, '#647948');
+    g.addColorStop(0.75, '#a3e635');
+    g.addColorStop(0.83, '#1e293b');
+    g.addColorStop(1, '#090d14');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, w, h);
+
+    // Atmospheric Gamma Storm Glow on horizon
+    const glow = ctx.createRadialGradient(1024, 610, 30, 1024, 610, 420);
+    glow.addColorStop(0, 'rgba(217, 249, 157, 0.85)');
+    glow.addColorStop(0.35, 'rgba(132, 204, 22, 0.48)');
+    glow.addColorStop(0.72, 'rgba(234, 179, 8, 0.18)');
+    glow.addColorStop(1, 'rgba(16, 185, 129, 0)');
+    ctx.fillStyle = glow;
+    ctx.fillRect(0, 0, w, h);
+
+    for (let i = 0; i < 12; i++) {
+      paintCloudBank(
+        ctx,
+        (i * 175 + 45) % w,
+        250 + (i % 4) * 58,
+        1.0 + (i % 3) * 0.25,
+        'rgba(187, 247, 208, 0.24)'
+      );
+    }
+
+    // Distant factory smokestacks, cranes & city silhouette belt
+    ctx.fillStyle = '#0f172a';
+    for (let x = 0; x < w; x += 44) {
+      const bh = 58 + ((x * 29 + 17) % 130);
+      const bw = 34 + ((x * 7) % 14);
+      ctx.fillRect(x, 738 - bh, bw, bh + 120);
+      if ((x / 44) % 3 === 0) {
+        ctx.fillRect(x + 8, 738 - bh - 46, 8, 46);
+        ctx.fillStyle = 'rgba(163, 230, 53, 0.65)';
+        ctx.fillRect(x + 8, 738 - bh - 50, 8, 5);
+        ctx.fillStyle = '#0f172a';
+      }
+    }
+  });
+
   // PBR Roughness Data Maps (varying micro-specular response for stone, brushed metal, weathered wood, and polished ice)
   const makeRoughnessMap = (baseVal: number, variance: number, streaks: boolean): THREE.CanvasTexture => {
     const [rC, rCtx] = makeCanvas(256, 256);
@@ -2871,6 +3088,13 @@ export function createProceduralTextures(maxAnisotropy: number): ProceduralTextu
     nycAsphaltRoad,
     nycBillboardTex,
     skyNewYork,
+    gammaAsphalt,
+    gammaConcrete,
+    gammaIndustrialSteel,
+    gammaBrickFactory,
+    gammaHazardStripe,
+    gammaGroundCrack,
+    skyGammaCity,
   };
 }
 

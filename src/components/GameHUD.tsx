@@ -13,6 +13,9 @@ interface GameHUDProps {
   onTouchBow: () => void;
   onTouchWeb: () => void;
   onTouchReleaseWeb: () => void;
+  onTouchHulkPunch: () => void;
+  onTouchHulkSlam: () => void;
+  onTouchHulkGrab: () => void;
 }
 
 function formatTime(seconds: number): string {
@@ -33,6 +36,9 @@ export const GameHUD: React.FC<GameHUDProps> = ({
   onTouchBow,
   onTouchWeb,
   onTouchReleaseWeb,
+  onTouchHulkPunch,
+  onTouchHulkSlam,
+  onTouchHulkGrab,
 }) => {
   const [isTouchDevice, setIsTouchDevice] = useState(false);
 
@@ -50,17 +56,21 @@ export const GameHUD: React.FC<GameHUDProps> = ({
         ? 'Cruceta / WASD Planear · OK / A / Espacio Corriente térmica · Volver Pausa'
         : hud.perspectiveMode === 'BARCO'
           ? 'Cruceta / WASD Timón · OK / A / Espacio Saltar ola · Volver Pausa'
-          : hud.hasSpiderSuit
-            ? hud.isSwinging
-              ? 'WASD Balancearse · Espacio / Clic Der Soltar telaraña · Clic Izq / G Reenganchar'
+          : hud.hasHulkSuit
+            ? hud.hulkCarrying
+              ? `Cargando ${hud.hulkCarrying} · Pulsa E / Clic Izq / B para Lanzar · WASD Mover · Espacio Súper Salto`
+              : 'WASD Mover · Clic Izq / F / X Puñetazo · Mantén Espacio Súper Salto · Clic Der / G / Y Golpe Suelo · E Agarrar'
+            : hud.hasSpiderSuit
+              ? hud.isSwinging
+                ? 'WASD Balancearse · Espacio / Clic Der Soltar telaraña · Clic Izq / G Reenganchar'
+                : hud.isClimbing
+                  ? 'WASD / Cruceta Escalar rascacielos · Espacio Saltar de la fachada'
+                  : 'WASD Mover · Clic Izq / G / RT Telaraña (Balanceo / Enredar) · Empuja edificios para escalar'
               : hud.isClimbing
-                ? 'WASD / Cruceta Escalar rascacielos · Espacio Saltar de la fachada'
-                : 'WASD Mover · Clic Izq / G / RT Telaraña (Balanceo / Enredar) · Empuja edificios para escalar'
-            : hud.isClimbing
-              ? 'Cruceta / Stick Trepar y Lateral · OK / A / Espacio Saltar del muro'
-              : hud.hasBow
-                ? 'Cruceta / Mando Mover · OK / A Saltar (×2 Doble salto) · 2×OK / X / B Girar y Arco · Volver Pausa'
-                : 'Cruceta / Mando Mover · OK / A Saltar (×2 Doble salto) y Planear · 2×OK / X Girar · Volver Pausa';
+                ? 'Cruceta / Stick Trepar y Lateral · OK / A / Espacio Saltar del muro'
+                : hud.hasBow
+                  ? 'Cruceta / Mando Mover · OK / A Saltar (×2 Doble salto) · 2×OK / X / B Girar y Arco · Volver Pausa'
+                  : 'Cruceta / Mando Mover · OK / A Saltar (×2 Doble salto) y Planear · 2×OK / X Girar · Volver Pausa';
 
   return (
     <div className="pointer-events-none fixed inset-0 z-10 flex flex-col justify-between p-4 pt-[max(1rem,env(safe-area-inset-top))] pb-[max(1rem,env(safe-area-inset-bottom))] pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] sm:p-6">
@@ -122,6 +132,24 @@ export const GameHUD: React.FC<GameHUDProps> = ({
               </>
             )}
 
+            {hud.hasHulkSuit && (
+              <>
+                <span className="text-white/30" aria-hidden="true">·</span>
+                <span className="text-xs font-semibold text-lime-300">
+                  {hud.hulkTransforming ? 'Transformando...' : 'Hulk'}
+                </span>
+              </>
+            )}
+
+            {hud.hasHulkSuit && hud.hulkCarrying && (
+              <>
+                <span className="text-white/30" aria-hidden="true">·</span>
+                <span className="text-xs font-semibold text-amber-300">
+                  Cargando: {hud.hulkCarrying}
+                </span>
+              </>
+            )}
+
             <span className="text-white/30" aria-hidden="true">·</span>
 
             <span className="font-mono-num text-xs text-slate-300">
@@ -129,9 +157,17 @@ export const GameHUD: React.FC<GameHUDProps> = ({
             </span>
           </div>
 
-          {/* Hover Laser / Bot Rocket Fuel Bar */}
+          {/* Hover Laser / Bot Rocket / Hulk Leap Charge Bar */}
           <div className="flex items-center gap-2">
-            <span className={`text-[11px] font-medium ${hud.botRocketActive ? 'text-amber-300' : 'text-sky-300'}`}>
+            <span
+              className={`text-[11px] font-medium ${
+                hud.botRocketActive
+                  ? 'text-amber-300'
+                  : hud.hasHulkSuit
+                    ? 'text-lime-300'
+                    : 'text-sky-300'
+              }`}
+            >
               {hud.botRocketActive
                 ? 'Cohete Bot'
                 : hud.perspectiveMode === 'COHETE'
@@ -140,14 +176,25 @@ export const GameHUD: React.FC<GameHUDProps> = ({
                     ? 'Térmica'
                     : hud.perspectiveMode === 'BARCO'
                       ? 'Olas'
-                      : 'Láser'}
+                      : hud.hasHulkSuit
+                        ? 'Salto Gamma'
+                        : 'Láser'}
             </span>
             <div className="h-1.5 w-32 overflow-hidden rounded-full bg-slate-800">
               <div
                 className={`h-full origin-left transition-transform duration-75 ${
-                  hud.botRocketActive ? 'bg-gradient-to-r from-amber-400 to-orange-500' : 'bg-sky-400'
+                  hud.botRocketActive
+                    ? 'bg-gradient-to-r from-amber-400 to-orange-500'
+                    : hud.hasHulkSuit
+                      ? 'bg-gradient-to-r from-lime-400 to-emerald-400'
+                      : 'bg-sky-400'
                 }`}
-                style={{ transform: `scaleX(${Math.max(0, Math.min(1, hud.hoverFuel))})` }}
+                style={{
+                  transform: `scaleX(${Math.max(
+                    0,
+                    Math.min(1, hud.hasHulkSuit && !hud.botRocketActive ? hud.hulkLeapCharge : hud.hoverFuel)
+                  )})`,
+                }}
               />
             </div>
           </div>
@@ -358,52 +405,86 @@ export const GameHUD: React.FC<GameHUDProps> = ({
           </div>
 
           <div className="pointer-events-auto flex items-center gap-2.5">
-            {hud.hasSpiderSuit && hud.isSwinging && (
-              <button
-                type="button"
-                onPointerDown={onTouchReleaseWeb}
-                className="flex h-14 w-14 items-center justify-center rounded-full border border-amber-400/60 bg-amber-950/90 font-display text-xs font-bold text-amber-200 active:bg-amber-600"
-              >
-                Soltar
-              </button>
+            {hud.hasHulkSuit ? (
+              <>
+                <button
+                  type="button"
+                  onPointerDown={onTouchHulkGrab}
+                  className="flex h-14 w-14 items-center justify-center rounded-full border border-amber-400/60 bg-amber-950/90 font-display text-[11px] font-bold text-amber-200 active:bg-amber-600"
+                >
+                  {hud.hulkCarrying ? 'Lanzar' : 'Agarrar'}
+                </button>
+                <button
+                  type="button"
+                  onPointerDown={onTouchHulkSlam}
+                  className="flex h-14 w-14 items-center justify-center rounded-full border border-purple-400/60 bg-purple-950/90 font-display text-[10px] font-bold leading-tight text-purple-200 active:bg-purple-600"
+                >
+                  Golpe Suelo
+                </button>
+                <button
+                  type="button"
+                  onPointerDown={onTouchHulkPunch}
+                  className="flex h-14 w-14 items-center justify-center rounded-full border border-lime-400/60 bg-lime-950/90 font-display text-[11px] font-bold text-lime-200 active:bg-lime-600"
+                >
+                  Puñetazo
+                </button>
+              </>
+            ) : (
+              <>
+                {hud.hasSpiderSuit && hud.isSwinging && (
+                  <button
+                    type="button"
+                    onPointerDown={onTouchReleaseWeb}
+                    className="flex h-14 w-14 items-center justify-center rounded-full border border-amber-400/60 bg-amber-950/90 font-display text-xs font-bold text-amber-200 active:bg-amber-600"
+                  >
+                    Soltar
+                  </button>
+                )}
+                {hud.hasSpiderSuit && (
+                  <button
+                    type="button"
+                    onPointerDown={onTouchWeb}
+                    className="flex h-14 w-14 items-center justify-center rounded-full border border-rose-400/60 bg-rose-950/90 font-display text-[11px] font-bold text-rose-200 active:bg-rose-600"
+                  >
+                    Telaraña
+                  </button>
+                )}
+                {hud.hasBow && (
+                  <button
+                    type="button"
+                    onPointerDown={onTouchBow}
+                    className="flex h-14 w-14 items-center justify-center rounded-full border border-amber-400/60 bg-amber-950/90 font-display text-xs font-bold text-amber-200 active:bg-amber-600"
+                  >
+                    Arco
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onPointerDown={onTouchSpin}
+                  className="flex h-14 w-14 items-center justify-center rounded-full border border-sky-400/50 bg-sky-950/90 font-display text-xs font-bold text-sky-200 active:bg-sky-600"
+                >
+                  Girar
+                </button>
+              </>
             )}
-            {hud.hasSpiderSuit && (
-              <button
-                type="button"
-                onPointerDown={onTouchWeb}
-                className="flex h-14 w-14 items-center justify-center rounded-full border border-rose-400/60 bg-rose-950/90 font-display text-[11px] font-bold text-rose-200 active:bg-rose-600"
-              >
-                Telaraña
-              </button>
-            )}
-            {hud.hasBow && (
-              <button
-                type="button"
-                onPointerDown={onTouchBow}
-                className="flex h-14 w-14 items-center justify-center rounded-full border border-amber-400/60 bg-amber-950/90 font-display text-xs font-bold text-amber-200 active:bg-amber-600"
-              >
-                Arco
-              </button>
-            )}
-            <button
-              type="button"
-              onPointerDown={onTouchSpin}
-              className="flex h-14 w-14 items-center justify-center rounded-full border border-sky-400/50 bg-sky-950/90 font-display text-xs font-bold text-sky-200 active:bg-sky-600"
-            >
-              Girar
-            </button>
             <button
               type="button"
               onPointerDown={() => onTouchJump(true, true)}
               onPointerUp={() => onTouchJump(false, false)}
               onPointerCancel={() => onTouchJump(false, false)}
-              className="flex h-16 w-16 items-center justify-center rounded-full border border-sky-300/60 bg-sky-600/95 font-display text-xs font-bold text-white shadow-lg active:bg-sky-400"
+              className={`flex h-16 w-16 items-center justify-center rounded-full border font-display text-xs font-bold text-white shadow-lg ${
+                hud.hasHulkSuit
+                  ? 'border-lime-300/60 bg-lime-600/95 active:bg-lime-500'
+                  : 'border-sky-300/60 bg-sky-600/95 active:bg-sky-400'
+              }`}
             >
               {hud.perspectiveMode === 'COHETE'
                 ? 'Turbo'
                 : hud.perspectiveMode === 'ALA DELTA'
                   ? 'Térmica'
-                  : 'Saltar'}
+                  : hud.hasHulkSuit
+                    ? 'Salto'
+                    : 'Saltar'}
             </button>
           </div>
         </div>

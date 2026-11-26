@@ -21,7 +21,10 @@ import {
   createArcDeTriompheMesh,
   createEnemyMesh,
   createGoalPortalMesh,
+  createGroundCrackDecalMesh,
   createHangGliderRig,
+  createHulkDestructibleMesh,
+  createHulkThrowableMesh,
   createJumpPadMesh,
   createMineMesh,
   createMiniBotMesh,
@@ -32,6 +35,7 @@ import {
   createRiverBoatRig,
   createRocketPadMesh,
   createRocketVehicle,
+  createShockwaveRingMesh,
   createWebAnchorBeaconMesh,
   createWebCocoonMesh,
   CrocodileRig,
@@ -75,6 +79,7 @@ import {
   CameraDiscoveryZoneDef,
   CameraZone2DDef,
   ClimbWallDef,
+  DestructibleKind,
   EnemyKind,
   GamePhase,
   getRiverCenterX,
@@ -86,6 +91,7 @@ import {
   HudSnapshot,
   LevelDef,
   PlatformDef,
+  ThrowableKind,
 } from './types';
 
 // Pre-allocated math helpers for zero-GC per-frame updates
@@ -308,6 +314,80 @@ interface EnemyProjectileRuntime {
   life: number;
 }
 
+interface DestructibleRuntime {
+  id: string;
+  kind: DestructibleKind;
+  pos: THREE.Vector3;
+  halfSize: THREE.Vector3;
+  hp: number;
+  maxHp: number;
+  coins: number;
+  message?: string;
+  broken: boolean;
+  hitShakeTimer: number;
+  group: THREE.Group;
+  intactGroup: THREE.Group;
+  rubbleGroup: THREE.Group;
+  crackOverlay: THREE.Mesh;
+}
+
+interface ThrowableRuntime {
+  id: string;
+  kind: ThrowableKind;
+  label: string;
+  mesh: THREE.Group;
+  homePos: THREE.Vector3;
+  homeRotY: number;
+  pos: THREE.Vector3;
+  vel: THREE.Vector3;
+  state: 'idle' | 'carried' | 'thrown' | 'respawning';
+  spinAxis: THREE.Vector3;
+  respawnTimer: number;
+}
+
+interface DestructionChallengeRuntime {
+  id: string;
+  label: string;
+  startPos: THREE.Vector3;
+  targetIds: string[];
+  timeLimit: number;
+  rewardCoins: number;
+  startPad: THREE.Group;
+  completed: boolean;
+  active: boolean;
+  timer: number;
+  lastTickSec: number;
+}
+
+interface DebrisChunk {
+  active: boolean;
+  pos: THREE.Vector3;
+  vel: THREE.Vector3;
+  rot: THREE.Euler;
+  rotVel: THREE.Vector3;
+  scale: number;
+  life: number;
+  maxLife: number;
+  color: THREE.Color;
+}
+
+interface ShockwaveEffect {
+  mesh: THREE.Mesh;
+  mat: THREE.MeshBasicMaterial;
+  active: boolean;
+  life: number;
+  maxLife: number;
+  maxRadius: number;
+}
+
+interface CrackDecalEffect {
+  mesh: THREE.Mesh;
+  mat: THREE.MeshBasicMaterial;
+  active: boolean;
+  life: number;
+  maxLife: number;
+}
+
 export class GameEngine {
   private container: HTMLElement;
   private onHudUpdate: (hud: HudSnapshot) => void;
@@ -526,6 +606,49 @@ export class GameEngine {
     lastTickSec: number;
   }[] = [];
 
+  // Level 10 Hulk Transformation, Destructibles, Throwables, Pooled Effects & Gamma City Scenery
+  private hasHulkSuit = false;
+  private hulkTransformTimer = 0;
+  private hulkTransformDone = false;
+  private hulkLeapCharging = false;
+  private hulkLeapCharge = 0;
+  private hulkSuperLeaping = false;
+  private hulkPunchTimer = 0;
+  private hulkPunchCooldown = 0;
+  private hulkPunchCombo = 0;
+  private hulkSlamState: 'none' | 'windup' | 'falling' | 'impact' = 'none';
+  private hulkSlamTimer = 0;
+  private hulkThrowTimer = 0;
+  private hulkStaggerTimer = 0;
+  private destructibles: DestructibleRuntime[] = [];
+  private throwables: ThrowableRuntime[] = [];
+  private carriedThrowable: ThrowableRuntime | null = null;
+  private destructionChallengesRuntime: DestructionChallengeRuntime[] = [];
+  private readonly MAX_DEBRIS = 48;
+  private debrisPoolMesh: THREE.InstancedMesh | null = null;
+  private debrisChunks: DebrisChunk[] = [];
+  private shockwavePool: ShockwaveEffect[] = [];
+  private crackDecalPool: CrackDecalEffect[] = [];
+  private gammaReactorCores: THREE.Mesh[] = [];
+  private gammaSteamPuffs: {
+    mesh: THREE.Mesh;
+    baseX: number;
+    baseY: number;
+    baseZ: number;
+    riseH: number;
+    speed: number;
+    phase: number;
+    baseScale: number;
+  }[] = [];
+  private gammaVehicles: {
+    group: THREE.Group;
+    axis: 'x' | 'z';
+    dir: number;
+    speed: number;
+    minC: number;
+    maxC: number;
+  }[] = [];
+
   // Player state
   private playerPos = new THREE.Vector3(0, 1.5, 0);
   private playerVel = new THREE.Vector3(0, 0, 0);
@@ -594,6 +717,7 @@ export class GameEngine {
     jump: false,
     spin: false,
     bow: false,
+    slam: false,
     pause: false,
   };
 
@@ -878,6 +1002,23 @@ export class GameEngine {
               soundEngine.playSplash();
               this.spawnBurst(this.boatPos.x, this.boatPos.y + 0.15, this.boatPos.z, 0xe0f2fe, 14, 4.8);
             }
+          } else if (this.hasHulkSuit) {
+            if (this.hulkTransformTimer <= 0) {
+              if ((this.grounded || this.coyoteTimer > 0) && this.hulkSlamState === 'none') {
+                this.hulkLeapCharging = true;
+                this.hulkLeapCharge = 0;
+              } else if (
+                !this.grounded &&
+                this.coyoteTimer <= 0 &&
+                this.botRocketCharges > 0 &&
+                this.botRocketTimer <= 0 &&
+                this.playerVel.y < -2.2
+              ) {
+                this.activateBotRocketRescue();
+              } else {
+                this.jumpBufferTimer = 0.14;
+              }
+            }
           } else {
             const now = performance.now();
             const isDoubleTapOk = isTvSelect && now - this.lastTvSelectTime < 340;
@@ -908,11 +1049,16 @@ export class GameEngine {
           }
         }
         if (isTvSpinKey) {
-          this.triggerSpin();
+          if (this.hasHulkSuit) this.triggerHulkPunch();
+          else this.triggerSpin();
         }
         if (isTvBowKey) {
-          if (this.hasSpiderSuit) this.triggerSpiderWebAction();
+          if (this.hasHulkSuit) this.triggerHulkSlam();
+          else if (this.hasSpiderSuit) this.triggerSpiderWebAction();
           else this.shootArrow();
+        }
+        if (this.hasHulkSuit && code === 'KeyE') {
+          this.triggerHulkGrabOrThrow();
         }
       }
       if (isTvBack) {
@@ -927,7 +1073,7 @@ export class GameEngine {
     this.keysHeld.add(code);
     if (isTvSelect) this.keysHeld.add('__TV_JUMP__');
     if (isCamLeft) this.keysHeld.add('__CAM_L__');
-    if (isCamRight) this.keysHeld.add('__CAM_R__');
+    if (isCamRight && !(this.hasHulkSuit && code === 'KeyE')) this.keysHeld.add('__CAM_R__');
   };
 
   private handleKeyUp = (e: KeyboardEvent) => {
@@ -936,6 +1082,9 @@ export class GameEngine {
     this.keysHeld.delete(code);
     if (code === 'TvSelect') {
       this.keysHeld.delete('__TV_JUMP__');
+    }
+    if (this.hasHulkSuit && (code === 'Space' || code === 'TvSelect') && this.hulkLeapCharging) {
+      this.executeHulkLeap();
     }
     if (code === 'KeyQ' || code === 'Digit3' || e.key === 'ChannelDown' || kc === 167 || kc === 185) {
       this.keysHeld.delete('__CAM_L__');
@@ -955,7 +1104,9 @@ export class GameEngine {
       this.lastPointerX = e.clientX;
       this.lastPointerY = e.clientY;
     } else if (e.button === 2) {
-      if (this.hasSpiderSuit && this.webActive) {
+      if (this.hasHulkSuit) {
+        this.triggerHulkSlam();
+      } else if (this.hasSpiderSuit && this.webActive) {
         this.releaseWeb(false);
       } else {
         this.triggerSpin();
@@ -977,7 +1128,9 @@ export class GameEngine {
     if (this.draggingCam && this.phase === 'playing' && e.button === 0) {
       const moved = Math.hypot(e.clientX - this.pointerDownX, e.clientY - this.pointerDownY);
       if (moved < 6 && this.rocketState !== 'flying') {
-        if (this.hasSpiderSuit) {
+        if (this.hasHulkSuit) {
+          this.triggerHulkPunch();
+        } else if (this.hasSpiderSuit) {
           this.triggerSpiderWebAction();
         } else if (this.hasBow) {
           this.shootArrow();
@@ -1001,6 +1154,8 @@ export class GameEngine {
     if (phase !== 'playing') {
       soundEngine.stopHover();
       this.keysHeld.clear();
+      this.hulkLeapCharging = false;
+      this.hulkLeapCharge = 0;
     }
     const isBossActive = Boolean(this.bossRuntime?.alive && this.bossRuntime.active);
     soundEngine.setMusicContext(
@@ -1027,6 +1182,10 @@ export class GameEngine {
 
   public setTouchJump(held: boolean, justPressed: boolean) {
     this.touchJumpHeld = held;
+    if (this.hasHulkSuit && !held && this.hulkLeapCharging) {
+      this.executeHulkLeap();
+      return;
+    }
     if (justPressed) {
       if (this.rocketState === 'flying') {
         this.rocketBoostTimer = 0.55;
@@ -1044,6 +1203,23 @@ export class GameEngine {
           this.boatJumpCooldown = 0.72;
           soundEngine.playSplash();
           this.spawnBurst(this.boatPos.x, 0.2, this.boatPos.z, 0xe0f2fe, 14, 4.8);
+        }
+      } else if (this.hasHulkSuit) {
+        if (this.hulkTransformTimer <= 0) {
+          if ((this.grounded || this.coyoteTimer > 0) && this.hulkSlamState === 'none') {
+            this.hulkLeapCharging = true;
+            this.hulkLeapCharge = 0;
+          } else if (
+            !this.grounded &&
+            this.coyoteTimer <= 0 &&
+            this.botRocketCharges > 0 &&
+            this.botRocketTimer <= 0 &&
+            this.playerVel.y < -2.2
+          ) {
+            this.activateBotRocketRescue();
+          } else {
+            this.jumpBufferTimer = 0.14;
+          }
         }
       } else {
         if (
@@ -1094,6 +1270,192 @@ export class GameEngine {
       this.spinCooldown = 0.45;
       soundEngine.playSpin();
       this.spawnBurst(this.playerPos.x, this.playerPos.y + 0.65, this.playerPos.z, 0x38bdf8, 14, 4.5);
+    }
+  }
+
+  public executeHulkLeap() {
+    if (!this.hulkLeapCharging) return;
+    this.hulkLeapCharging = false;
+    const charge = this.hulkLeapCharge;
+    this.hulkLeapCharge = 0;
+    if (this.phase !== 'playing' || !this.hasHulkSuit || this.hulkTransformTimer > 0) {
+      this.pushHud(true);
+      return;
+    }
+    this.grounded = false;
+    this.standingPlatform = null;
+    this.coyoteTimer = 0;
+    this.jumpBufferTimer = 0;
+
+    if (charge < 0.16) {
+      this.playerVel.y = 13.6;
+      this.playerSquash.set(0.82, 1.24, 0.82);
+      soundEngine.playJump();
+      this.spawnBurst(this.playerPos.x, this.playerPos.y + 0.2, this.playerPos.z, 0xa3e635, 8, 3.2);
+    } else {
+      const fwdX = Math.sin(this.playerYaw);
+      const fwdZ = Math.cos(this.playerYaw);
+      this.playerVel.y = 15.0 + charge * 9.6;
+      const boost = 6.2 + charge * 7.8;
+      this.playerVel.x = THREE.MathUtils.clamp(this.playerVel.x + fwdX * boost, -18, 18);
+      this.playerVel.z = THREE.MathUtils.clamp(this.playerVel.z + fwdZ * boost, -18, 18);
+      this.hulkSuperLeaping = true;
+      this.playerSquash.set(0.75, 1.35, 0.75);
+      this.shakeIntensity = Math.max(this.shakeIntensity, 0.22 + charge * 0.22);
+      soundEngine.playHulkLeap();
+      this.spawnShockwave(this.playerPos.x, this.playerPos.y + 0.08, this.playerPos.z, 3.6 + charge * 2.4, 0x84cc16);
+      this.spawnCrackDecal(this.playerPos.x, this.playerPos.y + 0.05, this.playerPos.z, 0.9 + charge * 0.5);
+      this.spawnDebrisBurst(this.playerPos.x, this.playerPos.y + 0.3, this.playerPos.z, 8, 5.5, 0x64748b);
+      this.spawnBurst(this.playerPos.x, this.playerPos.y + 0.4, this.playerPos.z, 0xa3e635, 18, 6.2);
+    }
+    this.pushHud(true);
+  }
+
+  public triggerHulkPunch() {
+    if (
+      this.phase !== 'playing' ||
+      !this.hasHulkSuit ||
+      this.hulkTransformTimer > 0 ||
+      this.hulkPunchCooldown > 0 ||
+      this.hulkSlamState !== 'none'
+    ) {
+      return;
+    }
+    if (this.carriedThrowable) {
+      this.triggerHulkGrabOrThrow();
+      return;
+    }
+    const isSmash = this.hulkPunchCombo === 2;
+    this.hulkPunchCombo = (this.hulkPunchCombo + 1) % 3;
+    this.hulkPunchTimer = isSmash ? 0.36 : 0.28;
+    this.hulkPunchCooldown = isSmash ? 0.42 : 0.3;
+
+    const fwdX = Math.sin(this.playerYaw);
+    const fwdZ = Math.cos(this.playerYaw);
+    this.playerVel.x += fwdX * (isSmash ? 6.5 : 4.2);
+    this.playerVel.z += fwdZ * (isSmash ? 6.5 : 4.2);
+    this.playerSquash.set(1.16, 0.88, 1.16);
+    soundEngine.playHulkPunch(isSmash);
+
+    const strikeX = this.playerPos.x + fwdX * 1.95;
+    const strikeY = this.playerPos.y + 1.25;
+    const strikeZ = this.playerPos.z + fwdZ * 1.95;
+    const radius = isSmash ? 3.8 : 2.95;
+    const dmg = isSmash ? 2 : 1;
+
+    this.shakeIntensity = Math.max(this.shakeIntensity, isSmash ? 0.36 : 0.2);
+    this.spawnBurst(strikeX, strikeY, strikeZ, isSmash ? 0xa3e635 : 0xd9f99d, isSmash ? 18 : 11, 5.8);
+    this.spawnShockwave(strikeX, this.playerPos.y + 0.12, strikeZ, isSmash ? 4.4 : 2.8, 0xa3e635);
+    this.applyHulkAoEHit(strikeX, strikeY, strikeZ, radius, dmg, isSmash ? 14 : 10, true);
+  }
+
+  public triggerHulkSlam() {
+    if (
+      this.phase !== 'playing' ||
+      !this.hasHulkSuit ||
+      this.hulkTransformTimer > 0 ||
+      this.hulkSlamState !== 'none'
+    ) {
+      return;
+    }
+    if (this.carriedThrowable) {
+      this.triggerHulkGrabOrThrow();
+      return;
+    }
+    this.hulkLeapCharging = false;
+    this.hulkLeapCharge = 0;
+    if (this.grounded) {
+      this.hulkSlamState = 'windup';
+      this.hulkSlamTimer = 0.2;
+      this.playerVel.x *= 0.2;
+      this.playerVel.z *= 0.2;
+    } else {
+      this.hulkSlamState = 'falling';
+      this.playerVel.y = -28.0;
+      this.playerVel.x *= 0.45;
+      this.playerVel.z *= 0.45;
+      soundEngine.playHulkLeap();
+    }
+  }
+
+  public triggerHulkGrabOrThrow() {
+    if (this.phase !== 'playing' || !this.hasHulkSuit || this.hulkTransformTimer > 0) {
+      return;
+    }
+    if (this.carriedThrowable) {
+      const th = this.carriedThrowable;
+      this.carriedThrowable = null;
+      th.state = 'thrown';
+      this.hulkThrowTimer = 0.28;
+
+      const origin = new THREE.Vector3(this.playerPos.x, this.playerPos.y + 2.35, this.playerPos.z);
+      const dir = new THREE.Vector3(Math.sin(this.playerYaw), 0.14, Math.cos(this.playerYaw)).normalize();
+      let bestScore = -Infinity;
+      let bestTarget: THREE.Vector3 | null = null;
+      const consider = (tx: number, ty: number, tz: number, weight = 1) => {
+        _vec3C.set(tx - origin.x, ty - origin.y, tz - origin.z);
+        const dist = _vec3C.length();
+        if (dist < 1.2 || dist > 36) return;
+        _vec3C.divideScalar(dist);
+        const dot = _vec3C.x * dir.x + _vec3C.z * dir.z;
+        if (dot > 0.42) {
+          const score = dot * 12 * weight - dist * 0.16;
+          if (score > bestScore) {
+            bestScore = score;
+            bestTarget = new THREE.Vector3(tx, ty, tz);
+          }
+        }
+      };
+
+      if (this.bossRuntime && this.bossRuntime.alive && this.bossRuntime.active) {
+        consider(this.bossRuntime.pos.x, this.bossRuntime.pos.y + 2.2, this.bossRuntime.pos.z, 1.35);
+      }
+      for (const en of this.enemies) {
+        if (en.alive) consider(en.pos.x, en.pos.y + 1.0, en.pos.z, 1.15);
+      }
+      for (const d of this.destructibles) {
+        if (!d.broken) consider(d.pos.x, d.pos.y + d.halfSize.y, d.pos.z, 1.0);
+      }
+
+      if (bestTarget) {
+        const tgt = bestTarget as THREE.Vector3;
+        const dist = origin.distanceTo(tgt);
+        dir.copy(tgt).sub(origin);
+        dir.y += dist * 0.11;
+        dir.normalize();
+        this.playerYaw = Math.atan2(dir.x, dir.z);
+      }
+
+      th.pos.copy(origin);
+      th.vel.copy(dir).multiplyScalar(28.5);
+      th.vel.y = Math.max(th.vel.y, 4.2);
+      soundEngine.playObjectThrow();
+      this.spawnBurst(origin.x, origin.y, origin.z, 0xa3e635, 10, 4.2);
+      this.pushHud(true);
+      return;
+    }
+
+    let nearest: ThrowableRuntime | null = null;
+    let bestDistSq = 4.9 * 4.9;
+    for (const th of this.throwables) {
+      if (th.state !== 'idle') continue;
+      const dx = th.pos.x - this.playerPos.x;
+      const dy = th.pos.y - this.playerPos.y;
+      const dz = th.pos.z - this.playerPos.z;
+      if (Math.abs(dy) > 3.2) continue;
+      const dSq = dx * dx + dz * dz;
+      if (dSq < bestDistSq) {
+        bestDistSq = dSq;
+        nearest = th;
+      }
+    }
+
+    if (nearest) {
+      nearest.state = 'carried';
+      this.carriedThrowable = nearest;
+      soundEngine.playObjectGrab();
+      this.spawnBurst(nearest.pos.x, nearest.pos.y + 0.7, nearest.pos.z, 0x84cc16, 12, 3.8);
+      this.pushHud(true);
     }
   }
 
@@ -1291,6 +1653,34 @@ export class GameEngine {
     this.nycPedestrianMesh = null;
     this.nycPedestrianStates = [];
     this.timedChallengesRuntime = [];
+    this.hasHulkSuit = false;
+    this.hulkTransformTimer = 0;
+    this.hulkTransformDone = false;
+    this.hulkLeapCharging = false;
+    this.hulkLeapCharge = 0;
+    this.hulkSuperLeaping = false;
+    this.hulkPunchTimer = 0;
+    this.hulkPunchCooldown = 0;
+    this.hulkPunchCombo = 0;
+    this.hulkSlamState = 'none';
+    this.hulkSlamTimer = 0;
+    this.hulkThrowTimer = 0;
+    this.hulkStaggerTimer = 0;
+    this.destructibles = [];
+    this.throwables = [];
+    this.carriedThrowable = null;
+    this.destructionChallengesRuntime = [];
+    this.debrisPoolMesh = null;
+    this.debrisChunks = [];
+    this.shockwavePool = [];
+    this.crackDecalPool = [];
+    this.gammaReactorCores = [];
+    this.gammaSteamPuffs = [];
+    this.gammaVehicles = [];
+    this.playerRig.root.scale.setScalar(1.0);
+    for (const part of this.playerRig.hulkParts) {
+      part.visible = false;
+    }
     this.activeDiscoveryZone = null;
     this.triggeredDiscoveryBanners.clear();
   }
@@ -7238,6 +7628,220 @@ export class GameEngine {
           phase: idx * 2.1,
         });
       });
+    } else if (biome === 'gammacity') {
+      const roadY = level.theme.hazardFloorY + 0.06;
+
+      // 1. Gamma City Boulevard Asphalt Grid & Industrial Sidewalks
+      const avenueMat = new THREE.MeshStandardMaterial({
+        map: this.textures.gammaAsphalt,
+        roughness: 0.84,
+        metalness: 0.08,
+      });
+      const sidewalkMat = new THREE.MeshStandardMaterial({
+        map: this.textures.gammaConcrete,
+        color: 0x64748b,
+        roughness: 0.9,
+        metalness: 0.06,
+      });
+      const aveXs = [-34, 0, 34];
+      const aveGeo = new THREE.BoxGeometry(13.0, 0.16, 440);
+      const swGeo = new THREE.BoxGeometry(3.4, 0.3, 440);
+      for (const ax of aveXs) {
+        const road = new THREE.Mesh(aveGeo, avenueMat);
+        road.position.set(ax, roadY, -175);
+        this.levelGroup.add(road);
+
+        const swL = new THREE.Mesh(swGeo, sidewalkMat);
+        swL.position.set(ax - 8.2, roadY + 0.08, -175);
+        const swR = new THREE.Mesh(swGeo, sidewalkMat);
+        swR.position.set(ax + 8.2, roadY + 0.08, -175);
+        this.levelGroup.add(swL, swR);
+      }
+
+      const crossZs = [-25, -85, -145, -205, -265, -325];
+      const crossGeo = new THREE.BoxGeometry(176, 0.16, 11.0);
+      for (const cz of crossZs) {
+        const cross = new THREE.Mesh(crossGeo, avenueMat);
+        cross.position.set(0, roadY + 0.01, cz);
+        this.levelGroup.add(cross);
+      }
+
+      // 2. Flanking Brick Factories, Concrete Warehouses & Steel Gamma Towers
+      const brickMat = new THREE.MeshStandardMaterial({
+        map: this.textures.gammaBrickFactory,
+        roughness: 0.86,
+        metalness: 0.06,
+      });
+      const concreteMat = new THREE.MeshStandardMaterial({
+        map: this.textures.gammaConcrete,
+        roughness: 0.88,
+        metalness: 0.08,
+      });
+      const steelMat = new THREE.MeshStandardMaterial({
+        map: this.textures.gammaIndustrialSteel,
+        roughness: 0.42,
+        metalness: 0.68,
+      });
+      const hazardMat = new THREE.MeshStandardMaterial({
+        map: this.textures.gammaHazardStripe,
+        roughness: 0.45,
+        metalness: 0.25,
+      });
+      const gammaWindowMat = new THREE.MeshStandardMaterial({
+        color: 0xa3e635,
+        emissive: 0x65a30d,
+        emissiveIntensity: 1.45,
+        roughness: 0.2,
+      });
+
+      const buildingSpecs: [number, number, number, number, number, number][] = [];
+      for (let row = 0; row < 15; row++) {
+        const bz = 12 - row * 28;
+        const hL = 28 + ((row * 17) % 34);
+        const hR = 30 + ((row * 23 + 9) % 38);
+        buildingSpecs.push([-46 - (row % 2) * 4, bz, 16, hL, 18, row % 3]);
+        buildingSpecs.push([46 + ((row + 1) % 2) * 4, bz - 5, 16, hR, 18, (row + 1) % 3]);
+        if (!this.isSoftwareGl) {
+          buildingSpecs.push([-72, bz - 8, 20, 44 + ((row * 19) % 36), 20, (row + 2) % 3]);
+          buildingSpecs.push([72, bz - 3, 20, 46 + ((row * 21) % 34), 20, row % 3]);
+        }
+      }
+      for (let i = -4; i <= 4; i++) {
+        buildingSpecs.push([i * 22, -412 - Math.abs(i) * 5, 18, 56 + ((Math.abs(i) * 17) % 32), 18, Math.abs(i) % 3]);
+      }
+
+      for (const [bx, bz, bw, bh, bd, styleIdx] of buildingSpecs) {
+        const mat = styleIdx === 0 ? brickMat : styleIdx === 1 ? concreteMat : steelMat;
+        const bMesh = new THREE.Mesh(new THREE.BoxGeometry(bw, bh, bd), mat);
+        bMesh.position.set(bx, roadY + bh * 0.5 - 0.5, bz);
+        this.levelGroup.add(bMesh);
+
+        // Glowing gamma reactor strip near top
+        const glowBand = new THREE.Mesh(new THREE.BoxGeometry(bw + 0.3, 1.1, bd + 0.3), gammaWindowMat);
+        glowBand.position.set(bx, roadY + bh - 4.2, bz);
+        this.levelGroup.add(glowBand);
+
+        // Smokestacks on brick factories
+        if (styleIdx === 0) {
+          for (const sx of [-bw * 0.25, bw * 0.25]) {
+            const stack = new THREE.Mesh(new THREE.CylinderGeometry(0.9, 1.25, 10, 10), steelMat);
+            stack.position.set(bx + sx, roadY + bh + 4.5, bz);
+            this.levelGroup.add(stack);
+          }
+          if (Math.abs(bx) < 55 && this.gammaSteamPuffs.length < 18) {
+            const puffMat = new THREE.MeshBasicMaterial({
+              color: 0xd9f99d,
+              transparent: true,
+              opacity: 0.26,
+              depthWrite: false,
+            });
+            const puff = new THREE.Mesh(new THREE.SphereGeometry(2.2, 8, 8), puffMat);
+            const py = roadY + bh + 9.5;
+            puff.position.set(bx, py, bz);
+            this.levelGroup.add(puff);
+            this.gammaSteamPuffs.push({
+              mesh: puff,
+              baseX: bx,
+              baseY: py,
+              baseZ: bz,
+              riseH: 14,
+              speed: 0.22 + (this.gammaSteamPuffs.length % 3) * 0.06,
+              phase: this.gammaSteamPuffs.length * 0.37,
+              baseScale: 1.0,
+            });
+          }
+        }
+      }
+
+      // 3. Giant Glowing Gamma Reactor Towers flanking Plaza & Boss Arena
+      const reactorSpots: [number, number, number][] = [
+        [-24, 0.9, -108],
+        [24, 0.9, -108],
+        [-22, 23.2, -328],
+        [22, 23.2, -328],
+      ];
+      for (const [rx, ry, rz] of reactorSpots) {
+        const rGroup = new THREE.Group();
+        rGroup.position.set(rx, ry, rz);
+        const ped = new THREE.Mesh(new THREE.CylinderGeometry(3.2, 3.8, 2.2, 12), concreteMat);
+        ped.position.y = 1.1;
+        const core = new THREE.Mesh(new THREE.CylinderGeometry(1.7, 1.7, 9.5, 14), gammaWindowMat);
+        core.position.y = 6.8;
+        const cap = new THREE.Mesh(new THREE.CylinderGeometry(2.8, 3.2, 1.8, 12), steelMat);
+        cap.position.y = 12.2;
+        const ring = new THREE.Mesh(new THREE.TorusGeometry(2.6, 0.28, 8, 18), hazardMat);
+        ring.rotation.x = Math.PI / 2;
+        ring.position.y = 6.8;
+        rGroup.add(ped, core, cap, ring);
+        this.levelGroup.add(rGroup);
+        this.gammaReactorCores.push(core);
+      }
+
+      // 4. Overhead Steel Pipe Gantries framing the city corridor
+      const gantryZs = [-30, -96, -185, -290];
+      for (let g = 0; g < gantryZs.length; g++) {
+        const gz = gantryZs[g];
+        const gy = g < 2 ? 15.5 : g === 2 ? 26.0 : 34.5;
+        const beam = new THREE.Mesh(new THREE.BoxGeometry(58, 1.6, 2.2), steelMat);
+        beam.position.set(0, gy, gz);
+        const stripe = new THREE.Mesh(new THREE.BoxGeometry(24, 0.6, 2.4), hazardMat);
+        stripe.position.set(0, gy - 0.3, gz);
+        const colL = new THREE.Mesh(new THREE.BoxGeometry(2.2, gy - roadY, 2.2), steelMat);
+        colL.position.set(-28, (gy + roadY) * 0.5, gz);
+        const colR = colL.clone();
+        colR.position.x = 28;
+        this.levelGroup.add(beam, stripe, colL, colR);
+      }
+
+      // 5. Instanced Industrial Streetlamps along lower avenues (computeBoundingSphere)
+      const lampCount = this.isSoftwareGl ? 20 : 40;
+      const poleGeo = new THREE.CylinderGeometry(0.14, 0.2, 5.2, 6);
+      const poleMat = new THREE.MeshStandardMaterial({ color: 0x334155, metalness: 0.72, roughness: 0.32 });
+      const lampGeo = new THREE.SphereGeometry(0.36, 8, 8);
+      const lampMat = new THREE.MeshBasicMaterial({ color: 0xa3e635 });
+      const poleInst = new THREE.InstancedMesh(poleGeo, poleMat, lampCount);
+      const glowInst = new THREE.InstancedMesh(lampGeo, lampMat, lampCount);
+      const dummy = new THREE.Object3D();
+      for (let i = 0; i < lampCount; i++) {
+        const side = i % 2 === 0 ? -1 : 1;
+        const lx = side * 34 + (side < 0 ? 7.8 : -7.8);
+        const lz = 10 - Math.floor(i / 2) * 18;
+        dummy.position.set(lx, roadY + 2.6, lz);
+        dummy.rotation.set(0, 0, 0);
+        dummy.scale.set(1, 1, 1);
+        dummy.updateMatrix();
+        poleInst.setMatrixAt(i, dummy.matrix);
+        dummy.position.set(lx, roadY + 5.3, lz);
+        dummy.updateMatrix();
+        glowInst.setMatrixAt(i, dummy.matrix);
+      }
+      poleInst.instanceMatrix.needsUpdate = true;
+      glowInst.instanceMatrix.needsUpdate = true;
+      poleInst.computeBoundingSphere();
+      glowInst.computeBoundingSphere();
+      this.levelGroup.add(poleInst, glowInst);
+
+      // 6. Animated Industrial Traffic on Outer Gamma Avenues
+      const vehColors = [0xfacc15, 0x22c55e, 0xf97316, 0xef4444, 0x38bdf8, 0x64748b];
+      const vehCount = this.isSoftwareGl ? 8 : 16;
+      for (let i = 0; i < vehCount; i++) {
+        const col = vehColors[i % vehColors.length];
+        const vGroup = createNycVehicleMesh(col, col === 0xfacc15);
+        const ax = i % 2 === 0 ? -34 : 34;
+        const dir = i % 4 < 2 ? -1 : 1;
+        const z = 14 - ((i * 29) % 360);
+        vGroup.position.set(ax + dir * 2.8, roadY + 0.08, z);
+        vGroup.rotation.y = dir > 0 ? 0 : Math.PI;
+        this.levelGroup.add(vGroup);
+        this.gammaVehicles.push({
+          group: vGroup,
+          axis: 'z',
+          dir,
+          speed: 11 + (i % 4) * 2.8,
+          minC: -375,
+          maxC: 24,
+        });
+      }
     }
   }
 
@@ -7273,7 +7877,9 @@ export class GameEngine {
                     ? this.textures.skyRapids
                     : theme.biome === 'newyork'
                       ? this.textures.skyNewYork
-                      : this.textures.skyNebula;
+                      : theme.biome === 'gammacity'
+                        ? this.textures.skyGammaCity
+                        : this.textures.skyNebula;
     skyMat.needsUpdate = true;
 
     const animatedWaterBiome =
@@ -7304,7 +7910,9 @@ export class GameEngine {
                   ? this.textures.calmLakeSurface
                   : theme.biome === 'newyork'
                     ? this.textures.nycAsphaltRoad
-                    : this.textures.nebulaSeaSurface;
+                    : theme.biome === 'gammacity'
+                      ? this.textures.gammaAsphalt
+                      : this.textures.nebulaSeaSurface;
     this.hazardSeaTex = seaTex;
     const seaMat = new THREE.MeshStandardMaterial({
       map: seaTex,
@@ -7339,9 +7947,11 @@ export class GameEngine {
                   ? 0.11
                   : theme.biome === 'newyork'
                     ? 0.84
-                    : theme.biome === 'nebula'
-                      ? 0.34
-                      : 0.35,
+                    : theme.biome === 'gammacity'
+                      ? 0.88
+                      : theme.biome === 'nebula'
+                        ? 0.34
+                        : 0.35,
       metalness:
         theme.biome === 'ice'
           ? 0.35
@@ -7435,6 +8045,7 @@ export class GameEngine {
           parisSkyV2: level.index === 6,
           rapidsRiverV2: level.index === 7,
           newYorkV2: level.index === 8,
+          gammaCityV2: level.index === 9,
         }
       );
       if (startsInactive || pDef.kind === 'disappearing' || (level.index === 1 && pDef.kind === 'crumble')) {
@@ -7884,6 +8495,9 @@ export class GameEngine {
     level.enemies.forEach((en, idx) => {
       const rig = createEnemyMesh(en.kind);
       rig.group.position.set(...en.pos);
+      if (en.scale) {
+        rig.group.scale.setScalar(en.scale);
+      }
       this.levelGroup.add(rig.group);
       this.enemies.push({
         kind: en.kind,
@@ -7902,7 +8516,7 @@ export class GameEngine {
         patrolOffset: new THREE.Vector3(...en.patrolOffset),
         speed: en.speed,
         phase: idx * 1.1,
-        hp: en.kind === 'brute' || en.kind === 'guardian' ? 2 : 1,
+        hp: en.hp ?? (en.kind === 'giant_mech' ? 3 : en.kind === 'armored_guard' || en.kind === 'brute' || en.kind === 'guardian' ? 2 : 1),
         hitFlash: 0,
         alive: true,
         hopPhase: 0,
@@ -8135,18 +8749,200 @@ export class GameEngine {
         for (const part of this.playerRig.spiderParts) part.visible = true;
         this.playerRig.transformAura.visible = false;
       }
-    } else {
+    }
+
+    // Level 10 Hulk Suit Transformation, Destructibles, Throwables, Pooled Effects & Challenges
+    this.hasHulkSuit = Boolean(level.hulkSuitLevel);
+    this.hulkTransformTimer = 0;
+    this.hulkTransformDone = false;
+    (this.playerRig.transformAura.material as THREE.MeshBasicMaterial).color.setHex(
+      this.hasHulkSuit ? 0x84cc16 : 0xef4444
+    );
+
+    if (this.hasHulkSuit) {
+      if (level.destructibles) {
+        for (const dDef of level.destructibles) {
+          const dm = createHulkDestructibleMesh(dDef.kind, dDef.size, this.textures);
+          dm.group.position.set(...dDef.pos);
+          this.levelGroup.add(dm.group);
+          const maxHp = dDef.hp ?? 1;
+          this.destructibles.push({
+            id: dDef.id,
+            kind: dDef.kind,
+            pos: new THREE.Vector3(...dDef.pos),
+            halfSize: new THREE.Vector3(dDef.size[0] / 2, dDef.size[1] / 2, dDef.size[2] / 2),
+            hp: maxHp,
+            maxHp,
+            coins: dDef.coins ?? 3,
+            message: dDef.message,
+            broken: false,
+            hitShakeTimer: 0,
+            group: dm.group,
+            intactGroup: dm.intactGroup,
+            rubbleGroup: dm.rubbleGroup,
+            crackOverlay: dm.crackOverlay,
+          });
+        }
+      }
+
+      if (level.throwables) {
+        const labelByKind: Record<ThrowableKind, string> = {
+          car: 'Vehículo',
+          rock: 'Roca Gigante',
+          container: 'Contenedor',
+          concrete: 'Bloque de Concreto',
+          beam: 'Viga de Acero',
+        };
+        for (const tDef of level.throwables) {
+          const tMesh = createHulkThrowableMesh(tDef.kind, tDef.color);
+          tMesh.position.set(...tDef.pos);
+          if (tDef.rotY) tMesh.rotation.y = tDef.rotY;
+          this.levelGroup.add(tMesh);
+          this.throwables.push({
+            id: tDef.id,
+            kind: tDef.kind,
+            label: labelByKind[tDef.kind],
+            mesh: tMesh,
+            homePos: new THREE.Vector3(...tDef.pos),
+            homeRotY: tDef.rotY ?? 0,
+            pos: new THREE.Vector3(...tDef.pos),
+            vel: new THREE.Vector3(),
+            state: 'idle',
+            spinAxis: new THREE.Vector3(0.85, 0.35, 0.4).normalize(),
+            respawnTimer: 0,
+          });
+        }
+      }
+
+      if (level.destructionChallenges) {
+        for (const dc of level.destructionChallenges) {
+          const padGroup = new THREE.Group();
+          padGroup.position.set(...dc.startPos);
+          const padBase = new THREE.Mesh(
+            new THREE.CylinderGeometry(1.75, 1.95, 0.18, 16),
+            new THREE.MeshStandardMaterial({
+              color: 0x65a30d,
+              emissive: 0x4d7c0f,
+              emissiveIntensity: 0.9,
+              roughness: 0.25,
+              metalness: 0.55,
+            })
+          );
+          const padRing = new THREE.Mesh(
+            new THREE.TorusGeometry(1.55, 0.09, 8, 24),
+            new THREE.MeshBasicMaterial({ color: 0xfacc15 })
+          );
+          padRing.rotation.x = Math.PI / 2;
+          padRing.position.y = 0.14;
+          padGroup.add(padBase, padRing);
+          this.levelGroup.add(padGroup);
+
+          this.destructionChallengesRuntime.push({
+            id: dc.id,
+            label: dc.label,
+            startPos: new THREE.Vector3(...dc.startPos),
+            targetIds: dc.targetIds,
+            timeLimit: dc.timeLimit,
+            rewardCoins: dc.rewardCoins ?? 15,
+            startPad: padGroup,
+            completed: false,
+            active: false,
+            timer: 0,
+            lastTickSec: -1,
+          });
+        }
+      }
+
+      // Pooled 3D Debris InstancedMesh
+      const debGeo = new THREE.DodecahedronGeometry(0.32, 0);
+      const debMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.88, metalness: 0.1 });
+      const debInst = new THREE.InstancedMesh(debGeo, debMat, this.MAX_DEBRIS);
+      debInst.frustumCulled = false;
+      debInst.castShadow = !this.isSoftwareGl;
+      _mat4.makeScale(0, 0, 0);
+      for (let i = 0; i < this.MAX_DEBRIS; i++) {
+        debInst.setMatrixAt(i, _mat4);
+        debInst.setColorAt(i, _color.setHex(0x64748b));
+        this.debrisChunks.push({
+          active: false,
+          pos: new THREE.Vector3(),
+          vel: new THREE.Vector3(),
+          rot: new THREE.Euler(),
+          rotVel: new THREE.Vector3(),
+          scale: 1,
+          life: 0,
+          maxLife: 1,
+          color: new THREE.Color(0x64748b),
+        });
+      }
+      debInst.instanceMatrix.needsUpdate = true;
+      if (debInst.instanceColor) debInst.instanceColor.needsUpdate = true;
+      this.levelGroup.add(debInst);
+      this.debrisPoolMesh = debInst;
+
+      // Pooled Shockwave Rings
+      for (let i = 0; i < 10; i++) {
+        const mesh = createShockwaveRingMesh(0x84cc16);
+        this.levelGroup.add(mesh);
+        this.shockwavePool.push({
+          mesh,
+          mat: mesh.material as THREE.MeshBasicMaterial,
+          active: false,
+          life: 0,
+          maxLife: 0.42,
+          maxRadius: 4.0,
+        });
+      }
+
+      // Pooled Ground Crack Decals
+      for (let i = 0; i < 14; i++) {
+        const mesh = createGroundCrackDecalMesh(this.textures.gammaGroundCrack);
+        this.levelGroup.add(mesh);
+        this.crackDecalPool.push({
+          mesh,
+          mat: mesh.material as THREE.MeshBasicMaterial,
+          active: false,
+          life: 0,
+          maxLife: 5.5,
+        });
+      }
+
+      if (targetPhase === 'playing') {
+        this.hulkTransformTimer = 2.15;
+        this.hulkTransformDone = false;
+        this.playerRig.root.scale.setScalar(1.0);
+        for (const part of this.playerRig.astroParts) part.visible = true;
+        for (const part of this.playerRig.spiderParts) part.visible = false;
+        for (const part of this.playerRig.hulkParts) part.visible = false;
+        this.playerRig.transformAura.visible = true;
+        soundEngine.playHulkTransform();
+      } else {
+        this.hulkTransformDone = true;
+        this.playerRig.root.scale.setScalar(1.54);
+        for (const part of this.playerRig.astroParts) part.visible = false;
+        for (const part of this.playerRig.spiderParts) part.visible = false;
+        for (const part of this.playerRig.hulkParts) part.visible = true;
+        this.playerRig.transformAura.visible = false;
+      }
+    } else if (!this.hasSpiderSuit) {
+      this.playerRig.root.scale.setScalar(1.0);
       for (const part of this.playerRig.astroParts) part.visible = true;
       for (const part of this.playerRig.spiderParts) part.visible = false;
+      for (const part of this.playerRig.hulkParts) part.visible = false;
       this.playerRig.transformAura.visible = false;
+    } else {
+      this.playerRig.root.scale.setScalar(1.0);
+      for (const part of this.playerRig.hulkParts) part.visible = false;
     }
 
     this.phase = targetPhase;
     this.bannerText =
       targetPhase === 'playing'
-        ? this.hasSpiderSuit
-          ? '¡Activando Traje Arácnido!'
-          : level.name
+        ? this.hasHulkSuit
+          ? '¡Radiación Gamma al máximo!'
+          : this.hasSpiderSuit
+            ? '¡Activando Traje Arácnido!'
+            : level.name
         : null;
     this.bannerTimer = targetPhase === 'playing' ? 2.4 : 0;
 
@@ -8318,6 +9114,30 @@ export class GameEngine {
         metalness: 0.14,
       });
     }
+    if (style === 'gammacity') {
+      const topMat = new THREE.MeshStandardMaterial({
+        map: this.textures.gammaConcrete,
+        bumpMap: this.textures.stoneBump,
+        bumpScale: 0.1,
+        roughnessMap: this.textures.stoneRoughness,
+        roughness: 0.85,
+        metalness: 0.1,
+      });
+      const sideMat = new THREE.MeshStandardMaterial({
+        map: this.textures.gammaIndustrialSteel,
+        bumpMap: this.textures.stoneBump,
+        bumpScale: 0.12,
+        roughnessMap: this.textures.metalRoughness,
+        roughness: 0.45,
+        metalness: 0.62,
+      });
+      const botMat = new THREE.MeshStandardMaterial({
+        map: this.textures.gammaAsphalt,
+        roughness: 0.9,
+        metalness: 0.08,
+      });
+      return [sideMat, sideMat, topMat, botMat, sideMat, sideMat];
+    }
     if (style === 'river') {
       return new THREE.MeshStandardMaterial({
         map: this.textures.riverTimber,
@@ -8438,7 +9258,7 @@ export class GameEngine {
       }
     }
     if (!gp) {
-      this.prevGamepadButtons = { jump: false, spin: false, bow: false, pause: false };
+      this.prevGamepadButtons = { jump: false, spin: false, bow: false, slam: false, pause: false };
       return;
     }
 
@@ -8461,9 +9281,10 @@ export class GameEngine {
     const jumpNow = Boolean(gp.buttons[0]?.pressed);
     const spinNow = Boolean(gp.buttons[2]?.pressed || gp.buttons[4]?.pressed);
     const bowNow = Boolean(gp.buttons[1]?.pressed || gp.buttons[5]?.pressed || gp.buttons[7]?.pressed);
+    const slamNow = Boolean(gp.buttons[3]?.pressed);
     const pauseNow = Boolean(gp.buttons[9]?.pressed);
 
-    if (jumpNow || spinNow || bowNow || pauseNow) {
+    if (jumpNow || spinNow || bowNow || slamNow || pauseNow) {
       soundEngine.unlock();
     }
 
@@ -8474,6 +9295,9 @@ export class GameEngine {
 
     if (this.phase === 'playing') {
       this.gamepadJumpHeld = jumpNow;
+      if (this.hasHulkSuit && !jumpNow && this.prevGamepadButtons.jump && this.hulkLeapCharging) {
+        this.executeHulkLeap();
+      }
       if (jumpNow && !this.prevGamepadButtons.jump) {
         if (this.rocketState === 'flying') {
           this.rocketBoostTimer = 0.55;
@@ -8491,6 +9315,23 @@ export class GameEngine {
             this.boatJumpCooldown = 0.72;
             soundEngine.playSplash();
             this.spawnBurst(this.boatPos.x, 0.2, this.boatPos.z, 0xe0f2fe, 14, 4.8);
+          }
+        } else if (this.hasHulkSuit) {
+          if (this.hulkTransformTimer <= 0) {
+            if ((this.grounded || this.coyoteTimer > 0) && this.hulkSlamState === 'none') {
+              this.hulkLeapCharging = true;
+              this.hulkLeapCharge = 0;
+            } else if (
+              !this.grounded &&
+              this.coyoteTimer <= 0 &&
+              this.botRocketCharges > 0 &&
+              this.botRocketTimer <= 0 &&
+              this.playerVel.y < -2.2
+            ) {
+              this.activateBotRocketRescue();
+            } else {
+              this.jumpBufferTimer = 0.14;
+            }
           }
         } else {
           if (
@@ -8510,10 +9351,15 @@ export class GameEngine {
         }
       }
       if (spinNow && !this.prevGamepadButtons.spin) {
-        this.triggerSpin();
+        if (this.hasHulkSuit) this.triggerHulkPunch();
+        else this.triggerSpin();
+      }
+      if (slamNow && !this.prevGamepadButtons.slam && this.hasHulkSuit) {
+        this.triggerHulkSlam();
       }
       if (bowNow && !this.prevGamepadButtons.bow) {
-        if (this.hasSpiderSuit) this.triggerSpiderWebAction();
+        if (this.hasHulkSuit) this.triggerHulkGrabOrThrow();
+        else if (this.hasSpiderSuit) this.triggerSpiderWebAction();
         else this.shootArrow();
       }
       if (this.hasSpiderSuit && this.webActive && gp.buttons[6]?.pressed) {
@@ -8525,6 +9371,7 @@ export class GameEngine {
       jump: jumpNow,
       spin: spinNow,
       bow: bowNow,
+      slam: slamNow,
       pause: pauseNow,
     };
   }
@@ -9067,6 +9914,37 @@ export class GameEngine {
       }
     }
 
+    // Gamma City Animated Reactor Cores, Factory Steam Plumes & Traffic
+    if (this.currentLevel.theme.biome === 'gammacity') {
+      for (let i = 0; i < this.gammaReactorCores.length; i++) {
+        const core = this.gammaReactorCores[i];
+        core.rotation.y += dt * 0.65;
+        const cMat = core.material as THREE.MeshStandardMaterial;
+        cMat.emissiveIntensity = 1.65 + Math.sin(this.totalTime * 3.4 + i * 1.1) * 0.65;
+      }
+      for (const sp of this.gammaSteamPuffs) {
+        const cyc = (this.totalTime * sp.speed + sp.phase) % 1;
+        sp.mesh.position.set(
+          sp.baseX + Math.sin(this.totalTime * 0.7 + sp.phase * 6) * (0.8 + cyc * 1.6),
+          sp.baseY + cyc * sp.riseH,
+          sp.baseZ + Math.cos(this.totalTime * 0.55 + sp.phase * 5) * (0.8 + cyc * 1.4)
+        );
+        sp.mesh.scale.setScalar(sp.baseScale * (0.65 + cyc * 1.65));
+        (sp.mesh.material as THREE.MeshBasicMaterial).opacity = Math.sin(cyc * Math.PI) * 0.36;
+      }
+      for (const v of this.gammaVehicles) {
+        if (v.axis === 'z') {
+          v.group.position.z += v.dir * v.speed * dt;
+          if (v.dir < 0 && v.group.position.z < v.minC) v.group.position.z = v.maxC;
+          else if (v.dir > 0 && v.group.position.z > v.maxC) v.group.position.z = v.minC;
+        } else {
+          v.group.position.x += v.dir * v.speed * dt;
+          if (v.dir > 0 && v.group.position.x > v.maxC) v.group.position.x = v.minC;
+          else if (v.dir < 0 && v.group.position.x < v.minC) v.group.position.x = v.maxC;
+        }
+      }
+    }
+
     this.renderer.render(this.scene, this.camera);
 
     if (now - this.lastHudPush > 85) this.pushHud(false);
@@ -9396,12 +10274,42 @@ export class GameEngine {
     this.bowCooldown = Math.max(0, this.bowCooldown - dt);
     this.webCooldown = Math.max(0, this.webCooldown - dt);
 
-    // Step Active Arrows, Web Shots, Enemy Projectiles & Timed Challenges
+    // Step Active Arrows, Web Shots, Enemy Projectiles, Pooled Effects & Challenges
     this.stepArrows(dt);
     this.stepWebShots(dt);
     this.stepEnemyProjectiles(dt);
+    this.stepPooledEffects(dt);
     if (this.hasSpiderSuit) {
       this.stepTimedChallenges(dt);
+    }
+    if (this.hasHulkSuit) {
+      this.hulkPunchTimer = Math.max(0, this.hulkPunchTimer - dt);
+      this.hulkPunchCooldown = Math.max(0, this.hulkPunchCooldown - dt);
+      this.hulkThrowTimer = Math.max(0, this.hulkThrowTimer - dt);
+      this.hulkStaggerTimer = Math.max(0, this.hulkStaggerTimer - dt);
+      if (this.hulkLeapCharging) {
+        if (this.grounded || this.coyoteTimer > 0) {
+          this.hulkLeapCharge = Math.min(1, this.hulkLeapCharge + dt / 0.85);
+        } else {
+          this.hulkLeapCharging = false;
+          this.hulkLeapCharge = 0;
+        }
+      }
+      if (this.hulkSlamState === 'windup') {
+        this.hulkSlamTimer -= dt;
+        if (this.hulkSlamTimer <= 0) {
+          this.hulkSlamState = 'impact';
+          this.hulkSlamTimer = 0.28;
+          this.executeHulkGroundSlamImpact(5.4, 2, 0.52);
+        }
+      } else if (this.hulkSlamState === 'impact') {
+        this.hulkSlamTimer -= dt;
+        if (this.hulkSlamTimer <= 0) {
+          this.hulkSlamState = 'none';
+        }
+      }
+      this.stepThrowables(dt);
+      this.stepDestructionChallenges(dt);
     }
 
     // CINEMATIC SPIDER-MAN TRANSFORMATION SEQUENCE (Level 09 start)
@@ -9448,6 +10356,68 @@ export class GameEngine {
         this.playerYaw = Math.PI;
         this.grounded = true;
         this.showBanner('¡Spider-Man listo! Clic Izq / G / RT: Telaraña · Empuja edificios para escalar', 4.2);
+        this.pushHud(true);
+      }
+      this.animatePlayerVisuals(dt, 0);
+      return;
+    }
+
+    // CINEMATIC HULK GAMMA TRANSFORMATION SEQUENCE (Level 10 start)
+    if (this.hasHulkSuit && this.hulkTransformTimer > 0) {
+      this.hulkTransformTimer = Math.max(0, this.hulkTransformTimer - dt);
+      const progress = 1 - this.hulkTransformTimer / 2.15;
+      this.playerPos.x = this.spawnPos.x;
+      this.playerPos.z = this.spawnPos.z;
+      this.playerPos.y = this.spawnPos.y + Math.sin(progress * Math.PI) * 0.65;
+      this.playerYaw += dt * (3.2 + progress * 4.5);
+
+      const scaleNow =
+        this.hulkTransformTimer > 0.95
+          ? THREE.MathUtils.lerp(1.0, 1.24, Math.min(1, progress / 0.56))
+          : THREE.MathUtils.lerp(1.24, 1.54, Math.min(1, (0.95 - this.hulkTransformTimer) / 0.95));
+      this.playerRig.root.scale.setScalar(scaleNow);
+
+      const aura = this.playerRig.transformAura;
+      aura.visible = true;
+      aura.rotation.y -= dt * 4.5;
+      aura.rotation.z += dt * 2.8;
+      aura.scale.setScalar(0.85 + Math.sin(progress * Math.PI) * 0.72);
+
+      if (Math.random() < 0.88) {
+        const pCol = Math.random() < 0.55 ? 0x84cc16 : Math.random() < 0.8 ? 0x22c55e : 0xa855f7;
+        this.spawnBurst(
+          this.playerPos.x + (Math.random() - 0.5) * 1.1,
+          this.playerPos.y + 0.7 + Math.random() * 1.1,
+          this.playerPos.z + (Math.random() - 0.5) * 1.1,
+          pCol,
+          2,
+          3.8
+        );
+      }
+
+      if (this.hulkTransformTimer <= 0.95 && !this.hulkTransformDone) {
+        this.hulkTransformDone = true;
+        for (const part of this.playerRig.astroParts) part.visible = false;
+        for (const part of this.playerRig.spiderParts) part.visible = false;
+        for (const part of this.playerRig.hulkParts) part.visible = true;
+        this.shakeIntensity = 0.45;
+        this.spawnShockwave(this.playerPos.x, this.playerPos.y + 0.1, this.playerPos.z, 5.2, 0x84cc16);
+        this.spawnCrackDecal(this.playerPos.x, this.playerPos.y + 0.05, this.playerPos.z, 1.3);
+        this.spawnBurst(this.playerPos.x, this.playerPos.y + 1.1, this.playerPos.z, 0x84cc16, 32, 7.6);
+        this.spawnBurst(this.playerPos.x, this.playerPos.y + 1.1, this.playerPos.z, 0x22c55e, 24, 6.5);
+        this.pushHud(true);
+      }
+
+      if (this.hulkTransformTimer <= 0) {
+        aura.visible = false;
+        this.playerRig.root.scale.setScalar(1.54);
+        this.playerPos.copy(this.spawnPos);
+        this.playerYaw = Math.PI;
+        this.grounded = true;
+        this.showBanner(
+          '¡HULK APLASTA! Clic Izq/F Puñetazo · Mantén Espacio Súper Salto · Clic Der/G Golpe Suelo · E Agarrar',
+          4.6
+        );
         this.pushHud(true);
       }
       this.animatePlayerVisuals(dt, 0);
@@ -9627,7 +10597,7 @@ export class GameEngine {
 
     if (this.perspectiveMode === '3D') {
       if (this.keysHeld.has('KeyQ') || this.keysHeld.has('__CAM_L__')) this.camYaw += dt * 2.1;
-      if (this.keysHeld.has('KeyE') || this.keysHeld.has('__CAM_R__')) this.camYaw -= dt * 2.1;
+      if ((this.keysHeld.has('KeyE') && !this.hasHulkSuit) || this.keysHeld.has('__CAM_R__')) this.camYaw -= dt * 2.1;
       if (Math.abs(this.gamepadCamX) > 0.05) this.camYaw -= this.gamepadCamX * dt * 2.4;
     } else if (this.active2DZone) {
       const targetYaw = this.active2DZone.moveAxis === 'x' ? 0 : Math.PI / 2;
@@ -9668,7 +10638,14 @@ export class GameEngine {
     const worldDirX = inX * cosY + inZ * sinY;
     const worldDirZ = -inX * sinY + inZ * cosY;
 
-    const moveSpeed = this.botRocketTimer > 0 ? 12.4 : 9.2;
+    const moveSpeed =
+      this.botRocketTimer > 0
+        ? 12.4
+        : this.hasHulkSuit
+          ? this.hulkLeapCharging || this.hulkSlamState === 'windup'
+            ? 4.2
+            : 9.8
+          : 9.2;
     const targetVx = worldDirX * moveSpeed;
     const targetVz = worldDirZ * moveSpeed;
 
@@ -9839,7 +10816,7 @@ export class GameEngine {
         this.playerSquash.set(0.78, 1.32, 0.78);
         soundEngine.playJump();
         this.spawnBurst(this.playerPos.x, this.playerPos.y + 0.1, this.playerPos.z, 0xe0f2fe, 8, 2.6);
-      } else if (this.jumpBufferTimer > 0 && !this.grounded && this.hasDoubleJump && this.botRocketTimer <= 0) {
+      } else if (!this.hasHulkSuit && this.jumpBufferTimer > 0 && !this.grounded && this.hasDoubleJump && this.botRocketTimer <= 0) {
         this.hasDoubleJump = false;
         this.playerVel.y = 11.4;
         this.doubleJumpFlipTimer = 0.38;
@@ -9898,7 +10875,7 @@ export class GameEngine {
         }
 
         if (!inWindZone) {
-          if (!this.grounded && jumpHeld && this.playerVel.y < 1.8 && this.hoverFuel > 0) {
+          if (!this.hasHulkSuit && !this.grounded && jumpHeld && this.playerVel.y < 1.8 && this.hoverFuel > 0) {
             this.isHovering = true;
             this.hoverFuel = Math.max(0, this.hoverFuel - dt * 1.08);
             this.playerVel.y = THREE.MathUtils.damp(this.playerVel.y, -0.65, 14, dt);
@@ -9922,6 +10899,7 @@ export class GameEngine {
       }
 
       const prevY = this.playerPos.y;
+      const preCollisionVy = this.playerVel.y;
       this.playerPos.x += this.playerVel.x * dt;
       this.playerPos.z += this.playerVel.z * dt;
       this.playerPos.y += this.playerVel.y * dt;
@@ -9934,8 +10912,8 @@ export class GameEngine {
         }
       }
 
-      const playerRadius = 0.38;
-      const playerHeight = 1.45;
+      const playerRadius = this.hasHulkSuit ? 0.62 : 0.38;
+      const playerHeight = this.hasHulkSuit ? 2.35 : 1.45;
 
       for (const p of this.platforms) {
         if (!p.visible) continue;
@@ -10153,6 +11131,74 @@ export class GameEngine {
         }
       }
 
+      // Solid AABB Collision against unbroken Hulk Destructibles
+      for (const d of this.destructibles) {
+        if (d.broken) continue;
+        if (d.hitShakeTimer > 0) {
+          d.hitShakeTimer = Math.max(0, d.hitShakeTimer - dt);
+          d.intactGroup.position.x = d.hitShakeTimer > 0 ? Math.sin(this.totalTime * 55) * 0.11 : 0;
+        } else {
+          d.intactGroup.position.x = 0;
+        }
+
+        const minX = d.pos.x - d.halfSize.x - playerRadius;
+        const maxX = d.pos.x + d.halfSize.x + playerRadius;
+        const minZ = d.pos.z - d.halfSize.z - playerRadius;
+        const maxZ = d.pos.z + d.halfSize.z + playerRadius;
+        const botY = d.pos.y;
+        const topY = d.pos.y + d.halfSize.y * 2;
+
+        if (
+          this.playerPos.x >= d.pos.x - d.halfSize.x &&
+          this.playerPos.x <= d.pos.x + d.halfSize.x &&
+          this.playerPos.z >= d.pos.z - d.halfSize.z &&
+          this.playerPos.z <= d.pos.z + d.halfSize.z &&
+          topY <= this.playerPos.y + 0.15
+        ) {
+          if (topY > bestGroundShadowY) bestGroundShadowY = topY;
+        }
+
+        const insideXZ =
+          this.playerPos.x >= minX &&
+          this.playerPos.x <= maxX &&
+          this.playerPos.z >= minZ &&
+          this.playerPos.z <= maxZ;
+        if (!insideXZ) continue;
+
+        if (this.playerVel.y <= 0 && prevY >= topY - 0.35 && this.playerPos.y <= topY + 0.08) {
+          this.playerPos.y = topY;
+          if (!this.grounded && this.playerVel.y < -4.2) {
+            this.playerSquash.set(1.26, 0.74, 1.26);
+            soundEngine.playLand(Math.abs(this.playerVel.y));
+          }
+          this.playerVel.y = 0;
+          this.grounded = true;
+          landedOnClimbWall = true;
+        } else if (this.playerVel.y > 0 && prevY + playerHeight <= botY + 0.2 && this.playerPos.y + playerHeight >= botY) {
+          this.playerPos.y = botY - playerHeight;
+          this.playerVel.y = -1;
+        } else if (this.playerPos.y < topY - 0.15 && this.playerPos.y + playerHeight > botY + 0.15) {
+          const dxMin = Math.abs(this.playerPos.x - minX);
+          const dxMax = Math.abs(maxX - this.playerPos.x);
+          const dzMin = Math.abs(this.playerPos.z - minZ);
+          const dzMax = Math.abs(maxZ - this.playerPos.z);
+          const m = Math.min(dxMin, dxMax, dzMin, dzMax);
+          if (m === dxMin) {
+            this.playerPos.x = minX;
+            this.playerVel.x = Math.min(0, this.playerVel.x);
+          } else if (m === dxMax) {
+            this.playerPos.x = maxX;
+            this.playerVel.x = Math.max(0, this.playerVel.x);
+          } else if (m === dzMin) {
+            this.playerPos.z = minZ;
+            this.playerVel.z = Math.min(0, this.playerVel.z);
+          } else {
+            this.playerPos.z = maxZ;
+            this.playerVel.z = Math.max(0, this.playerVel.z);
+          }
+        }
+      }
+
       if (!this.isClimbing) {
         const prevGrounded = this.grounded;
         this.grounded = landedPlatform !== null || landedOnClimbWall || bestGroundShadowY >= this.playerPos.y - 0.05;
@@ -10163,6 +11209,20 @@ export class GameEngine {
           this.pushHud(true);
         }
         onIce = this.grounded && this.standingPlatform?.def.kind === 'ice';
+
+        if (!prevGrounded && this.grounded && this.hasHulkSuit) {
+          if (this.hulkSlamState === 'falling') {
+            this.hulkSlamState = 'impact';
+            this.hulkSlamTimer = 0.28;
+            this.hulkSuperLeaping = false;
+            this.executeHulkGroundSlamImpact(5.8, 2, 0.58);
+          } else if (this.hulkSuperLeaping || preCollisionVy < -14.5) {
+            this.hulkSuperLeaping = false;
+            this.onHulkHeavyLanding(Math.abs(preCollisionVy));
+          } else {
+            this.hulkSuperLeaping = false;
+          }
+        }
 
         if (!prevGrounded && this.grounded && this.currentLevel.index === 2 && landedPlatform) {
           if (landedPlatform.mesh.userData.iceCrackSeams) {
@@ -10363,43 +11423,45 @@ export class GameEngine {
               en.wingL.rotation.z = flap;
               en.wingR.rotation.z = -flap;
             }
-          } else if (en.kind === 'shooter') {
+          } else if (en.kind === 'shooter' || en.kind === 'giant_mech') {
             const sDx = this.playerPos.x - en.pos.x;
             const sDz = this.playerPos.z - en.pos.z;
             const sDistSq = sDx * sDx + sDz * sDz;
-            if (sDistSq < 18 * 18 && Math.abs(this.playerPos.y - en.pos.y) < 5.2) {
+            const range = en.kind === 'giant_mech' ? 22 : 18;
+            if (sDistSq < range * range && Math.abs(this.playerPos.y - en.pos.y) < (en.kind === 'giant_mech' ? 6.5 : 5.2)) {
               const targetYaw = Math.atan2(sDx, sDz);
               en.group.rotation.y = targetYaw;
               if (en.turretHead) en.turretHead.rotation.y = Math.sin(this.totalTime * 2) * 0.08;
               en.shootTimer -= dt;
               if (en.shootTimer <= 0) {
-                en.shootTimer = 2.25;
-                const pMesh = createEnemyProjectileMesh();
+                en.shootTimer = en.kind === 'giant_mech' ? 2.6 : 2.25;
+                const pCol = en.kind === 'giant_mech' ? 0x84cc16 : 0xf43f5e;
+                const pMesh = createEnemyProjectileMesh(pCol);
                 const spawnP = new THREE.Vector3(
-                  en.pos.x + Math.sin(targetYaw) * 0.75,
-                  en.pos.y + 1.05,
-                  en.pos.z + Math.cos(targetYaw) * 0.75
+                  en.pos.x + Math.sin(targetYaw) * (en.kind === 'giant_mech' ? 1.15 : 0.75),
+                  en.pos.y + (en.kind === 'giant_mech' ? 2.15 : 1.05),
+                  en.pos.z + Math.cos(targetYaw) * (en.kind === 'giant_mech' ? 1.15 : 0.75)
                 );
                 pMesh.position.copy(spawnP);
                 this.levelGroup.add(pMesh);
                 const dir = new THREE.Vector3(
                   this.playerPos.x - spawnP.x,
-                  this.playerPos.y + 0.75 - spawnP.y,
+                  this.playerPos.y + (this.hasHulkSuit ? 1.2 : 0.75) - spawnP.y,
                   this.playerPos.z - spawnP.z
                 ).normalize();
                 this.enemyProjectiles.push({
                   mesh: pMesh,
                   pos: spawnP,
-                  vel: dir.multiplyScalar(11.2),
+                  vel: dir.multiplyScalar(en.kind === 'giant_mech' ? 12.6 : 11.2),
                   life: 3.2,
                 });
                 soundEngine.playEnemyShoot();
-                this.spawnBurst(spawnP.x, spawnP.y, spawnP.z, 0xf43f5e, 6, 2.5);
+                this.spawnBurst(spawnP.x, spawnP.y, spawnP.z, pCol, 6, 2.5);
               }
             }
           }
 
-          if (en.kind !== 'shooter') {
+          if (en.kind !== 'shooter' && en.kind !== 'giant_mech') {
             if (Math.abs(en.patrolOffset.z) > Math.abs(en.patrolOffset.x)) {
               en.group.rotation.y = Math.cos(t) >= 0 ? 0 : Math.PI;
             } else {
@@ -10415,8 +11477,12 @@ export class GameEngine {
       const dz = this.playerPos.z - en.pos.z;
       const horizDistSq = dx * dx + dz * dz;
       const dy = this.playerPos.y - en.pos.y;
-      const isLarge = en.kind === 'brute' || en.kind === 'guardian';
-      const hitRadiusSq = isLarge ? 1.35 : 0.85;
+      const isLarge =
+        en.kind === 'brute' ||
+        en.kind === 'guardian' ||
+        en.kind === 'armored_guard' ||
+        en.kind === 'giant_mech';
+      const hitRadiusSq = en.kind === 'giant_mech' ? 2.2 : isLarge ? 1.35 : 0.85;
 
       if (en.hitFlash > 0) {
         en.hitFlash -= dt;
@@ -10430,7 +11496,7 @@ export class GameEngine {
         continue;
       }
       if (this.spinTimer > 0 && (en.kind !== 'spiky' || isWebbed) && horizDistSq < (isLarge ? 2.6 : 2.1) && Math.abs(dy) < 1.3) {
-        if (en.kind === 'guardian' && !isWebbed) {
+        if ((en.kind === 'guardian' || en.kind === 'armored_guard') && !isWebbed) {
           const dLen = Math.hypot(dx, dz) || 1;
           const fwdX = Math.sin(en.group.rotation.y);
           const fwdZ = Math.cos(en.group.rotation.y);
@@ -10444,8 +11510,13 @@ export class GameEngine {
         this.damageEnemy(en);
         continue;
       }
-      if (this.playerVel.y < -0.5 && horizDistSq < (isLarge ? 1.35 : 0.9) && dy > 0.35 && dy < (isLarge ? 1.55 : 1.15)) {
-        if (en.kind === 'spiky' && !isWebbed) {
+      if (
+        this.playerVel.y < -0.5 &&
+        horizDistSq < (en.kind === 'giant_mech' ? 2.5 : isLarge ? 1.55 : 0.9) &&
+        dy > 0.35 &&
+        dy < (en.kind === 'giant_mech' ? 3.2 : isLarge ? 1.75 : 1.15)
+      ) {
+        if (en.kind === 'spiky' && !isWebbed && !this.hasHulkSuit) {
           this.damagePlayer(dx, dz);
         } else {
           this.damageEnemy(en);
@@ -10454,7 +11525,10 @@ export class GameEngine {
         continue;
       }
       if (isWebbed) continue;
-      if (horizDistSq < (isLarge ? 1.05 : 0.72) && Math.abs(dy) < (isLarge ? 1.3 : 0.95)) {
+      if (
+        horizDistSq < (en.kind === 'giant_mech' ? 1.95 : isLarge ? 1.12 : 0.72) &&
+        Math.abs(dy) < (en.kind === 'giant_mech' ? 2.4 : isLarge ? 1.45 : 0.95)
+      ) {
         this.damagePlayer(dx, dz);
       }
     }
@@ -11139,9 +12213,13 @@ export class GameEngine {
     }
   }
 
-  private damageEnemy(en: EnemyRuntime) {
-    if (en.hitFlash > 0) return;
-    en.hp -= 1;
+  private damageEnemy(en: EnemyRuntime, dmg = 1, bypassFlash = false) {
+    if (!bypassFlash && en.hitFlash > 0) return;
+    if (this.hasHulkSuit && en.shieldMesh && en.shieldMesh.visible) {
+      en.shieldMesh.visible = false;
+      this.spawnDebrisBurst(en.pos.x, en.pos.y + 0.9, en.pos.z, 5, 5.2, 0x334155);
+    }
+    en.hp -= dmg;
     if (en.hp <= 0) {
       this.defeatEnemy(en);
       return;
@@ -11344,11 +12422,11 @@ export class GameEngine {
     }
   }
 
-  private damageBoss() {
+  private damageBoss(dmg = 1) {
     const b = this.bossRuntime;
     if (!b || !b.alive || b.invulnTimer > 0) return;
 
-    b.hp -= 1;
+    b.hp = Math.max(0, b.hp - dmg);
     b.invulnTimer = 0.85;
     this.hitstopTimer = 0.06;
     this.shakeIntensity = 0.45;
@@ -11815,12 +12893,374 @@ export class GameEngine {
     }
   }
 
+  private closestDistToDestructible(px: number, py: number, pz: number, d: DestructibleRuntime): number {
+    const cy = d.pos.y + d.halfSize.y;
+    const dx = Math.max(0, Math.abs(px - d.pos.x) - d.halfSize.x);
+    const dy = Math.max(0, Math.abs(py - cy) - d.halfSize.y);
+    const dz = Math.max(0, Math.abs(pz - d.pos.z) - d.halfSize.z);
+    return Math.hypot(dx, dy, dz);
+  }
+
+  private damageDestructible(d: DestructibleRuntime, dmg: number, impactX: number, impactZ: number) {
+    if (d.broken) return;
+    d.hp -= dmg;
+    d.hitShakeTimer = 0.24;
+    d.crackOverlay.visible = true;
+    const cy = d.pos.y + d.halfSize.y;
+    if (d.hp <= 0) {
+      d.broken = true;
+      d.intactGroup.visible = false;
+      d.rubbleGroup.visible = true;
+      this.coinsCollected += d.coins;
+      this.hitstopTimer = Math.max(this.hitstopTimer, 0.055);
+      this.shakeIntensity = Math.max(this.shakeIntensity, 0.42);
+      soundEngine.playSmashDestroy();
+      soundEngine.playCoin();
+      this.spawnDebrisBurst(impactX, cy, impactZ, 14, 7.6, d.kind === 'factory_tank' ? 0x84cc16 : 0x64748b);
+      this.spawnBurst(impactX, cy, impactZ, d.kind === 'factory_tank' ? 0xa3e635 : 0xfbbf24, 20, 6.2);
+      if (d.message) {
+        this.showBanner(d.message, 3.0);
+      }
+      this.pushHud(true);
+    } else {
+      soundEngine.playHulkPunch(false);
+      this.spawnDebrisBurst(impactX, cy, impactZ, 6, 4.5, 0x94a3b8);
+    }
+  }
+
+  private applyHulkAoEHit(
+    cx: number,
+    cy: number,
+    cz: number,
+    radius: number,
+    damage: number,
+    knockback: number,
+    forwardPunch = false
+  ) {
+    for (const cr of this.crates) {
+      if (cr.broken) continue;
+      if (Math.hypot(cr.pos.x - cx, cr.pos.z - cz) <= radius + 0.65 && Math.abs(cr.pos.y + 0.5 - cy) < 2.8) {
+        this.breakCrate(cr);
+      }
+    }
+
+    for (const d of this.destructibles) {
+      if (d.broken) continue;
+      if (this.closestDistToDestructible(cx, cy, cz, d) <= radius) {
+        this.damageDestructible(d, damage, cx, cz);
+      }
+    }
+
+    for (const en of this.enemies) {
+      if (!en.alive) continue;
+      const r = radius + (en.kind === 'giant_mech' ? 1.5 : 0.85);
+      if (Math.hypot(en.pos.x - cx, en.pos.z - cz) <= r && Math.abs(en.pos.y + 1.0 - cy) < 3.4) {
+        this.damageEnemy(en, damage, true);
+        if (en.alive) {
+          const kx = en.pos.x - this.playerPos.x;
+          const kz = en.pos.z - this.playerPos.z;
+          const kLen = Math.hypot(kx, kz) || 1;
+          en.pos.x += (kx / kLen) * Math.min(1.6, knockback * 0.08);
+          en.pos.z += (kz / kLen) * Math.min(1.6, knockback * 0.08);
+        }
+        if (forwardPunch) this.hitstopTimer = Math.max(this.hitstopTimer, 0.04);
+      }
+    }
+
+    if (this.bossRuntime && this.bossRuntime.alive && this.bossRuntime.active) {
+      const b = this.bossRuntime;
+      if (Math.hypot(b.pos.x - cx, b.pos.z - cz) <= radius + 2.2 && Math.abs(b.pos.y + 1.8 - cy) < 4.2) {
+        this.damageBoss(damage);
+      }
+    }
+  }
+
+  private executeHulkGroundSlamImpact(radius: number, damage: number, shake: number) {
+    this.hitstopTimer = 0.07;
+    this.shakeIntensity = Math.max(this.shakeIntensity, shake);
+    this.playerSquash.set(1.38, 0.68, 1.38);
+    soundEngine.playHulkSlam();
+    this.spawnShockwave(this.playerPos.x, this.playerPos.y + 0.12, this.playerPos.z, radius + 1.2, 0x84cc16);
+    this.spawnShockwave(this.playerPos.x, this.playerPos.y + 0.18, this.playerPos.z, radius * 0.72, 0xfacc15);
+    this.spawnCrackDecal(this.playerPos.x, this.playerPos.y + 0.05, this.playerPos.z, 1.55);
+    this.spawnDebrisBurst(this.playerPos.x, this.playerPos.y + 0.3, this.playerPos.z, 16, 8.2, 0x64748b);
+    this.spawnBurst(this.playerPos.x, this.playerPos.y + 0.5, this.playerPos.z, 0xa3e635, 26, 7.2);
+    this.applyHulkAoEHit(this.playerPos.x, this.playerPos.y + 0.8, this.playerPos.z, radius, damage, 16, false);
+  }
+
+  private onHulkHeavyLanding(impactVy: number) {
+    const norm = THREE.MathUtils.clamp((impactVy - 12) / 14, 0.25, 1.0);
+    this.playerSquash.set(1.28 + norm * 0.12, 0.72 - norm * 0.08, 1.28 + norm * 0.12);
+    this.shakeIntensity = Math.max(this.shakeIntensity, 0.24 + norm * 0.28);
+    soundEngine.playHulkLand(0.7 + norm * 0.5);
+    this.spawnShockwave(this.playerPos.x, this.playerPos.y + 0.1, this.playerPos.z, 3.6 + norm * 2.2, 0x84cc16);
+    this.spawnCrackDecal(this.playerPos.x, this.playerPos.y + 0.05, this.playerPos.z, 1.05 + norm * 0.45);
+    this.spawnDebrisBurst(this.playerPos.x, this.playerPos.y + 0.25, this.playerPos.z, 10, 6.2, 0x64748b);
+    this.applyHulkAoEHit(this.playerPos.x, this.playerPos.y + 0.6, this.playerPos.z, 3.6 + norm * 1.4, 1, 12, false);
+  }
+
+  private stepThrowables(dt: number) {
+    for (const th of this.throwables) {
+      if (th.state === 'idle') {
+        th.mesh.position.copy(th.pos);
+      } else if (th.state === 'carried') {
+        th.pos.set(this.playerPos.x, this.playerPos.y + 2.65, this.playerPos.z);
+        th.mesh.position.copy(th.pos);
+        th.mesh.rotation.set(0, this.playerYaw + Math.PI / 2, 0);
+      } else if (th.state === 'thrown') {
+        th.vel.y -= 24.0 * dt;
+        th.pos.addScaledVector(th.vel, dt);
+        th.mesh.position.copy(th.pos);
+        th.mesh.rotateOnAxis(th.spinAxis, dt * 8.5);
+
+        let exploded = th.pos.y <= this.currentLevel.theme.hazardFloorY + 0.4 || th.pos.distanceToSquared(this.playerPos) > 70 * 70;
+
+        if (!exploded && this.bossRuntime && this.bossRuntime.alive && this.bossRuntime.active) {
+          const b = this.bossRuntime;
+          if (Math.hypot(th.pos.x - b.pos.x, th.pos.z - b.pos.z) < 3.4 && Math.abs(th.pos.y - (b.pos.y + 2.0)) < 3.2) {
+            exploded = true;
+          }
+        }
+        if (!exploded) {
+          for (const en of this.enemies) {
+            if (!en.alive) continue;
+            const r = en.kind === 'giant_mech' ? 2.5 : 1.65;
+            if (Math.hypot(th.pos.x - en.pos.x, th.pos.z - en.pos.z) < r && Math.abs(th.pos.y - (en.pos.y + 1.0)) < 2.4) {
+              exploded = true;
+              break;
+            }
+          }
+        }
+        if (!exploded) {
+          for (const d of this.destructibles) {
+            if (d.broken) continue;
+            if (this.closestDistToDestructible(th.pos.x, th.pos.y, th.pos.z, d) < 1.35) {
+              exploded = true;
+              break;
+            }
+          }
+        }
+        if (!exploded) {
+          for (const p of this.platforms) {
+            if (!p.visible) continue;
+            if (
+              Math.abs(th.pos.x - p.pos.x) < p.halfSize.x + 0.65 &&
+              Math.abs(th.pos.z - p.pos.z) < p.halfSize.z + 0.65 &&
+              th.pos.y <= p.pos.y + p.halfSize.y + 0.35 &&
+              th.pos.y >= p.pos.y - p.halfSize.y - 0.5
+            ) {
+              exploded = true;
+              break;
+            }
+          }
+        }
+
+        if (exploded) {
+          th.state = 'respawning';
+          th.respawnTimer = 7.5;
+          th.mesh.visible = false;
+          soundEngine.playSmashDestroy();
+          this.shakeIntensity = Math.max(this.shakeIntensity, 0.42);
+          this.spawnShockwave(th.pos.x, th.pos.y + 0.15, th.pos.z, 4.8, 0xa3e635);
+          this.spawnDebrisBurst(th.pos.x, th.pos.y + 0.3, th.pos.z, 14, 7.6, 0x64748b);
+          this.spawnBurst(th.pos.x, th.pos.y + 0.5, th.pos.z, 0xfacc15, 22, 6.8);
+          this.applyHulkAoEHit(th.pos.x, th.pos.y + 0.5, th.pos.z, 4.6, 2, 14, false);
+        }
+      } else if (th.state === 'respawning') {
+        th.respawnTimer -= dt;
+        if (th.respawnTimer <= 0) {
+          th.state = 'idle';
+          th.pos.copy(th.homePos);
+          th.vel.set(0, 0, 0);
+          th.mesh.position.copy(th.homePos);
+          th.mesh.rotation.set(0, th.homeRotY, 0);
+          th.mesh.visible = true;
+          this.spawnBurst(th.homePos.x, th.homePos.y + 0.6, th.homePos.z, 0x84cc16, 10, 3.2);
+        }
+      }
+    }
+  }
+
+  private stepDestructionChallenges(dt: number) {
+    for (const dc of this.destructionChallengesRuntime) {
+      dc.startPad.rotation.y += dt * 1.5;
+      const brokenCount = dc.targetIds.filter(
+        (id) => this.destructibles.find((d) => d.id === id)?.broken
+      ).length;
+
+      if (!dc.completed && !dc.active) {
+        const dx = this.playerPos.x - dc.startPos.x;
+        const dy = this.playerPos.y - dc.startPos.y;
+        const dz = this.playerPos.z - dc.startPos.z;
+        if (dx * dx + dz * dz < 4.4 && Math.abs(dy) < 2.2) {
+          if (brokenCount >= dc.targetIds.length) {
+            dc.completed = true;
+            this.coinsCollected += dc.rewardCoins;
+            soundEngine.playChallengeComplete();
+            this.spawnBurst(this.playerPos.x, this.playerPos.y + 1.2, this.playerPos.z, 0x84cc16, 28, 7.2);
+            this.showBanner(`¡${dc.label} completado! (+${dc.rewardCoins} Monedas)`, 3.8);
+            this.pushHud(true);
+          } else {
+            dc.active = true;
+            dc.timer = dc.timeLimit;
+            dc.lastTickSec = Math.ceil(dc.timeLimit);
+            soundEngine.playSwitch();
+            this.spawnBurst(dc.startPos.x, dc.startPos.y + 0.6, dc.startPos.z, 0x84cc16, 16, 4.8);
+            this.showBanner(
+              `¡${dc.label}! Destruye ${dc.targetIds.length} objetivos en ${dc.timeLimit}s`,
+              3.2
+            );
+            this.pushHud(true);
+          }
+        }
+      } else if (dc.active) {
+        dc.timer -= dt;
+        const ceilSec = Math.ceil(dc.timer);
+        if (ceilSec <= 5 && ceilSec > 0 && ceilSec !== dc.lastTickSec) {
+          dc.lastTickSec = ceilSec;
+          soundEngine.playChallengeTick();
+        }
+        if (brokenCount >= dc.targetIds.length) {
+          dc.active = false;
+          dc.completed = true;
+          this.coinsCollected += dc.rewardCoins;
+          soundEngine.playChallengeComplete();
+          this.spawnBurst(this.playerPos.x, this.playerPos.y + 1.2, this.playerPos.z, 0x84cc16, 28, 7.2);
+          this.showBanner(`¡${dc.label} completado! (+${dc.rewardCoins} Monedas)`, 3.8);
+          this.pushHud(true);
+        } else if (dc.timer <= 0) {
+          dc.active = false;
+          dc.timer = 0;
+          soundEngine.playHurt();
+          this.showBanner('¡Tiempo agotado! Regresa al pad verde para reintentar', 3.0);
+          this.pushHud(true);
+        }
+      }
+    }
+  }
+
+  private spawnDebrisBurst(x: number, y: number, z: number, count: number, speed: number, hex: number) {
+    if (!this.debrisPoolMesh) return;
+    let spawned = 0;
+    for (let i = 0; i < this.MAX_DEBRIS && spawned < count; i++) {
+      const ch = this.debrisChunks[i];
+      if (ch.active) continue;
+      ch.active = true;
+      ch.pos.set(x + (Math.random() - 0.5) * 0.9, y + Math.random() * 0.5, z + (Math.random() - 0.5) * 0.9);
+      const ang = Math.random() * Math.PI * 2;
+      const spd = speed * (0.45 + Math.random() * 0.65);
+      ch.vel.set(Math.cos(ang) * spd, speed * (0.55 + Math.random() * 0.6), Math.sin(ang) * spd);
+      ch.rot.set(Math.random() * Math.PI, Math.random() * Math.PI, Math.random() * Math.PI);
+      ch.rotVel.set((Math.random() - 0.5) * 14, (Math.random() - 0.5) * 14, (Math.random() - 0.5) * 14);
+      ch.scale = 0.55 + Math.random() * 0.85;
+      ch.maxLife = 0.85 + Math.random() * 0.6;
+      ch.life = ch.maxLife;
+      ch.color.setHex(hex);
+      spawned++;
+    }
+  }
+
+  private spawnShockwave(x: number, y: number, z: number, maxRadius: number, hex: number) {
+    let slot = this.shockwavePool.find((s) => !s.active);
+    if (!slot && this.shockwavePool.length > 0) {
+      slot = this.shockwavePool.reduce((a, b) => (a.life < b.life ? a : b));
+    }
+    if (!slot) return;
+    slot.active = true;
+    slot.maxLife = 0.42;
+    slot.life = 0.42;
+    slot.maxRadius = maxRadius;
+    slot.mesh.position.set(x, y, z);
+    slot.mesh.scale.setScalar(0.5);
+    slot.mat.color.setHex(hex);
+    slot.mat.opacity = 0.9;
+    slot.mesh.visible = true;
+  }
+
+  private spawnCrackDecal(x: number, y: number, z: number, scale: number) {
+    let slot = this.crackDecalPool.find((c) => !c.active);
+    if (!slot && this.crackDecalPool.length > 0) {
+      slot = this.crackDecalPool.reduce((a, b) => (a.life < b.life ? a : b));
+    }
+    if (!slot) return;
+    slot.active = true;
+    slot.maxLife = 5.5;
+    slot.life = 5.5;
+    slot.mesh.position.set(x, y, z);
+    slot.mesh.rotation.z = Math.random() * Math.PI * 2;
+    slot.mesh.scale.setScalar(scale);
+    slot.mat.opacity = 0.92;
+    slot.mesh.visible = true;
+  }
+
+  private stepPooledEffects(dt: number) {
+    if (this.debrisPoolMesh) {
+      let anyChanged = false;
+      for (let i = 0; i < this.MAX_DEBRIS; i++) {
+        const ch = this.debrisChunks[i];
+        if (!ch.active) continue;
+        anyChanged = true;
+        ch.life -= dt;
+        if (ch.life <= 0) {
+          ch.active = false;
+          _mat4.makeScale(0, 0, 0);
+          this.debrisPoolMesh.setMatrixAt(i, _mat4);
+          continue;
+        }
+        ch.vel.y -= 24.0 * dt;
+        ch.pos.addScaledVector(ch.vel, dt);
+        ch.rot.x += ch.rotVel.x * dt;
+        ch.rot.y += ch.rotVel.y * dt;
+        ch.rot.z += ch.rotVel.z * dt;
+        const s = ch.scale * Math.min(1, (ch.life / ch.maxLife) * 2.2);
+        _quat.setFromEuler(ch.rot);
+        _vec3A.set(s, s, s);
+        _mat4.compose(ch.pos, _quat, _vec3A);
+        this.debrisPoolMesh.setMatrixAt(i, _mat4);
+        this.debrisPoolMesh.setColorAt(i, ch.color);
+      }
+      if (anyChanged) {
+        this.debrisPoolMesh.instanceMatrix.needsUpdate = true;
+        if (this.debrisPoolMesh.instanceColor) this.debrisPoolMesh.instanceColor.needsUpdate = true;
+      }
+    }
+
+    for (const sw of this.shockwavePool) {
+      if (!sw.active) continue;
+      sw.life -= dt;
+      if (sw.life <= 0) {
+        sw.active = false;
+        sw.mesh.visible = false;
+      } else {
+        const p = 1 - sw.life / sw.maxLife;
+        sw.mesh.scale.setScalar(THREE.MathUtils.lerp(0.6, sw.maxRadius, p));
+        sw.mat.opacity = (1 - p) * 0.88;
+      }
+    }
+
+    for (const cd of this.crackDecalPool) {
+      if (!cd.active) continue;
+      cd.life -= dt;
+      if (cd.life <= 0) {
+        cd.active = false;
+        cd.mesh.visible = false;
+      } else {
+        cd.mat.opacity = Math.min(0.92, (cd.life / cd.maxLife) * 1.4);
+      }
+    }
+  }
+
   private handleFallDamage() {
     this.webActive = false;
     if (this.webLineMesh) this.webLineMesh.visible = false;
     this.isClimbing = false;
     this.climbingWall = null;
     this.climbFace = null;
+    this.hulkLeapCharging = false;
+    this.hulkLeapCharge = 0;
+    this.hulkSuperLeaping = false;
+    this.hulkSlamState = 'none';
+    this.hulkSlamTimer = 0;
     const biome = this.currentLevel.theme.biome;
     if (biome === 'temple' || biome === 'jungle' || biome === 'rapids') {
       soundEngine.playSplash();
@@ -11881,7 +13321,9 @@ export class GameEngine {
     if (this.phase === 'title') {
       rig.bodyGroup.rotation.x = 0;
       rig.bodyGroup.rotation.y = Math.sin(this.totalTime * 0.7) * 0.35;
+      rig.bodyGroup.position.y = 0;
       rig.leftArm.rotation.x = -0.15;
+      rig.leftArm.rotation.z = this.hasHulkSuit ? -0.18 : 0;
       rig.rightArm.rotation.z = 2.4 + Math.sin(this.totalTime * 5.0) * 0.32;
       rig.leftLeg.rotation.x = 0;
       rig.rightLeg.rotation.x = 0;
@@ -11894,6 +13336,7 @@ export class GameEngine {
       rig.bodyGroup.rotation.x = -0.12;
       rig.leftArm.rotation.x = -2.4;
       rig.rightArm.rotation.x = -2.4;
+      rig.leftArm.rotation.z = -0.4;
       rig.rightArm.rotation.z = 0.4;
       rig.leftLeg.rotation.x = 0.25;
       rig.rightLeg.rotation.x = -0.15;
@@ -11901,9 +13344,99 @@ export class GameEngine {
       rig.thrusterLeft.visible = false;
       rig.thrusterRight.visible = false;
       rig.botRocketRig.visible = false;
+    } else if (this.hasHulkSuit && this.hulkTransformTimer > 0) {
+      rig.bodyGroup.rotation.x = -0.18;
+      rig.bodyGroup.position.y = 0;
+      rig.leftArm.rotation.x = -2.1;
+      rig.rightArm.rotation.x = -2.1;
+      rig.leftArm.rotation.z = -0.55;
+      rig.rightArm.rotation.z = 0.55;
+      rig.leftLeg.rotation.x = 0.18;
+      rig.rightLeg.rotation.x = -0.18;
+      rig.hoverBeam.visible = false;
+      rig.thrusterLeft.visible = false;
+      rig.thrusterRight.visible = false;
+      rig.botRocketRig.visible = false;
     } else {
+      rig.leftArm.rotation.z = 0;
       rig.rightArm.rotation.z = 0;
-      if (this.isClimbing) {
+      if (this.hasHulkSuit) {
+        const runFactor = Math.min(1, groundSpeed / 9.2);
+        rig.bodyGroup.position.y = 0;
+        rig.leftArm.rotation.z = -0.18;
+        rig.rightArm.rotation.z = 0.18;
+
+        if (this.hulkLeapCharging) {
+          rig.bodyGroup.position.y = -0.22 - this.hulkLeapCharge * 0.14;
+          rig.bodyGroup.rotation.x = 0.36;
+          rig.leftArm.rotation.x = 0.65;
+          rig.rightArm.rotation.x = 0.65;
+          rig.leftLeg.rotation.x = -0.55;
+          rig.rightLeg.rotation.x = 0.45;
+        } else if (this.hulkSlamState === 'windup') {
+          rig.bodyGroup.rotation.x = -0.28;
+          rig.leftArm.rotation.x = -2.75;
+          rig.rightArm.rotation.x = -2.75;
+          rig.leftLeg.rotation.x = 0.25;
+          rig.rightLeg.rotation.x = -0.25;
+        } else if (this.hulkSlamState === 'falling' || this.hulkSlamState === 'impact') {
+          rig.bodyGroup.rotation.x = 0.42;
+          rig.leftArm.rotation.x = -1.35;
+          rig.rightArm.rotation.x = -1.35;
+          rig.leftLeg.rotation.x = 0.35;
+          rig.rightLeg.rotation.x = -0.35;
+        } else if (this.hulkPunchTimer > 0) {
+          if (this.hulkPunchCombo === 0) {
+            rig.bodyGroup.rotation.x = 0.35;
+            rig.leftArm.rotation.x = -1.95;
+            rig.rightArm.rotation.x = -1.95;
+          } else if (this.hulkPunchCombo === 1) {
+            rig.bodyGroup.rotation.x = 0.18;
+            rig.bodyGroup.rotation.y = this.playerYaw - 0.35;
+            rig.rightArm.rotation.x = -1.85;
+            rig.leftArm.rotation.x = 0.45;
+          } else {
+            rig.bodyGroup.rotation.x = 0.18;
+            rig.bodyGroup.rotation.y = this.playerYaw + 0.35;
+            rig.leftArm.rotation.x = -1.85;
+            rig.rightArm.rotation.x = 0.45;
+          }
+          rig.leftLeg.rotation.x = 0.25;
+          rig.rightLeg.rotation.x = -0.25;
+        } else if (this.hulkThrowTimer > 0) {
+          rig.bodyGroup.rotation.x = 0.25;
+          rig.leftArm.rotation.x = -1.45;
+          rig.rightArm.rotation.x = -1.45;
+        } else if (this.carriedThrowable) {
+          rig.bodyGroup.rotation.x = THREE.MathUtils.damp(rig.bodyGroup.rotation.x, runFactor * 0.12, 10, dt);
+          rig.leftArm.rotation.x = -2.9;
+          rig.rightArm.rotation.x = -2.9;
+          rig.leftArm.rotation.z = -0.18;
+          rig.rightArm.rotation.z = 0.18;
+          const stride = Math.sin(this.totalTime * 11.0) * runFactor;
+          rig.leftLeg.rotation.x = this.grounded ? stride * 0.72 : 0.32;
+          rig.rightLeg.rotation.x = this.grounded ? -stride * 0.72 : -0.22;
+        } else if (this.grounded) {
+          const stride = Math.sin(this.totalTime * 11.5) * runFactor;
+          rig.bodyGroup.rotation.x = THREE.MathUtils.damp(rig.bodyGroup.rotation.x, Math.min(0.22, groundSpeed * 0.02), 10, dt);
+          rig.bodyGroup.position.y = Math.abs(stride) * 0.08;
+          rig.leftLeg.rotation.x = stride * 0.8;
+          rig.rightLeg.rotation.x = -stride * 0.8;
+          rig.leftArm.rotation.x = -stride * 0.75 - 0.15;
+          rig.rightArm.rotation.x = stride * 0.75 - 0.15;
+        } else {
+          rig.bodyGroup.rotation.x = THREE.MathUtils.damp(
+            rig.bodyGroup.rotation.x,
+            THREE.MathUtils.clamp(-this.playerVel.y * 0.015, -0.22, 0.22),
+            10,
+            dt
+          );
+          rig.leftLeg.rotation.x = 0.42;
+          rig.rightLeg.rotation.x = -0.35;
+          rig.leftArm.rotation.x = this.hulkSuperLeaping ? -2.15 : -0.85;
+          rig.rightArm.rotation.x = this.hulkSuperLeaping ? -2.15 : -0.85;
+        }
+      } else if (this.isClimbing) {
         rig.bodyGroup.rotation.x = 0;
         const climbMotion = Math.sin(this.playerPos.y * 5.5);
         rig.leftArm.rotation.x = -2.35 + climbMotion * 0.45;
@@ -12016,23 +13549,29 @@ export class GameEngine {
     const dz = !this.active2DZone ? this.activeDiscoveryZone : null;
     const boatSpeedBoost = this.boatState === 'sailing' ? Math.max(0, getRiverZoneSpeedFactor(this.boatPos.z) - 1) * 10 : 0;
     const baseFov =
-      this.spiderTransformTimer > 0
+      this.spiderTransformTimer > 0 || this.hulkTransformTimer > 0
         ? 48
-        : this.webActive
-          ? 64
-          : isBoosting
-            ? 63
-            : isVehicle
-              ? this.boatState === 'sailing'
-                ? 59 + boatSpeedBoost
-                : 59
-              : isBossActive
-                ? 60
-                : dz?.fov
-                  ? dz.fov
-                  : groundSpd > 6.5
-                    ? 58
-                    : 55;
+        : this.hulkSuperLeaping
+          ? 66
+          : this.hulkLeapCharging
+            ? 52
+            : this.webActive
+              ? 64
+              : isBoosting
+                ? 63
+                : isVehicle
+                  ? this.boatState === 'sailing'
+                    ? 59 + boatSpeedBoost
+                    : 59
+                  : isBossActive
+                    ? 60
+                    : dz?.fov
+                      ? dz.fov
+                      : this.hasHulkSuit && groundSpd > 6.5
+                        ? 60
+                        : groundSpd > 6.5
+                          ? 58
+                          : 55;
     this.camDynamicFov = THREE.MathUtils.damp(this.camDynamicFov, baseFov, 6, dt);
     if (Math.abs(this.camera.fov - this.camDynamicFov) > 0.05) {
       this.camera.fov = this.camDynamicFov;
@@ -12041,14 +13580,14 @@ export class GameEngine {
 
     if (this.phase === 'title') {
       const angle = this.totalTime * 0.28;
-      const dist = 6.2;
+      const dist = this.hasHulkSuit ? 7.6 : 6.2;
       _vec3A.set(
         this.playerPos.x + Math.sin(angle) * dist,
-        this.playerPos.y + 2.6 + Math.sin(this.totalTime * 0.5) * 0.35,
+        this.playerPos.y + (this.hasHulkSuit ? 3.1 : 2.6) + Math.sin(this.totalTime * 0.5) * 0.35,
         this.playerPos.z + Math.cos(angle) * dist
       );
       this.camera.position.lerp(_vec3A, 1 - Math.exp(-4 * dt));
-      _vec3B.set(this.playerPos.x, this.playerPos.y + 1.0, this.playerPos.z);
+      _vec3B.set(this.playerPos.x, this.playerPos.y + (this.hasHulkSuit ? 1.55 : 1.0), this.playerPos.z);
       this.camera.lookAt(_vec3B);
       return;
     }
@@ -12063,6 +13602,22 @@ export class GameEngine {
       );
       this.camCurrentPos.lerp(_vec3A, 1 - Math.exp(-7 * dt));
       _vec3B.set(this.playerPos.x, this.playerPos.y + 1.05, this.playerPos.z);
+      this.camLookTarget.lerp(_vec3B, 1 - Math.exp(-10 * dt));
+      this.camera.position.copy(this.camCurrentPos);
+      this.camera.lookAt(this.camLookTarget);
+      return;
+    }
+
+    if (this.hasHulkSuit && this.hulkTransformTimer > 0) {
+      const orbitAng = (2.15 - this.hulkTransformTimer) * 1.35;
+      const closeDist = 5.4;
+      _vec3A.set(
+        this.playerPos.x + Math.sin(orbitAng) * closeDist,
+        this.playerPos.y + 2.25,
+        this.playerPos.z + Math.cos(orbitAng) * closeDist
+      );
+      this.camCurrentPos.lerp(_vec3A, 1 - Math.exp(-7 * dt));
+      _vec3B.set(this.playerPos.x, this.playerPos.y + 1.45, this.playerPos.z);
       this.camLookTarget.lerp(_vec3B, 1 - Math.exp(-10 * dt));
       this.camera.position.copy(this.camCurrentPos);
       this.camera.lookAt(this.camLookTarget);
@@ -12131,13 +13686,19 @@ export class GameEngine {
       ? 13.5
       : this.webActive
         ? 11.8
-        : isBossActive
-          ? 11.4
-          : dz?.dist ?? 9.6;
+        : this.hasHulkSuit && this.hulkSuperLeaping
+          ? 14.5 + Math.min(3.5, Math.max(0, this.playerPos.y) * 0.14)
+          : isBossActive
+            ? this.hasHulkSuit
+              ? 12.8
+              : 11.4
+            : this.hasHulkSuit
+              ? dz?.dist ?? 11.4
+              : dz?.dist ?? 9.6;
     const effPitch = this.active2DZone ? this.camPitch : isBossActive ? 0.46 : dz?.pitch ?? this.camPitch;
     const effYaw = climbYawOverride !== null ? climbYawOverride : this.camYaw + (dz?.yawOffset ?? 0);
     const horizDist = dist * Math.cos(effPitch);
-    const heightOffset = dist * Math.sin(effPitch) + (this.active2DZone ? 1.8 : isBossActive ? 1.6 : 1.2);
+    const heightOffset = dist * Math.sin(effPitch) + (this.active2DZone ? 1.8 : isBossActive ? 1.6 : this.hasHulkSuit ? 1.55 : 1.2);
 
     _vec3A.set(
       this.playerPos.x + Math.sin(effYaw) * horizDist,
@@ -12148,11 +13709,11 @@ export class GameEngine {
     if (isBossActive && this.bossRuntime) {
       _vec3B.set(
         THREE.MathUtils.lerp(this.playerPos.x, this.bossRuntime.pos.x, 0.25),
-        this.playerPos.y + 1.3,
+        this.playerPos.y + (this.hasHulkSuit ? 1.85 : 1.3),
         THREE.MathUtils.lerp(this.playerPos.z, this.bossRuntime.pos.z, 0.25)
       );
     } else {
-      _vec3B.set(this.playerPos.x, this.playerPos.y + (dz ? 1.45 : 1.15), this.playerPos.z);
+      _vec3B.set(this.playerPos.x, this.playerPos.y + (this.hasHulkSuit ? 1.65 : dz ? 1.45 : 1.15), this.playerPos.z);
     }
 
     // 3D wall/platform occlusion avoidance
@@ -12222,6 +13783,10 @@ export class GameEngine {
           }
         : null;
     const activeTc = this.timedChallengesRuntime.find((tc) => tc.active) ?? null;
+    const activeDc = this.destructionChallengesRuntime.find((dc) => dc.active) ?? null;
+    const dcBroken = activeDc
+      ? activeDc.targetIds.filter((id) => this.destructibles.find((d) => d.id === id)?.broken).length
+      : 0;
     this.onHudUpdate({
       phase: this.phase,
       levelIndex: this.currentLevel.index,
@@ -12235,10 +13800,16 @@ export class GameEngine {
       isSwinging: this.webActive,
       canWebTarget: Boolean(this.highlightedWebAnchor),
       spiderTransforming: this.spiderTransformTimer > 0,
-      challengeTimer: activeTc ? Math.max(0, activeTc.timer) : null,
+      hasHulkSuit: this.hasHulkSuit,
+      hulkLeapCharge: this.hulkLeapCharging ? this.hulkLeapCharge : 0,
+      hulkCarrying: this.carriedThrowable ? this.carriedThrowable.label : null,
+      hulkTransforming: this.hulkTransformTimer > 0,
+      challengeTimer: activeTc ? Math.max(0, activeTc.timer) : activeDc ? Math.max(0, activeDc.timer) : null,
       challengeProgress: activeTc
         ? `${activeTc.label}: ${activeTc.currentIdx}/${activeTc.checkpoints.length}`
-        : null,
+        : activeDc
+          ? `${activeDc.label}: ${dcBroken}/${activeDc.targetIds.length}`
+          : null,
       boss: bossHud,
       health: this.health,
       maxHealth: this.maxHealth,

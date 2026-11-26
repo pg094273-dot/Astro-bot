@@ -1,6 +1,16 @@
 export type GamePhase = 'title' | 'playing' | 'paused' | 'victory' | 'gameover';
 
-export type BiomeKind = 'jungle' | 'temple' | 'desert' | 'ice' | 'volcanic' | 'nebula' | 'paris' | 'rapids' | 'newyork';
+export type BiomeKind =
+  | 'jungle'
+  | 'temple'
+  | 'desert'
+  | 'ice'
+  | 'volcanic'
+  | 'nebula'
+  | 'paris'
+  | 'rapids'
+  | 'newyork'
+  | 'gammacity';
 
 export type PlatformKind =
   | 'solid'
@@ -25,7 +35,8 @@ export type PlatformStyle =
   | 'nebula'
   | 'paris'
   | 'river'
-  | 'newyork';
+  | 'newyork'
+  | 'gammacity';
 
 export interface PlatformDef {
   id: string;
@@ -118,7 +129,9 @@ export type EnemyKind =
   | 'flyer'
   | 'shooter'
   | 'chaser'
-  | 'guardian';
+  | 'guardian'
+  | 'armored_guard'
+  | 'giant_mech';
 
 export interface EnemyDef {
   id: string;
@@ -126,9 +139,49 @@ export interface EnemyDef {
   pos: [number, number, number];
   patrolOffset: [number, number, number];
   speed: number;
+  hp?: number;
+  scale?: number;
 }
 
-export type BossStyle = 'jungle' | 'ice' | 'temple' | 'volcanic' | 'nebula';
+export type BossStyle = 'jungle' | 'ice' | 'temple' | 'volcanic' | 'nebula' | 'gammacity';
+
+export type DestructibleKind =
+  | 'wall'
+  | 'barrier'
+  | 'pillar'
+  | 'factory_tank'
+  | 'bridge_span'
+  | 'tower_facade'
+  | 'crate_stack';
+
+export interface DestructiblePropDef {
+  id: string;
+  kind: DestructibleKind;
+  pos: [number, number, number];
+  size: [number, number, number];
+  hp?: number;
+  coins?: number;
+  message?: string;
+}
+
+export type ThrowableKind = 'car' | 'rock' | 'container' | 'concrete' | 'beam';
+
+export interface ThrowableObjectDef {
+  id: string;
+  kind: ThrowableKind;
+  pos: [number, number, number];
+  rotY?: number;
+  color?: number;
+}
+
+export interface DestructionChallengeDef {
+  id: string;
+  label: string;
+  startPos: [number, number, number];
+  targetIds: string[];
+  timeLimit: number;
+  rewardCoins?: number;
+}
 
 export interface BossDef {
   name: string;
@@ -327,8 +380,12 @@ export interface LevelDef {
   bowPickupPos?: [number, number, number];
   monkeySuitPos?: [number, number, number];
   spiderSuitLevel?: boolean;
+  hulkSuitLevel?: boolean;
   webAnchors?: [number, number, number][];
   timedChallenges?: TimedChallengeDef[];
+  destructibles?: DestructiblePropDef[];
+  throwables?: ThrowableObjectDef[];
+  destructionChallenges?: DestructionChallengeDef[];
   climbWalls?: ClimbWallDef[];
   targets?: ArcheryTargetDef[];
   switches?: SwitchDef[];
@@ -363,6 +420,10 @@ export interface HudSnapshot {
   isSwinging: boolean;
   canWebTarget: boolean;
   spiderTransforming: boolean;
+  hasHulkSuit: boolean;
+  hulkLeapCharge: number; // 0..1
+  hulkCarrying: string | null;
+  hulkTransforming: boolean;
   challengeTimer: number | null;
   challengeProgress: string | null;
   boss: { name: string; hp: number; maxHp: number; phase: number } | null;

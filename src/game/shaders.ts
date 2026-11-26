@@ -521,6 +521,7 @@ export function createBiomeAmbientParticles(biome: BiomeKind, count = 160): Ambi
     paris: { color: 0xfbcfe8, size: 0.26, speedY: -0.55, drift: 1.75, opacity: 0.72 },
     rapids: { color: 0xe0f2fe, size: 0.26, speedY: 0.5, drift: 1.4, opacity: 0.65 },
     newyork: { color: 0xfde68a, size: 0.22, speedY: -0.18, drift: 1.15, opacity: 0.55 },
+    gammacity: { color: 0x84cc16, size: 0.27, speedY: 0.34, drift: 1.35, opacity: 0.68 },
   };
 
   const cfg = palette[biome];

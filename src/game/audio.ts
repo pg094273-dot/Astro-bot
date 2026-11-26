@@ -10,6 +10,7 @@ export type MusicTheme =
   | 'paris'
   | 'rapids'
   | 'newyork'
+  | 'gammacity'
   | 'rocket'
   | 'boss';
 
@@ -23,7 +24,7 @@ interface ThemeArrangement {
   leadFilterHz: number;
   padWave: OscillatorType;
   bassWave: OscillatorType;
-  drumStyle: 'soft' | 'jungle' | 'desert' | 'ice' | 'volcanic' | 'nebula' | 'paris' | 'rapids' | 'newyork' | 'rocket' | 'boss';
+  drumStyle: 'soft' | 'jungle' | 'desert' | 'ice' | 'volcanic' | 'nebula' | 'paris' | 'rapids' | 'newyork' | 'gammacity' | 'rocket' | 'boss';
 }
 
 function midiToFreq(midi: number): number {
@@ -382,6 +383,38 @@ const ARRANGEMENTS: Record<MusicTheme, ThemeArrangement> = {
     padWave: 'sawtooth',
     bassWave: 'sawtooth',
     drumStyle: 'newyork',
+  },
+
+  // "Furia Gamma" — Heavy industrial synth-rock & stomping bassline at 128 BPM (D minor powerhouse)
+  gammacity: {
+    bpm: 128,
+    chords: [
+      [50, 57, 62, 65], // Dm5/add
+      [48, 55, 60, 63], // Cm5/add
+      [46, 53, 58, 62], // Bb5
+      [45, 52, 57, 61], // A7sus/power
+    ],
+    bass: [
+      26, null, 26, 26, null, 38, 26, null, 26, null, 38, null, 29, null, 33, null,
+      24, null, 24, 24, null, 36, 24, null, 24, null, 36, null, 27, null, 31, null,
+      22, null, 22, 22, null, 34, 22, null, 22, null, 34, null, 26, null, 29, null,
+      21, null, 21, 33, null, 21, 33, null, 25, null, 28, null, 33, null, 36, null,
+    ],
+    arp: [
+      62, null, 69, 74, null, 69, 65, null, 60, null, 67, 72, null, 67, 63, null,
+      58, null, 65, 70, null, 65, 62, null, 57, null, 64, 69, 73, null, 69, null,
+    ],
+    lead: [
+      62, null, null, 65, null, null, 69, null, 74, null, 72, null, 69, null, null, null,
+      67, null, null, 63, null, null, 60, null, 63, null, 67, null, 65, null, null, null,
+      62, null, null, 58, null, null, 65, null, 70, null, 69, null, 65, null, null, null,
+      64, null, null, 61, null, null, 57, null, 61, null, 64, null, 69, null, null, null,
+    ],
+    leadWave: 'sawtooth',
+    leadFilterHz: 2300,
+    padWave: 'sawtooth',
+    bassWave: 'sawtooth',
+    drumStyle: 'gammacity',
   },
 };
 
@@ -876,26 +909,31 @@ class SoundEngine {
     const kickHits =
       style === 'rocket' || style === 'boss' || style === 'volcanic' || style === 'rapids'
         ? stepInBar % 4 === 0 || (style === 'boss' && stepInBar === 14)
-        : style === 'newyork'
-          ? stepInBar === 0 || stepInBar === 3 || stepInBar === 8 || stepInBar === 10 || stepInBar === 14
-          : style === 'desert' || style === 'nebula'
-            ? stepInBar === 0 || stepInBar === 6 || stepInBar === 8 || stepInBar === 14
-            : style === 'jungle' || style === 'paris'
-              ? stepInBar === 0 || stepInBar === 3 || stepInBar === 8 || stepInBar === 11
-              : stepInBar === 0 || stepInBar === 8;
+        : style === 'gammacity'
+          ? stepInBar === 0 || stepInBar === 2 || stepInBar === 8 || stepInBar === 10 || stepInBar === 14
+          : style === 'newyork'
+            ? stepInBar === 0 || stepInBar === 3 || stepInBar === 8 || stepInBar === 10 || stepInBar === 14
+            : style === 'desert' || style === 'nebula'
+              ? stepInBar === 0 || stepInBar === 6 || stepInBar === 8 || stepInBar === 14
+              : style === 'jungle' || style === 'paris'
+                ? stepInBar === 0 || stepInBar === 3 || stepInBar === 8 || stepInBar === 11
+                : stepInBar === 0 || stepInBar === 8;
 
     if (kickHits) {
       const osc = this.ctx.createOscillator();
       const gain = this.ctx.createGain();
       osc.type = 'sine';
-      osc.frequency.setValueAtTime(style === 'rocket' || style === 'boss' ? 148 : 120, time);
-      osc.frequency.exponentialRampToValueAtTime(42, time + 0.09);
-      const peak = style === 'soft' ? 0.16 : style === 'boss' ? 0.32 : 0.28;
+      osc.frequency.setValueAtTime(
+        style === 'gammacity' ? 165 : style === 'rocket' || style === 'boss' ? 148 : 120,
+        time
+      );
+      osc.frequency.exponentialRampToValueAtTime(style === 'gammacity' ? 34 : 42, time + 0.11);
+      const peak = style === 'soft' ? 0.16 : style === 'boss' || style === 'gammacity' ? 0.34 : 0.28;
       gain.gain.setValueAtTime(peak, time);
-      gain.gain.exponentialRampToValueAtTime(0.001, time + 0.12);
+      gain.gain.exponentialRampToValueAtTime(0.001, time + 0.13);
       osc.connect(gain).connect(this.musicBus);
       osc.start(time);
-      osc.stop(time + 0.13);
+      osc.stop(time + 0.14);
     }
 
     // Snare / Clap on 4 & 12 (or jungle syncopated rim)
@@ -909,19 +947,19 @@ class SoundEngine {
       noise.buffer = this.noiseBuffer;
       const bp = this.ctx.createBiquadFilter();
       bp.type = 'bandpass';
-      bp.frequency.setValueAtTime(style === 'ice' || style === 'nebula' ? 2800 : 1850, time);
+      bp.frequency.setValueAtTime(style === 'ice' || style === 'nebula' ? 2800 : style === 'gammacity' ? 1450 : 1850, time);
       bp.Q.setValueAtTime(1.2, time);
       const gain = this.ctx.createGain();
-      const peak = style === 'rocket' || style === 'boss' ? 0.17 : 0.11;
+      const peak = style === 'rocket' || style === 'boss' || style === 'gammacity' ? 0.18 : 0.11;
       gain.gain.setValueAtTime(peak, time);
-      gain.gain.exponentialRampToValueAtTime(0.001, time + (style === 'rocket' || style === 'boss' ? 0.12 : 0.08));
+      gain.gain.exponentialRampToValueAtTime(0.001, time + (style === 'rocket' || style === 'boss' || style === 'gammacity' ? 0.13 : 0.08));
       noise.connect(bp).connect(gain).connect(this.musicBus);
       noise.start(time);
-      noise.stop(time + 0.14);
+      noise.stop(time + 0.15);
     }
 
-    // Desert / Jungle / Volcanic melodic tom accents
-    if ((style === 'jungle' || style === 'desert' || style === 'volcanic') && (stepInBar === 6 || stepInBar === 10)) {
+    // Desert / Jungle / Volcanic / Gamma City melodic tom accents
+    if ((style === 'jungle' || style === 'desert' || style === 'volcanic' || style === 'gammacity') && (stepInBar === 6 || stepInBar === 10)) {
       const tom = this.ctx.createOscillator();
       const gain = this.ctx.createGain();
       tom.type = 'triangle';
@@ -1849,6 +1887,177 @@ class SoundEngine {
       osc.start(t);
       osc.stop(t + 0.38);
     });
+  }
+
+  public playHulkTransform() {
+    const dest = this.getSfxDest();
+    if (!dest || !this.ctx) return;
+    const now = this.ctx.currentTime;
+    // Deep gamma-reactor rumble + muscular roar chord
+    this.playNoiseBurst(now, 1.35, 'lowpass', 220, 1450, 0.34, 0.9);
+    const sub = this.ctx.createOscillator();
+    const subGain = this.ctx.createGain();
+    sub.type = 'sawtooth';
+    sub.frequency.setValueAtTime(68, now);
+    sub.frequency.exponentialRampToValueAtTime(155, now + 0.85);
+    sub.frequency.exponentialRampToValueAtTime(82, now + 1.4);
+    subGain.gain.setValueAtTime(0.06, now);
+    subGain.gain.linearRampToValueAtTime(0.28, now + 0.55);
+    subGain.gain.exponentialRampToValueAtTime(0.001, now + 1.48);
+    sub.connect(subGain).connect(dest);
+    sub.start(now);
+    sub.stop(now + 1.5);
+
+    [146.83, 220, 293.66, 440].forEach((freq, i) => {
+      if (!this.ctx) return;
+      const t = now + 1.0 + i * 0.045;
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      osc.type = 'sawtooth';
+      osc.frequency.setValueAtTime(freq, t);
+      gain.gain.setValueAtTime(0.18, t);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.65);
+      osc.connect(gain).connect(dest);
+      osc.start(t);
+      osc.stop(t + 0.68);
+    });
+  }
+
+  public playHulkPunch(isSmash = false) {
+    const dest = this.getSfxDest();
+    if (!dest || !this.ctx) return;
+    const now = this.ctx.currentTime;
+    // Heavy sub-bass meaty impact + air crack
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(isSmash ? 155 : 132, now);
+    osc.frequency.exponentialRampToValueAtTime(36, now + (isSmash ? 0.24 : 0.16));
+    gain.gain.setValueAtTime(isSmash ? 0.36 : 0.28, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + (isSmash ? 0.26 : 0.18));
+    osc.connect(gain).connect(dest);
+    osc.start(now);
+    osc.stop(now + 0.28);
+
+    this.playNoiseBurst(now, isSmash ? 0.22 : 0.14, 'bandpass', 1100, 240, isSmash ? 0.34 : 0.26, 0.8);
+  }
+
+  public playHulkSlam() {
+    const dest = this.getSfxDest();
+    if (!dest || !this.ctx) return;
+    const now = this.ctx.currentTime;
+    // Seismic low boom + cracking stone transient
+    const sub = this.ctx.createOscillator();
+    const sGain = this.ctx.createGain();
+    sub.type = 'sine';
+    sub.frequency.setValueAtTime(125, now);
+    sub.frequency.exponentialRampToValueAtTime(28, now + 0.48);
+    sGain.gain.setValueAtTime(0.45, now);
+    sGain.gain.exponentialRampToValueAtTime(0.001, now + 0.52);
+    sub.connect(sGain).connect(dest);
+    sub.start(now);
+    sub.stop(now + 0.54);
+
+    const crunch = this.ctx.createOscillator();
+    const cGain = this.ctx.createGain();
+    crunch.type = 'sawtooth';
+    crunch.frequency.setValueAtTime(92, now);
+    crunch.frequency.exponentialRampToValueAtTime(34, now + 0.3);
+    cGain.gain.setValueAtTime(0.22, now);
+    cGain.gain.exponentialRampToValueAtTime(0.001, now + 0.32);
+    crunch.connect(cGain).connect(dest);
+    crunch.start(now);
+    crunch.stop(now + 0.34);
+
+    this.playNoiseBurst(now, 0.42, 'lowpass', 1800, 140, 0.42, 0.7);
+  }
+
+  public playHulkLeap() {
+    const dest = this.getSfxDest();
+    if (!dest || !this.ctx) return;
+    const now = this.ctx.currentTime;
+    const sub = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+    sub.type = 'sawtooth';
+    sub.frequency.setValueAtTime(75, now);
+    sub.frequency.exponentialRampToValueAtTime(220, now + 0.28);
+    gain.gain.setValueAtTime(0.24, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.34);
+    sub.connect(gain).connect(dest);
+    sub.start(now);
+    sub.stop(now + 0.36);
+
+    this.playNoiseBurst(now, 0.38, 'bandpass', 420, 1900, 0.28, 0.9);
+  }
+
+  public playHulkLand(intensity = 1) {
+    const dest = this.getSfxDest();
+    if (!dest || !this.ctx) return;
+    const now = this.ctx.currentTime;
+    const amp = Math.min(1.2, Math.max(0.45, intensity));
+    const sub = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+    sub.type = 'sine';
+    sub.frequency.setValueAtTime(110, now);
+    sub.frequency.exponentialRampToValueAtTime(30, now + 0.32);
+    gain.gain.setValueAtTime(0.36 * amp, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
+    sub.connect(gain).connect(dest);
+    sub.start(now);
+    sub.stop(now + 0.37);
+
+    this.playNoiseBurst(now, 0.26, 'lowpass', 1100, 160, 0.3 * amp, 0.8);
+  }
+
+  public playSmashDestroy() {
+    const dest = this.getSfxDest();
+    if (!dest || !this.ctx) return;
+    const now = this.ctx.currentTime;
+    this.playNoiseBurst(now, 0.38, 'bandpass', 1650, 180, 0.38, 0.75);
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(140, now);
+    osc.frequency.exponentialRampToValueAtTime(42, now + 0.22);
+    gain.gain.setValueAtTime(0.24, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.25);
+    osc.connect(gain).connect(dest);
+    osc.start(now);
+    osc.stop(now + 0.26);
+  }
+
+  public playObjectGrab() {
+    const dest = this.getSfxDest();
+    if (!dest || !this.ctx) return;
+    const now = this.ctx.currentTime;
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(110, now);
+    osc.frequency.exponentialRampToValueAtTime(240, now + 0.14);
+    gain.gain.setValueAtTime(0.24, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.17);
+    osc.connect(gain).connect(dest);
+    osc.start(now);
+    osc.stop(now + 0.18);
+    this.playNoiseBurst(now, 0.08, 'lowpass', 720, 220, 0.18);
+  }
+
+  public playObjectThrow() {
+    const dest = this.getSfxDest();
+    if (!dest || !this.ctx) return;
+    const now = this.ctx.currentTime;
+    this.playNoiseBurst(now, 0.24, 'bandpass', 480, 2200, 0.3, 0.85);
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(240, now);
+    osc.frequency.exponentialRampToValueAtTime(88, now + 0.18);
+    gain.gain.setValueAtTime(0.2, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.2);
+    osc.connect(gain).connect(dest);
+    osc.start(now);
+    osc.stop(now + 0.21);
   }
 }
 

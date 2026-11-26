@@ -218,9 +218,11 @@ export const GameMenus: React.FC<GameMenusProps> = ({
         <div className="flex w-full max-w-sm flex-col gap-4 rounded-2xl border border-rose-500/30 bg-[#091124]/95 p-6 text-white shadow-2xl">
           <h2 className="font-display text-2xl font-bold text-rose-400">Sin Energía</h2>
           <p className="text-sm text-slate-300">
-            {hud.hasSpiderSuit
-              ? `El Héroe Arácnido necesita recargar fuerzas en ${hud.levelName}.`
-              : `Nova Bot necesita recargar circuitos en ${hud.levelName}.`}
+            {hud.hasHulkSuit
+              ? `Hulk necesita recargar energía gamma en ${hud.levelName}.`
+              : hud.hasSpiderSuit
+                ? `El Héroe Arácnido necesita recargar fuerzas en ${hud.levelName}.`
+                : `Nova Bot necesita recargar circuitos en ${hud.levelName}.`}
           </p>
           <div className="flex flex-col gap-2.5 pt-2">
             <button

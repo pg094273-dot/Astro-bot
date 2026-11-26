@@ -155,6 +155,7 @@ export function buildStyledPlatformMesh(
     parisSkyV2?: boolean;
     rapidsRiverV2?: boolean;
     newYorkV2?: boolean;
+    gammaCityV2?: boolean;
   }
 ): THREE.Mesh {
   const [w, h, d] = def.size;
@@ -169,6 +170,7 @@ export function buildStyledPlatformMesh(
   const parisV2 = Boolean(options?.parisSkyV2);
   const rapidsV2 = Boolean(options?.rapidsRiverV2);
   const newYorkV2 = Boolean(options?.newYorkV2);
+  const gammaV2 = Boolean(options?.gammaCityV2);
   const seed = hashSeed(def.id);
 
   // Use a sculpted composite Mesh as the primary entity (Engine still reads mesh.position & mesh.material cleanly)
@@ -1153,6 +1155,46 @@ export function buildStyledPlatformMesh(
         );
         underBeam.position.y = -h * 0.5 - 0.3;
         mesh.add(underBeam);
+      } else if (gammaV2) {
+        // Gamma City Heavy Industrial Riveted Girder Overpass & Hazard Curbs
+        const girderMat = new THREE.MeshStandardMaterial({
+          map: textures.gammaIndustrialSteel,
+          metalness: 0.76,
+          roughness: 0.34,
+        });
+        const hazardMat = new THREE.MeshStandardMaterial({
+          map: textures.gammaHazardStripe,
+          roughness: 0.48,
+          metalness: 0.25,
+        });
+        for (const side of [-1, 1]) {
+          const edge = side * (width * 0.46);
+          const trussTop = new THREE.Mesh(
+            alongZ ? new THREE.BoxGeometry(0.28, 0.28, span * 0.96) : new THREE.BoxGeometry(span * 0.96, 0.28, 0.28),
+            girderMat
+          );
+          trussTop.position.set(alongZ ? edge : 0, h * 0.5 + 1.05, alongZ ? 0 : edge);
+          const curb = new THREE.Mesh(
+            alongZ ? new THREE.BoxGeometry(0.3, 0.28, span * 0.96) : new THREE.BoxGeometry(span * 0.96, 0.28, 0.3),
+            hazardMat
+          );
+          curb.position.set(alongZ ? edge : 0, h * 0.5 + 0.14, alongZ ? 0 : edge);
+          mesh.add(trussTop, curb);
+
+          const postCount = Math.max(3, Math.floor(span / 3.5));
+          for (let p = 0; p < postCount; p++) {
+            const u = -span * 0.44 + (p / Math.max(1, postCount - 1)) * span * 0.88;
+            const post = new THREE.Mesh(new THREE.BoxGeometry(0.24, 1.15, 0.24), girderMat);
+            post.position.set(alongZ ? edge : u, h * 0.5 + 0.55, alongZ ? u : edge);
+            mesh.add(post);
+          }
+        }
+        const underGirder = new THREE.Mesh(
+          alongZ ? new THREE.BoxGeometry(width * 0.9, 0.72, span * 0.94) : new THREE.BoxGeometry(span * 0.94, 0.72, width * 0.9),
+          girderMat
+        );
+        underGirder.position.y = -h * 0.5 - 0.34;
+        mesh.add(underGirder);
       } else {
         const railMat = new THREE.MeshStandardMaterial({
           map: textures.barkTexture,
@@ -2414,6 +2456,55 @@ export function buildStyledPlatformMesh(
             const fan = new THREE.Mesh(new THREE.CylinderGeometry(0.36, 0.36, 0.14, 10), concreteMat);
             fan.position.set(-w * 0.32, h * 0.5 + 0.76, -d * 0.34);
             mesh.add(hvac, fan);
+          }
+        }
+      } else if (gammaV2) {
+        const concreteMat = new THREE.MeshStandardMaterial({
+          map: textures.gammaConcrete,
+          roughness: 0.86,
+          metalness: 0.1,
+        });
+        const steelMat = new THREE.MeshStandardMaterial({
+          map: textures.gammaIndustrialSteel,
+          roughness: 0.38,
+          metalness: 0.72,
+        });
+        const brickMat = new THREE.MeshStandardMaterial({
+          map: textures.gammaBrickFactory,
+          roughness: 0.84,
+          metalness: 0.06,
+        });
+        const hazardMat = new THREE.MeshStandardMaterial({
+          map: textures.gammaHazardStripe,
+          roughness: 0.45,
+          metalness: 0.25,
+        });
+
+        if (def.kind === 'moving' || def.kind === 'elevator') {
+          const craneBase = new THREE.Mesh(new THREE.BoxGeometry(w * 0.94, 0.38, d * 0.94), hazardMat);
+          craneBase.position.y = -h * 0.5 - 0.18;
+          mesh.add(craneBase);
+        } else if (def.pos[1] > 2.2) {
+          // Elevated buildings, factories & warehouses descending cleanly to street ground (y = 0)
+          const groundDrop = Math.max(2.0, def.pos[1] - h * 0.5);
+          const isFactory = Math.floor(seed * 3) % 2 === 0;
+          const facadeMat = isFactory ? brickMat : steelMat;
+          const shaft = new THREE.Mesh(new THREE.BoxGeometry(w * 0.96, groundDrop, d * 0.96), facadeMat);
+          shaft.position.y = -h * 0.5 - groundDrop * 0.5;
+          shaft.receiveShadow = !isSoftwareGl;
+          mesh.add(shaft);
+
+          const cornice = new THREE.Mesh(new THREE.BoxGeometry(w + 0.28, 0.34, d + 0.28), concreteMat);
+          cornice.position.y = h * 0.34;
+          mesh.add(cornice);
+
+          // Industrial rooftop vent / chimney stack in corners
+          if (w >= 8 && d >= 8) {
+            const chimney = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.54, 2.2, 10), steelMat);
+            chimney.position.set(w * 0.38, h * 0.5 + 1.1, -d * 0.38);
+            const band = new THREE.Mesh(new THREE.CylinderGeometry(0.46, 0.46, 0.35, 10), hazardMat);
+            band.position.set(w * 0.38, h * 0.5 + 1.85, -d * 0.38);
+            mesh.add(chimney, band);
           }
         }
       } else {
