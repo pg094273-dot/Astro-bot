@@ -11,6 +11,7 @@ import {
   createBoostRingMesh,
   createBossMesh,
   createBowPickupMesh,
+  createChallengeGateMesh,
   createCheckpointMesh,
   createClimbWallMesh,
   createCoinMesh,
@@ -25,9 +26,14 @@ import {
   createMineMesh,
   createMiniBotMesh,
   createMonkeySuitPickupMesh,
+  createNycHelicopterMesh,
+  createNycVehicleMesh,
+  createNycWaterTowerMesh,
   createRiverBoatRig,
   createRocketPadMesh,
   createRocketVehicle,
+  createWebAnchorBeaconMesh,
+  createWebCocoonMesh,
   CrocodileRig,
   HangGliderRig,
   RiverBoatRig,
@@ -156,6 +162,8 @@ interface EnemyRuntime {
   alive: boolean;
   hopPhase: number;
   shootTimer: number;
+  webbedTimer?: number;
+  webCocoon?: THREE.Group;
 }
 
 interface ClimbWallRuntime {
@@ -480,6 +488,43 @@ export class GameEngine {
   private rapidsMistPlumes: { mesh: THREE.Mesh; baseY: number; baseScale: number; phase: number }[] = [];
   private rapidsRipples: { mesh: THREE.Mesh; life: number; maxLife: number }[] = [];
   private rapidsRippleCooldown = 0;
+
+  // Level 09 Spider-Man & NYC state
+  private hasSpiderSuit = false;
+  private spiderTransformTimer = 0;
+  private spiderTransformDone = false;
+  private webActive = false;
+  private webAnchor = new THREE.Vector3();
+  private webLength = 10;
+  private webCooldown = 0;
+  private webShots: { mesh: THREE.Group; pos: THREE.Vector3; vel: THREE.Vector3; life: number }[] = [];
+  private webLineMesh: THREE.Mesh | null = null;
+  private webReticleMesh: THREE.Mesh | null = null;
+  private highlightedWebAnchor: THREE.Vector3 | null = null;
+  private webAnchorPoints: THREE.Vector3[] = [];
+  private webAnchorBeacons: THREE.Group[] = [];
+  private climbFace: 'pz' | 'nz' | 'px' | 'nx' | null = null;
+  private climbBoxCenter = new THREE.Vector3();
+  private climbBoxHalf = new THREE.Vector3();
+  private nycVehicles: { group: THREE.Group; axis: 'x' | 'z'; dir: number; speed: number; minC: number; maxC: number }[] = [];
+  private nycHelicopters: { group: THREE.Group; center: THREE.Vector3; radius: number; speed: number; phase: number }[] = [];
+  private nycPedestrianMesh: THREE.InstancedMesh | null = null;
+  private nycPedestrianStates: { x: number; y: number; z: number; axis: 'x' | 'z'; speed: number; phase: number; span: number }[] = [];
+  private timedChallengesRuntime: {
+    id: string;
+    label: string;
+    startPos: THREE.Vector3;
+    checkpoints: THREE.Vector3[];
+    timeLimit: number;
+    rewardCoins: number;
+    startPad: THREE.Group;
+    gates: THREE.Group[];
+    completed: boolean;
+    active: boolean;
+    currentIdx: number;
+    timer: number;
+    lastTickSec: number;
+  }[] = [];
 
   // Player state
   private playerPos = new THREE.Vector3(0, 1.5, 0);
@@ -854,8 +899,9 @@ export class GameEngine {
               this.jumpBufferTimer = 0.14;
               if (isDoubleTapOk) {
                 this.triggerSpin();
-                if (this.hasBow) this.shootArrow();
-              } else if (isMidAirOk && !this.hasDoubleJump) {
+                if (this.hasSpiderSuit) this.triggerSpiderWebAction();
+                else if (this.hasBow) this.shootArrow();
+              } else if (isMidAirOk && !this.hasDoubleJump && !this.webActive) {
                 this.triggerSpin();
               }
             }
@@ -865,7 +911,8 @@ export class GameEngine {
           this.triggerSpin();
         }
         if (isTvBowKey) {
-          this.shootArrow();
+          if (this.hasSpiderSuit) this.triggerSpiderWebAction();
+          else this.shootArrow();
         }
       }
       if (isTvBack) {
@@ -908,7 +955,11 @@ export class GameEngine {
       this.lastPointerX = e.clientX;
       this.lastPointerY = e.clientY;
     } else if (e.button === 2) {
-      this.triggerSpin();
+      if (this.hasSpiderSuit && this.webActive) {
+        this.releaseWeb(false);
+      } else {
+        this.triggerSpin();
+      }
     }
   };
 
@@ -925,8 +976,12 @@ export class GameEngine {
   private handlePointerUp = (e: PointerEvent) => {
     if (this.draggingCam && this.phase === 'playing' && e.button === 0) {
       const moved = Math.hypot(e.clientX - this.pointerDownX, e.clientY - this.pointerDownY);
-      if (moved < 6 && this.hasBow && this.rocketState !== 'flying') {
-        this.shootArrow();
+      if (moved < 6 && this.rocketState !== 'flying') {
+        if (this.hasSpiderSuit) {
+          this.triggerSpiderWebAction();
+        } else if (this.hasBow) {
+          this.shootArrow();
+        }
       }
     }
     this.draggingCam = false;
@@ -1222,6 +1277,20 @@ export class GameEngine {
     this.rapidsMistPlumes = [];
     this.rapidsRipples = [];
     this.rapidsRippleCooldown = 0;
+    this.webActive = false;
+    this.webCooldown = 0;
+    this.webShots = [];
+    this.webLineMesh = null;
+    this.webReticleMesh = null;
+    this.highlightedWebAnchor = null;
+    this.webAnchorPoints = [];
+    this.webAnchorBeacons = [];
+    this.climbFace = null;
+    this.nycVehicles = [];
+    this.nycHelicopters = [];
+    this.nycPedestrianMesh = null;
+    this.nycPedestrianStates = [];
+    this.timedChallengesRuntime = [];
     this.activeDiscoveryZone = null;
     this.triggeredDiscoveryBanners.clear();
   }
@@ -6906,6 +6975,269 @@ export class GameEngine {
       padInst.computeBoundingSphere();
       flwInst.computeBoundingSphere();
       this.levelGroup.add(padInst, flwInst);
+    } else if (biome === 'newyork') {
+      const roadY = level.theme.hazardFloorY + 0.06;
+
+      // 1. Manhattan Avenue & Cross-Street Asphalt Grid + Sidewalks
+      const avenueMat = new THREE.MeshStandardMaterial({
+        map: this.textures.nycAsphaltRoad,
+        roughness: 0.78,
+        metalness: 0.08,
+      });
+      const sidewalkMat = new THREE.MeshStandardMaterial({
+        map: this.textures.nycRooftopConcrete,
+        color: 0x94a3b8,
+        roughness: 0.88,
+        metalness: 0.05,
+      });
+      const aveXs = [-26, 0, 26];
+      const aveGeo = new THREE.BoxGeometry(11.5, 0.14, 430);
+      const swGeo = new THREE.BoxGeometry(3.2, 0.28, 430);
+      for (const ax of aveXs) {
+        const road = new THREE.Mesh(aveGeo, avenueMat);
+        road.position.set(ax, roadY, -175);
+        this.levelGroup.add(road);
+
+        const swL = new THREE.Mesh(swGeo, sidewalkMat);
+        swL.position.set(ax - 7.3, roadY + 0.07, -175);
+        const swR = new THREE.Mesh(swGeo, sidewalkMat);
+        swR.position.set(ax + 7.3, roadY + 0.07, -175);
+        this.levelGroup.add(swL, swR);
+      }
+
+      const crossZs = [-25, -85, -145, -205, -265, -325];
+      const crossGeo = new THREE.BoxGeometry(160, 0.15, 10.5);
+      for (const cz of crossZs) {
+        const cross = new THREE.Mesh(crossGeo, avenueMat);
+        cross.position.set(0, roadY + 0.01, cz);
+        this.levelGroup.add(cross);
+      }
+
+      // 2. Flanking Manhattan Skyscraper Canyons & Distant Skyline Backdrop
+      const glassMat = new THREE.MeshStandardMaterial({
+        map: this.textures.nycGlassTower,
+        emissiveMap: this.textures.nycGlassTowerEmissive,
+        emissive: 0xffedd5,
+        emissiveIntensity: 0.72,
+        roughness: 0.22,
+        metalness: 0.65,
+      });
+      const decoMat = new THREE.MeshStandardMaterial({
+        map: this.textures.nycArtDecoStone,
+        roughness: 0.68,
+        metalness: 0.18,
+      });
+      const brickMat = new THREE.MeshStandardMaterial({
+        map: this.textures.nycBrickFacade,
+        roughness: 0.86,
+        metalness: 0.06,
+      });
+      const spireMat = new THREE.MeshStandardMaterial({
+        color: 0xe2e8f0,
+        metalness: 0.88,
+        roughness: 0.22,
+      });
+      const beaconMat = new THREE.MeshStandardMaterial({
+        color: 0xf43f5e,
+        emissive: 0xef4444,
+        emissiveIntensity: 1.8,
+      });
+
+      const skyscraperSpecs: [number, number, number, number, number, number][] = [];
+      for (let row = 0; row < 15; row++) {
+        const bz = 10 - row * 28;
+        const hL1 = 42 + ((row * 19) % 44);
+        const hR1 = 45 + ((row * 23 + 11) % 48);
+        skyscraperSpecs.push([-39 - (row % 2) * 5, bz, 15, hL1, 16, row % 3]);
+        skyscraperSpecs.push([39 + ((row + 1) % 2) * 5, bz - 6, 15, hR1, 16, (row + 1) % 3]);
+        if (!this.isSoftwareGl) {
+          skyscraperSpecs.push([-64, bz - 10, 18, 56 + ((row * 17) % 40), 18, (row + 2) % 3]);
+          skyscraperSpecs.push([64, bz - 2, 18, 54 + ((row * 29) % 42), 18, row % 3]);
+        }
+      }
+      // Horizon backdrop towers north of Goal Plaza
+      for (let i = -4; i <= 4; i++) {
+        skyscraperSpecs.push([i * 21, -405 - Math.abs(i) * 6, 16, 62 + ((Math.abs(i) * 19) % 38), 16, Math.abs(i) % 3]);
+      }
+
+      for (const [bx, bz, bw, bh, bd, styleIdx] of skyscraperSpecs) {
+        const bMat = styleIdx === 0 ? glassMat : styleIdx === 1 ? decoMat : brickMat;
+        const tower = new THREE.Mesh(new THREE.BoxGeometry(bw, bh, bd), bMat);
+        tower.position.set(bx, roadY + bh / 2 - 0.5, bz);
+        this.levelGroup.add(tower);
+
+        if (styleIdx === 1) {
+          // Art Deco stepped crown + spire
+          const tier = new THREE.Mesh(new THREE.BoxGeometry(bw * 0.62, 7.5, bd * 0.62), decoMat);
+          tier.position.set(bx, roadY + bh + 3.2, bz);
+          const spire = new THREE.Mesh(new THREE.CylinderGeometry(0.14, 0.7, 11, 8), spireMat);
+          spire.position.set(bx, roadY + bh + 12.2, bz);
+          const tip = new THREE.Mesh(new THREE.SphereGeometry(0.42, 8, 8), beaconMat);
+          tip.position.set(bx, roadY + bh + 17.8, bz);
+          this.levelGroup.add(tier, spire, tip);
+        } else if (styleIdx === 0 && bh > 62) {
+          const ant = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.35, 9, 6), spireMat);
+          ant.position.set(bx, roadY + bh + 4.0, bz);
+          this.levelGroup.add(ant);
+        }
+      }
+
+      // 3. Glowing Times Square Billboards flanking key vistas
+      const billboardMat = new THREE.MeshBasicMaterial({ map: this.textures.nycBillboardTex });
+      const billboardSpots: [number, number, number, number][] = [
+        [-28, 12, -32, Math.PI / 2],
+        [28, 16, -98, -Math.PI / 2],
+        [-29, 20, -172, Math.PI / 2],
+        [29, 22, -248, -Math.PI / 2],
+        [-28, 25, -315, Math.PI / 2],
+      ];
+      const frameMat = new THREE.MeshStandardMaterial({ color: 0x0f172a, metalness: 0.7, roughness: 0.3 });
+      for (const [bx, by, bz, ry] of billboardSpots) {
+        const signGroup = new THREE.Group();
+        signGroup.position.set(bx, by, bz);
+        signGroup.rotation.y = ry;
+        const back = new THREE.Mesh(new THREE.BoxGeometry(14.6, 7.6, 0.5), frameMat);
+        const screen = new THREE.Mesh(new THREE.PlaneGeometry(13.8, 6.8), billboardMat);
+        screen.position.z = 0.28;
+        signGroup.add(back, screen);
+        this.levelGroup.add(signGroup);
+      }
+
+      // 4. Rooftop Water Towers on Wide Hero Rooftops
+      const waterTowerSpots: [number, number, number][] = [
+        [-4.5, 0.8, 4.2],
+        [6.2, 2.5, -56.5],
+        [-6.0, 5.2, -110],
+        [6.2, 5.2, -214],
+        [-19.5, 6.5, -242],
+        [6.5, 13.0, -349],
+      ];
+      for (const [wx, wy, wz] of waterTowerSpots) {
+        const wt = createNycWaterTowerMesh();
+        wt.position.set(wx, wy, wz);
+        this.levelGroup.add(wt);
+      }
+
+      // 5. Avenue Streetlamps (InstancedMesh + computeBoundingSphere)
+      const lampCount = this.isSoftwareGl ? 24 : 44;
+      const lampPoleGeo = new THREE.CylinderGeometry(0.11, 0.16, 4.6, 6);
+      const lampPoleMat = new THREE.MeshStandardMaterial({ color: 0x334155, metalness: 0.75, roughness: 0.3 });
+      const lampGlowGeo = new THREE.SphereGeometry(0.32, 8, 8);
+      const lampGlowMat = new THREE.MeshBasicMaterial({ color: 0xfde68a });
+      const poleInst = new THREE.InstancedMesh(lampPoleGeo, lampPoleMat, lampCount);
+      const glowInst = new THREE.InstancedMesh(lampGlowGeo, lampGlowMat, lampCount);
+      const dummy = new THREE.Object3D();
+      for (let i = 0; i < lampCount; i++) {
+        const side = i % 2 === 0 ? -1 : 1;
+        const lx = side * 6.4;
+        const lz = 8 - Math.floor(i / 2) * 16;
+        dummy.position.set(lx, roadY + 2.3, lz);
+        dummy.rotation.set(0, 0, 0);
+        dummy.scale.set(1, 1, 1);
+        dummy.updateMatrix();
+        poleInst.setMatrixAt(i, dummy.matrix);
+        dummy.position.set(lx, roadY + 4.7, lz);
+        dummy.updateMatrix();
+        glowInst.setMatrixAt(i, dummy.matrix);
+      }
+      poleInst.instanceMatrix.needsUpdate = true;
+      glowInst.instanceMatrix.needsUpdate = true;
+      poleInst.computeBoundingSphere();
+      glowInst.computeBoundingSphere();
+      this.levelGroup.add(poleInst, glowInst);
+
+      // 6. Animated NYC Traffic (Yellow Cabs & Sedans on Avenues and Cross-Streets)
+      const carPalette = [0xfacc15, 0xfacc15, 0xfacc15, 0x3b82f6, 0xef4444, 0xf8fafc, 0x1e293b];
+      const vehicleCount = this.isSoftwareGl ? 10 : 20;
+      for (let i = 0; i < vehicleCount; i++) {
+        const isCross = i >= Math.floor(vehicleCount * 0.7);
+        const col = carPalette[i % carPalette.length];
+        const isTaxi = col === 0xfacc15;
+        const vGroup = createNycVehicleMesh(col, isTaxi);
+        if (!isCross) {
+          const laneAx = aveXs[i % aveXs.length];
+          const dir = i % 2 === 0 ? -1 : 1;
+          const x = laneAx + dir * 2.4;
+          const z = 12 - ((i * 27) % 360);
+          vGroup.position.set(x, roadY + 0.08, z);
+          vGroup.rotation.y = dir > 0 ? 0 : Math.PI;
+          this.levelGroup.add(vGroup);
+          this.nycVehicles.push({
+            group: vGroup,
+            axis: 'z',
+            dir,
+            speed: 11 + (i % 4) * 3.2,
+            minC: -370,
+            maxC: 24,
+          });
+        } else {
+          const cz = crossZs[i % crossZs.length];
+          const dir = i % 2 === 0 ? 1 : -1;
+          const x = -65 + ((i * 31) % 130);
+          vGroup.position.set(x, roadY + 0.08, cz + dir * 2.1);
+          vGroup.rotation.y = dir > 0 ? Math.PI / 2 : -Math.PI / 2;
+          this.levelGroup.add(vGroup);
+          this.nycVehicles.push({
+            group: vGroup,
+            axis: 'x',
+            dir,
+            speed: 10 + (i % 3) * 3.0,
+            minC: -72,
+            maxC: 72,
+          });
+        }
+      }
+
+      // 7. Sidewalk Pedestrians (InstancedMesh + computeBoundingSphere)
+      const pedCount = this.isSoftwareGl ? 24 : 52;
+      const pedGeo = new THREE.CapsuleGeometry(0.18, 0.55, 4, 6);
+      const pedMat = new THREE.MeshStandardMaterial({ color: 0xe2e8f0, roughness: 0.8 });
+      const pedInst = new THREE.InstancedMesh(pedGeo, pedMat, pedCount);
+      const pedDummy = new THREE.Object3D();
+      const pedColors = [0xf87171, 0x38bdf8, 0xfbbf24, 0xa78bfa, 0x34d399, 0xf472b6];
+      for (let i = 0; i < pedCount; i++) {
+        const ax = aveXs[i % aveXs.length] + (i % 2 === 0 ? -7.2 : 7.2);
+        const pz = 4 - ((i * 15) % 350);
+        const py = roadY + 0.58;
+        this.nycPedestrianStates.push({
+          x: ax,
+          y: py,
+          z: pz,
+          axis: 'z',
+          speed: (i % 2 === 0 ? 1 : -1) * (1.2 + (i % 3) * 0.45),
+          phase: i * 0.7,
+          span: 14,
+        });
+        pedDummy.position.set(ax, py, pz);
+        pedDummy.updateMatrix();
+        pedInst.setMatrixAt(i, pedDummy.matrix);
+        _color.setHex(pedColors[i % pedColors.length]);
+        pedInst.setColorAt(i, _color);
+      }
+      pedInst.instanceMatrix.needsUpdate = true;
+      if (pedInst.instanceColor) pedInst.instanceColor.needsUpdate = true;
+      pedInst.computeBoundingSphere();
+      this.levelGroup.add(pedInst);
+      this.nycPedestrianMesh = pedInst;
+
+      // 8. Patrol Helicopters circling above Manhattan Skyline
+      const heliCenters: [number, number, number, number, number][] = [
+        [-14, 24, -76, 18, 0.42],
+        [15, 29, -184, 20, -0.36],
+        [0, 34, -295, 22, 0.38],
+      ];
+      heliCenters.forEach(([cx, cy, cz, rad, spd], idx) => {
+        const hGroup = createNycHelicopterMesh();
+        hGroup.position.set(cx + rad, cy, cz);
+        this.levelGroup.add(hGroup);
+        this.nycHelicopters.push({
+          group: hGroup,
+          center: new THREE.Vector3(cx, cy, cz),
+          radius: rad,
+          speed: spd,
+          phase: idx * 2.1,
+        });
+      });
     }
   }
 
@@ -6939,7 +7271,9 @@ export class GameEngine {
                   ? this.textures.skyParis
                   : theme.biome === 'rapids'
                     ? this.textures.skyRapids
-                    : this.textures.skyNebula;
+                    : theme.biome === 'newyork'
+                      ? this.textures.skyNewYork
+                      : this.textures.skyNebula;
     skyMat.needsUpdate = true;
 
     const animatedWaterBiome =
@@ -6968,7 +7302,9 @@ export class GameEngine {
                 ? this.textures.seineWaterSurface
                 : theme.biome === 'rapids'
                   ? this.textures.calmLakeSurface
-                  : this.textures.nebulaSeaSurface;
+                  : theme.biome === 'newyork'
+                    ? this.textures.nycAsphaltRoad
+                    : this.textures.nebulaSeaSurface;
     this.hazardSeaTex = seaTex;
     const seaMat = new THREE.MeshStandardMaterial({
       map: seaTex,
@@ -7001,9 +7337,11 @@ export class GameEngine {
                 ? 0.1
                 : theme.biome === 'temple'
                   ? 0.11
-                  : theme.biome === 'nebula'
-                    ? 0.34
-                    : 0.35,
+                  : theme.biome === 'newyork'
+                    ? 0.84
+                    : theme.biome === 'nebula'
+                      ? 0.34
+                      : 0.35,
       metalness:
         theme.biome === 'ice'
           ? 0.35
@@ -7096,6 +7434,7 @@ export class GameEngine {
           nebulaCitadelV2: level.index === 5,
           parisSkyV2: level.index === 6,
           rapidsRiverV2: level.index === 7,
+          newYorkV2: level.index === 8,
         }
       );
       if (startsInactive || pDef.kind === 'disappearing' || (level.index === 1 && pDef.kind === 'crumble')) {
@@ -7695,8 +8034,120 @@ export class GameEngine {
     this.camCurrentPos.set(this.playerPos.x, this.playerPos.y + 5.2, this.playerPos.z + 9.5);
     this.camLookTarget.copy(this.playerPos).add(_vec3A.set(0, 1.0, 0));
 
+    // Level 09 Spider-Man Suit Transformation, Web Anchors & Timed Challenges
+    this.hasSpiderSuit = Boolean(level.spiderSuitLevel);
+    this.webActive = false;
+    this.webCooldown = 0;
+    this.climbFace = null;
+    this.spiderTransformTimer = 0;
+    this.spiderTransformDone = false;
+
+    if (this.hasSpiderSuit) {
+      if (level.webAnchors) {
+        for (const wa of level.webAnchors) {
+          const pos = new THREE.Vector3(...wa);
+          this.webAnchorPoints.push(pos);
+          const beacon = createWebAnchorBeaconMesh();
+          beacon.position.copy(pos);
+          this.levelGroup.add(beacon);
+          this.webAnchorBeacons.push(beacon);
+        }
+      }
+
+      // 3D Web Swing Line & Target Reticle
+      const lineGeo = new THREE.CylinderGeometry(0.045, 0.045, 1, 8);
+      const lineMat = new THREE.MeshStandardMaterial({
+        color: 0xf8fafc,
+        emissive: 0xe2e8f0,
+        emissiveIntensity: 0.45,
+        roughness: 0.3,
+      });
+      this.webLineMesh = new THREE.Mesh(lineGeo, lineMat);
+      this.webLineMesh.visible = false;
+      this.levelGroup.add(this.webLineMesh);
+
+      const retGeo = new THREE.TorusGeometry(0.85, 0.09, 8, 24);
+      const retMat = new THREE.MeshBasicMaterial({ color: 0x38bdf8, transparent: true, opacity: 0.92 });
+      this.webReticleMesh = new THREE.Mesh(retGeo, retMat);
+      this.webReticleMesh.visible = false;
+      this.levelGroup.add(this.webReticleMesh);
+
+      // Timed Challenges (Contrarreloj)
+      if (level.timedChallenges) {
+        for (const tc of level.timedChallenges) {
+          const padGroup = new THREE.Group();
+          padGroup.position.set(...tc.startPos);
+          const padBase = new THREE.Mesh(
+            new THREE.CylinderGeometry(1.45, 1.6, 0.16, 16),
+            new THREE.MeshStandardMaterial({
+              color: 0x0ea5e9,
+              emissive: 0x0284c7,
+              emissiveIntensity: 0.85,
+              roughness: 0.25,
+              metalness: 0.6,
+            })
+          );
+          const padRing = new THREE.Mesh(
+            new THREE.TorusGeometry(1.3, 0.08, 8, 24),
+            new THREE.MeshBasicMaterial({ color: 0xfacc15 })
+          );
+          padRing.rotation.x = Math.PI / 2;
+          padRing.position.y = 0.12;
+          padGroup.add(padBase, padRing);
+          this.levelGroup.add(padGroup);
+
+          const gates: THREE.Group[] = [];
+          for (const cp of tc.checkpoints) {
+            const gate = createChallengeGateMesh(0x38bdf8);
+            gate.position.set(...cp);
+            this.levelGroup.add(gate);
+            gates.push(gate);
+          }
+
+          this.timedChallengesRuntime.push({
+            id: tc.id,
+            label: tc.label ?? 'Contrarreloj',
+            startPos: new THREE.Vector3(...tc.startPos),
+            checkpoints: tc.checkpoints.map((c) => new THREE.Vector3(...c)),
+            timeLimit: tc.timeLimit,
+            rewardCoins: tc.rewardCoins ?? 10,
+            startPad: padGroup,
+            gates,
+            completed: false,
+            active: false,
+            currentIdx: 0,
+            timer: 0,
+            lastTickSec: -1,
+          });
+        }
+      }
+
+      if (targetPhase === 'playing') {
+        this.spiderTransformTimer = 2.15;
+        this.spiderTransformDone = false;
+        for (const part of this.playerRig.astroParts) part.visible = true;
+        for (const part of this.playerRig.spiderParts) part.visible = false;
+        this.playerRig.transformAura.visible = true;
+        soundEngine.playSpiderTransform();
+      } else {
+        this.spiderTransformDone = true;
+        for (const part of this.playerRig.astroParts) part.visible = false;
+        for (const part of this.playerRig.spiderParts) part.visible = true;
+        this.playerRig.transformAura.visible = false;
+      }
+    } else {
+      for (const part of this.playerRig.astroParts) part.visible = true;
+      for (const part of this.playerRig.spiderParts) part.visible = false;
+      this.playerRig.transformAura.visible = false;
+    }
+
     this.phase = targetPhase;
-    this.bannerText = targetPhase === 'playing' ? level.name : null;
+    this.bannerText =
+      targetPhase === 'playing'
+        ? this.hasSpiderSuit
+          ? '¡Activando Traje Arácnido!'
+          : level.name
+        : null;
     this.bannerTimer = targetPhase === 'playing' ? 2.4 : 0;
 
     soundEngine.setMusicContext(level.theme.biome, false, targetPhase, false);
@@ -7855,6 +8306,16 @@ export class GameEngine {
         roughnessMap: this.textures.stoneRoughness,
         roughness: 0.78,
         metalness: 0.05,
+      });
+    }
+    if (style === 'newyork') {
+      return new THREE.MeshStandardMaterial({
+        map: this.textures.nycRooftopConcrete,
+        bumpMap: this.textures.stoneBump,
+        bumpScale: 0.08,
+        roughnessMap: this.textures.stoneRoughness,
+        roughness: 0.82,
+        metalness: 0.14,
       });
     }
     if (style === 'river') {
@@ -8052,7 +8513,11 @@ export class GameEngine {
         this.triggerSpin();
       }
       if (bowNow && !this.prevGamepadButtons.bow) {
-        this.shootArrow();
+        if (this.hasSpiderSuit) this.triggerSpiderWebAction();
+        else this.shootArrow();
+      }
+      if (this.hasSpiderSuit && this.webActive && gp.buttons[6]?.pressed) {
+        this.releaseWeb(false);
       }
     }
 
@@ -8537,6 +9002,71 @@ export class GameEngine {
       this.parisLeafMesh.instanceMatrix.needsUpdate = true;
     }
 
+    // NYC Animated Vehicles, Pedestrians, Helicopters & Web Target Reticle
+    if (this.currentLevel.theme.biome === 'newyork') {
+      for (const v of this.nycVehicles) {
+        if (v.axis === 'z') {
+          v.group.position.z += v.dir * v.speed * dt;
+          if (v.dir < 0 && v.group.position.z < v.minC) v.group.position.z = v.maxC;
+          else if (v.dir > 0 && v.group.position.z > v.maxC) v.group.position.z = v.minC;
+        } else {
+          v.group.position.x += v.dir * v.speed * dt;
+          if (v.dir > 0 && v.group.position.x > v.maxC) v.group.position.x = v.minC;
+          else if (v.dir < 0 && v.group.position.x < v.minC) v.group.position.x = v.maxC;
+        }
+      }
+      for (const h of this.nycHelicopters) {
+        const ang = this.totalTime * h.speed + h.phase;
+        const hx = h.center.x + Math.cos(ang) * h.radius;
+        const hz = h.center.z + Math.sin(ang) * h.radius;
+        const hy = h.center.y + Math.sin(this.totalTime * 1.4 + h.phase) * 0.85;
+        h.group.position.set(hx, hy, hz);
+        h.group.rotation.y = -ang + (h.speed >= 0 ? 0 : Math.PI);
+        const mainRotor = h.group.userData.mainRotor as THREE.Object3D | undefined;
+        const tailRotor = h.group.userData.tailRotor as THREE.Object3D | undefined;
+        if (mainRotor) mainRotor.rotation.y += dt * 26;
+        if (tailRotor) tailRotor.rotation.x += dt * 32;
+      }
+      if (this.nycPedestrianMesh && this.nycPedestrianStates.length > 0) {
+        for (let i = 0; i < this.nycPedestrianStates.length; i++) {
+          const ps = this.nycPedestrianStates[i];
+          const offsetZ = Math.sin(this.totalTime * 0.35 * Math.abs(ps.speed) + ps.phase) * ps.span;
+          const bob = Math.abs(Math.sin(this.totalTime * 7.5 + ps.phase)) * 0.08;
+          _vec3A.set(ps.x, ps.y + bob, ps.z + offsetZ);
+          _quat.identity();
+          _vec3B.set(1, 1, 1);
+          _mat4.compose(_vec3A, _quat, _vec3B);
+          this.nycPedestrianMesh.setMatrixAt(i, _mat4);
+        }
+        this.nycPedestrianMesh.instanceMatrix.needsUpdate = true;
+      }
+      for (let i = 0; i < this.webAnchorBeacons.length; i++) {
+        const b = this.webAnchorBeacons[i];
+        b.rotation.y += dt * 1.6;
+        const pulse = 0.92 + Math.sin(this.totalTime * 4 + i) * 0.12;
+        b.scale.setScalar(pulse);
+      }
+      if (this.hasSpiderSuit && this.webReticleMesh) {
+        if (!this.webActive && this.phase === 'playing' && this.spiderTransformTimer <= 0) {
+          this.highlightedWebAnchor = this.findBestWebAnchor();
+        } else if (this.webActive) {
+          this.highlightedWebAnchor = this.webAnchor;
+        } else {
+          this.highlightedWebAnchor = null;
+        }
+        if (this.highlightedWebAnchor) {
+          this.webReticleMesh.visible = true;
+          this.webReticleMesh.position.copy(this.highlightedWebAnchor);
+          this.webReticleMesh.lookAt(this.camera.position);
+          this.webReticleMesh.rotation.z = this.totalTime * 3.2;
+          const rMat = this.webReticleMesh.material as THREE.MeshBasicMaterial;
+          rMat.color.setHex(this.webActive ? 0xfacc15 : 0xf43f5e);
+        } else {
+          this.webReticleMesh.visible = false;
+        }
+      }
+    }
+
     this.renderer.render(this.scene, this.camera);
 
     if (now - this.lastHudPush > 85) this.pushHud(false);
@@ -8864,10 +9394,65 @@ export class GameEngine {
 
     this.invulnTimer = Math.max(0, this.invulnTimer - dt);
     this.bowCooldown = Math.max(0, this.bowCooldown - dt);
+    this.webCooldown = Math.max(0, this.webCooldown - dt);
 
-    // Step Active Arrows & Enemy Projectiles
+    // Step Active Arrows, Web Shots, Enemy Projectiles & Timed Challenges
     this.stepArrows(dt);
+    this.stepWebShots(dt);
     this.stepEnemyProjectiles(dt);
+    if (this.hasSpiderSuit) {
+      this.stepTimedChallenges(dt);
+    }
+
+    // CINEMATIC SPIDER-MAN TRANSFORMATION SEQUENCE (Level 09 start)
+    if (this.hasSpiderSuit && this.spiderTransformTimer > 0) {
+      this.spiderTransformTimer = Math.max(0, this.spiderTransformTimer - dt);
+      const progress = 1 - this.spiderTransformTimer / 2.15;
+      this.playerPos.x = this.spawnPos.x;
+      this.playerPos.z = this.spawnPos.z;
+      this.playerPos.y = this.spawnPos.y + Math.sin(progress * Math.PI) * 1.15;
+      this.playerYaw += dt * (4.5 + progress * 8.0);
+      const aura = this.playerRig.transformAura;
+      aura.visible = true;
+      aura.rotation.y -= dt * 5.2;
+      aura.rotation.z += dt * 3.1;
+      const auraScale = 0.78 + Math.sin(progress * Math.PI) * 0.65;
+      aura.scale.setScalar(auraScale);
+
+      if (Math.random() < 0.85) {
+        const pCol = Math.random() < 0.45 ? 0xe11d48 : Math.random() < 0.7 ? 0x2563eb : 0xf8fafc;
+        this.spawnBurst(
+          this.playerPos.x + (Math.random() - 0.5) * 0.9,
+          this.playerPos.y + 0.6 + Math.random() * 0.8,
+          this.playerPos.z + (Math.random() - 0.5) * 0.9,
+          pCol,
+          2,
+          3.4
+        );
+      }
+
+      if (this.spiderTransformTimer <= 0.95 && !this.spiderTransformDone) {
+        this.spiderTransformDone = true;
+        for (const part of this.playerRig.astroParts) part.visible = false;
+        for (const part of this.playerRig.spiderParts) part.visible = true;
+        this.shakeIntensity = 0.32;
+        this.spawnBurst(this.playerPos.x, this.playerPos.y + 0.9, this.playerPos.z, 0xe11d48, 28, 7.2);
+        this.spawnBurst(this.playerPos.x, this.playerPos.y + 0.9, this.playerPos.z, 0x2563eb, 24, 6.4);
+        this.spawnBurst(this.playerPos.x, this.playerPos.y + 0.9, this.playerPos.z, 0xf8fafc, 18, 5.5);
+        this.pushHud(true);
+      }
+
+      if (this.spiderTransformTimer <= 0) {
+        aura.visible = false;
+        this.playerPos.copy(this.spawnPos);
+        this.playerYaw = Math.PI;
+        this.grounded = true;
+        this.showBanner('¡Spider-Man listo! Clic Izq / G / RT: Telaraña · Empuja edificios para escalar', 4.2);
+        this.pushHud(true);
+      }
+      this.animatePlayerVisuals(dt, 0);
+      return;
+    }
 
     // ROCKET FLIGHT MODE
     if (this.rocketState === 'flying' && this.rocketRig) {
@@ -9139,12 +9724,13 @@ export class GameEngine {
     let landedOnClimbWall = false;
     let bestGroundShadowY = -999;
 
-    // CLIMBING STATE (Monkey Suit)
-    if (this.isClimbing && this.climbingWall) {
-      const cw = this.climbingWall;
-      const face = cw.def.face;
-      const topY = cw.pos.y + cw.halfSize.y;
-      const botY = cw.pos.y - cw.halfSize.y;
+    // CLIMBING STATE (Monkey Suit OR Level 09 Spider-Man 4-Face Building Climbing)
+    if (this.isClimbing && (this.climbingWall || this.climbFace)) {
+      const face = this.climbingWall ? this.climbingWall.def.face : this.climbFace!;
+      const cPos = this.climbingWall ? this.climbingWall.pos : this.climbBoxCenter;
+      const cHalf = this.climbingWall ? this.climbingWall.halfSize : this.climbBoxHalf;
+      const topY = cPos.y + cHalf.y;
+      const botY = cPos.y - cHalf.y;
 
       soundEngine.stopHover();
       this.isHovering = false;
@@ -9156,41 +9742,41 @@ export class GameEngine {
 
       // Climb vertical (W/Up = -inZ, S/Down = +inZ) and lateral shimmy (A/D = inX)
       const climbInput = -inZ;
-      const climbSpeed = 6.2;
-      const shimmySpeed = 4.6;
+      const climbSpeed = this.hasSpiderSuit ? 8.2 : 6.2;
+      const shimmySpeed = this.hasSpiderSuit ? 6.2 : 4.6;
       this.playerPos.y += climbInput * climbSpeed * dt;
 
       if (face === 'pz') {
         this.playerYaw = Math.PI;
-        this.playerPos.z = cw.pos.z + cw.halfSize.z + 0.42;
+        this.playerPos.z = cPos.z + cHalf.z + 0.42;
         this.playerPos.x = THREE.MathUtils.clamp(
           this.playerPos.x + inX * shimmySpeed * dt,
-          cw.pos.x - cw.halfSize.x + 0.42,
-          cw.pos.x + cw.halfSize.x - 0.42
+          cPos.x - cHalf.x + 0.42,
+          cPos.x + cHalf.x - 0.42
         );
       } else if (face === 'nz') {
         this.playerYaw = 0;
-        this.playerPos.z = cw.pos.z - cw.halfSize.z - 0.42;
+        this.playerPos.z = cPos.z - cHalf.z - 0.42;
         this.playerPos.x = THREE.MathUtils.clamp(
           this.playerPos.x - inX * shimmySpeed * dt,
-          cw.pos.x - cw.halfSize.x + 0.42,
-          cw.pos.x + cw.halfSize.x - 0.42
+          cPos.x - cHalf.x + 0.42,
+          cPos.x + cHalf.x - 0.42
         );
       } else if (face === 'px') {
         this.playerYaw = -Math.PI / 2;
-        this.playerPos.x = cw.pos.x + cw.halfSize.x + 0.42;
+        this.playerPos.x = cPos.x + cHalf.x + 0.42;
         this.playerPos.z = THREE.MathUtils.clamp(
           this.playerPos.z - inX * shimmySpeed * dt,
-          cw.pos.z - cw.halfSize.z + 0.42,
-          cw.pos.z + cw.halfSize.z - 0.42
+          cPos.z - cHalf.z + 0.42,
+          cPos.z + cHalf.z - 0.42
         );
       } else {
         this.playerYaw = Math.PI / 2;
-        this.playerPos.x = cw.pos.x - cw.halfSize.x - 0.42;
+        this.playerPos.x = cPos.x - cHalf.x - 0.42;
         this.playerPos.z = THREE.MathUtils.clamp(
           this.playerPos.z + inX * shimmySpeed * dt,
-          cw.pos.z - cw.halfSize.z + 0.42,
-          cw.pos.z + cw.halfSize.z - 0.42
+          cPos.z - cHalf.z + 0.42,
+          cPos.z + cHalf.z - 0.42
         );
       }
 
@@ -9202,40 +9788,47 @@ export class GameEngine {
       if (this.playerPos.y >= topY - 0.08) {
         this.isClimbing = false;
         this.climbingWall = null;
-        this.playerPos.y = topY + 0.06;
-        if (face === 'pz') this.playerPos.z -= 0.85;
-        else if (face === 'nz') this.playerPos.z += 0.85;
-        else if (face === 'px') this.playerPos.x -= 0.85;
-        else this.playerPos.x += 0.85;
-        this.playerVel.set(0, 3.2, 0);
+        this.climbFace = null;
+        this.playerPos.y = topY + 0.08;
+        if (face === 'pz') this.playerPos.z -= 0.9;
+        else if (face === 'nz') this.playerPos.z += 0.9;
+        else if (face === 'px') this.playerPos.x -= 0.9;
+        else this.playerPos.x += 0.9;
+        this.playerVel.set(0, 3.6, 0);
         this.grounded = true;
         soundEngine.playJump();
-        this.spawnBurst(this.playerPos.x, this.playerPos.y, this.playerPos.z, 0x10b981, 10, 3.0);
+        this.spawnBurst(this.playerPos.x, this.playerPos.y, this.playerPos.z, this.hasSpiderSuit ? 0xe11d48 : 0x10b981, 10, 3.0);
         this.pushHud(true);
       } else if (this.jumpBufferTimer > 0) {
         // Wall-jump off climbable wall
         this.jumpBufferTimer = 0;
         this.isClimbing = false;
         this.climbingWall = null;
-        const kick = 7.2;
-        this.playerVel.y = 12.0;
+        this.climbFace = null;
+        const kick = this.hasSpiderSuit ? 8.6 : 7.2;
+        this.playerVel.y = this.hasSpiderSuit ? 12.8 : 12.0;
         if (face === 'pz') this.playerVel.z = kick;
         else if (face === 'nz') this.playerVel.z = -kick;
         else if (face === 'px') this.playerVel.x = kick;
         else this.playerVel.x = -kick;
+        if (this.hasSpiderSuit) this.doubleJumpFlipTimer = 0.36;
         soundEngine.playJump();
         this.pushHud(true);
       } else if (this.playerPos.y < botY + 0.15 && climbInput < -0.1) {
         this.isClimbing = false;
         this.climbingWall = null;
-        if (face === 'pz') this.playerPos.z += 0.3;
-        else if (face === 'nz') this.playerPos.z -= 0.3;
-        else if (face === 'px') this.playerPos.x += 0.3;
-        else this.playerPos.x -= 0.3;
+        this.climbFace = null;
+        if (face === 'pz') this.playerPos.z += 0.35;
+        else if (face === 'nz') this.playerPos.z -= 0.35;
+        else if (face === 'px') this.playerPos.x += 0.35;
+        else this.playerPos.x -= 0.35;
         this.pushHud(true);
       }
 
       this.contactShadowMesh.visible = false;
+    } else if (this.hasSpiderSuit && this.webActive) {
+      // REAL PENDULUM WEB-SWINGING PHYSICS (Level 09)
+      this.stepWebSwinging(dt, worldDirX, worldDirZ);
     } else {
       if (this.jumpBufferTimer > 0 && this.coyoteTimer > 0) {
         this.playerVel.y = 12.6;
@@ -9421,18 +10014,51 @@ export class GameEngine {
           const dzMin = Math.abs(this.playerPos.z - minZ);
           const dzMax = Math.abs(maxZ - this.playerPos.z);
           const m = Math.min(dxMin, dxMax, dzMin, dzMax);
+          let hitFace: 'pz' | 'nz' | 'px' | 'nx' = 'pz';
           if (m === dxMin) {
             this.playerPos.x = minX;
             this.playerVel.x = Math.min(0, this.playerVel.x);
+            hitFace = 'nx';
           } else if (m === dxMax) {
             this.playerPos.x = maxX;
             this.playerVel.x = Math.max(0, this.playerVel.x);
+            hitFace = 'px';
           } else if (m === dzMin) {
             this.playerPos.z = minZ;
             this.playerVel.z = Math.min(0, this.playerVel.z);
+            hitFace = 'nz';
           } else {
             this.playerPos.z = maxZ;
             this.playerVel.z = Math.max(0, this.playerVel.z);
+            hitFace = 'pz';
+          }
+
+          // Spider-Man universal 4-face building wall-climb latch
+          const canSpiderClimb =
+            this.hasSpiderSuit &&
+            !this.isClimbing &&
+            p.halfSize.y >= 1.8 &&
+            !p.def.invisible &&
+            p.def.kind !== 'glass' &&
+            p.def.kind !== 'moving' &&
+            p.def.kind !== 'elevator';
+          const pushingIntoFace =
+            (hitFace === 'pz' && worldDirZ < -0.15) ||
+            (hitFace === 'nz' && worldDirZ > 0.15) ||
+            (hitFace === 'px' && worldDirX < -0.15) ||
+            (hitFace === 'nx' && worldDirX > 0.15) ||
+            !this.grounded;
+          if (canSpiderClimb && pushingIntoFace && this.playerPos.y >= botY - 0.3 && this.playerPos.y <= topY - 0.35) {
+            this.isClimbing = true;
+            this.climbingWall = null;
+            this.climbFace = hitFace;
+            this.climbBoxCenter.copy(p.pos);
+            this.climbBoxHalf.copy(p.halfSize);
+            this.grounded = false;
+            this.playerVel.set(0, 0, 0);
+            soundEngine.playClimbStep();
+            this.pushHud(true);
+            break;
           }
         }
       }
@@ -9485,8 +10111,8 @@ export class GameEngine {
           }
         }
 
-        // Check latch onto climbable face if wearing Monkey Suit
-        if (this.hasMonkeySuit && !this.isClimbing && this.playerPos.y >= botY - 0.25 && this.playerPos.y <= topY - 0.35) {
+        // Check latch onto climbable face if wearing Monkey Suit or Spider Suit
+        if ((this.hasMonkeySuit || this.hasSpiderSuit) && !this.isClimbing && this.playerPos.y >= botY - 0.25 && this.playerPos.y <= topY - 0.35) {
           const face = cw.def.face;
           const pushingIntoWall =
             (face === 'pz' && worldDirZ < -0.2) ||
@@ -9516,6 +10142,7 @@ export class GameEngine {
             if (nearPz || nearNz || nearPx || nearNx) {
               this.isClimbing = true;
               this.climbingWall = cw;
+              this.climbFace = face;
               this.grounded = false;
               this.playerVel.set(0, 0, 0);
               soundEngine.playClimbStep();
@@ -9666,104 +10293,118 @@ export class GameEngine {
 
     for (const en of this.enemies) {
       if (!en.alive) continue;
-      const t = this.totalTime * en.speed + en.phase;
-      const s = Math.sin(t);
-
-      if (en.kind === 'chaser') {
-        const pDx = this.playerPos.x - en.pos.x;
-        const pDz = this.playerPos.z - en.pos.z;
-        const bDist = Math.hypot(this.playerPos.x - en.basePos.x, this.playerPos.z - en.basePos.z);
-        if (bDist < 12.5 && Math.abs(this.playerPos.y - en.basePos.y) < 3.2) {
-          const pDist = Math.hypot(pDx, pDz) || 1;
-          const chaseSpd = 4.6 * dt;
-          en.pos.x += (pDx / pDist) * chaseSpd;
-          en.pos.z += (pDz / pDist) * chaseSpd;
-          const offX = en.pos.x - en.basePos.x;
-          const offZ = en.pos.z - en.basePos.z;
-          const offLen = Math.hypot(offX, offZ);
-          if (offLen > 6.5) {
-            en.pos.x = en.basePos.x + (offX / offLen) * 6.5;
-            en.pos.z = en.basePos.z + (offZ / offLen) * 6.5;
-          }
-          en.group.rotation.y = Math.atan2(pDx, pDz);
-        } else {
-          en.pos.x = THREE.MathUtils.damp(en.pos.x, en.basePos.x + en.patrolOffset.x * s, 4, dt);
-          en.pos.z = THREE.MathUtils.damp(en.pos.z, en.basePos.z + en.patrolOffset.z * s, 4, dt);
-          en.pos.y = en.basePos.y;
-          en.group.rotation.y = Math.atan2(en.patrolOffset.x * Math.cos(t), en.patrolOffset.z * Math.cos(t));
+      const isWebbed = Boolean(en.webbedTimer && en.webbedTimer > 0);
+      if (isWebbed) {
+        en.webbedTimer = Math.max(0, (en.webbedTimer ?? 0) - dt);
+        en.group.rotation.z = Math.sin(this.totalTime * 15 + en.phase) * 0.06;
+        if (en.webCocoon) {
+          en.webCocoon.visible = en.webbedTimer > 0;
+          en.webCocoon.rotation.y += dt * 1.4;
+        }
+        if ((en.webbedTimer ?? 0) <= 0) {
+          en.group.rotation.z = 0;
+          if (en.webCocoon) en.webCocoon.visible = false;
         }
       } else {
-        en.pos.set(
-          en.basePos.x + en.patrolOffset.x * s,
-          en.basePos.y + en.patrolOffset.y * s,
-          en.basePos.z + en.patrolOffset.z * s
-        );
+        const t = this.totalTime * en.speed + en.phase;
+        const s = Math.sin(t);
 
-        if (en.kind === 'hopper') {
-          en.hopPhase += dt * 4.2;
-          const cycle = (en.hopPhase % Math.PI) / Math.PI;
-          if (cycle < 0.25 && en.springGroup) {
-            en.springGroup.scale.set(1.18, 0.72, 1.18);
-            en.pos.y = en.basePos.y;
+        if (en.kind === 'chaser') {
+          const pDx = this.playerPos.x - en.pos.x;
+          const pDz = this.playerPos.z - en.pos.z;
+          const bDist = Math.hypot(this.playerPos.x - en.basePos.x, this.playerPos.z - en.basePos.z);
+          if (bDist < 12.5 && Math.abs(this.playerPos.y - en.basePos.y) < 3.2) {
+            const pDist = Math.hypot(pDx, pDz) || 1;
+            const chaseSpd = 4.6 * dt;
+            en.pos.x += (pDx / pDist) * chaseSpd;
+            en.pos.z += (pDz / pDist) * chaseSpd;
+            const offX = en.pos.x - en.basePos.x;
+            const offZ = en.pos.z - en.basePos.z;
+            const offLen = Math.hypot(offX, offZ);
+            if (offLen > 6.5) {
+              en.pos.x = en.basePos.x + (offX / offLen) * 6.5;
+              en.pos.z = en.basePos.z + (offZ / offLen) * 6.5;
+            }
+            en.group.rotation.y = Math.atan2(pDx, pDz);
           } else {
-            if (en.springGroup) en.springGroup.scale.set(0.95, 1.08, 0.95);
-            en.pos.y = en.basePos.y + Math.sin(((cycle - 0.25) / 0.75) * Math.PI) * 1.25;
+            en.pos.x = THREE.MathUtils.damp(en.pos.x, en.basePos.x + en.patrolOffset.x * s, 4, dt);
+            en.pos.z = THREE.MathUtils.damp(en.pos.z, en.basePos.z + en.patrolOffset.z * s, 4, dt);
+            en.pos.y = en.basePos.y;
+            en.group.rotation.y = Math.atan2(en.patrolOffset.x * Math.cos(t), en.patrolOffset.z * Math.cos(t));
           }
-        } else if (en.kind === 'chomper') {
-          if (en.jawUpper) {
-            en.jawUpper.rotation.x = -0.15 - Math.abs(Math.sin(this.totalTime * 7.5)) * 0.28;
-          }
-          if (en.windupKey) {
-            en.windupKey.rotation.y += dt * 5.0;
-          }
-        } else if (en.kind === 'flyer') {
-          en.pos.y += Math.sin(this.totalTime * 4.4 + en.phase) * 0.38;
-          if (en.wingL && en.wingR) {
-            const flap = Math.sin(this.totalTime * 14.5 + en.phase) * 0.55;
-            en.wingL.rotation.z = flap;
-            en.wingR.rotation.z = -flap;
-          }
-        } else if (en.kind === 'shooter') {
-          const sDx = this.playerPos.x - en.pos.x;
-          const sDz = this.playerPos.z - en.pos.z;
-          const sDistSq = sDx * sDx + sDz * sDz;
-          if (sDistSq < 18 * 18 && Math.abs(this.playerPos.y - en.pos.y) < 5.2) {
-            const targetYaw = Math.atan2(sDx, sDz);
-            en.group.rotation.y = targetYaw;
-            if (en.turretHead) en.turretHead.rotation.y = Math.sin(this.totalTime * 2) * 0.08;
-            en.shootTimer -= dt;
-            if (en.shootTimer <= 0) {
-              en.shootTimer = 2.25;
-              const pMesh = createEnemyProjectileMesh();
-              const spawnP = new THREE.Vector3(
-                en.pos.x + Math.sin(targetYaw) * 0.75,
-                en.pos.y + 1.05,
-                en.pos.z + Math.cos(targetYaw) * 0.75
-              );
-              pMesh.position.copy(spawnP);
-              this.levelGroup.add(pMesh);
-              const dir = new THREE.Vector3(
-                this.playerPos.x - spawnP.x,
-                this.playerPos.y + 0.75 - spawnP.y,
-                this.playerPos.z - spawnP.z
-              ).normalize();
-              this.enemyProjectiles.push({
-                mesh: pMesh,
-                pos: spawnP,
-                vel: dir.multiplyScalar(11.2),
-                life: 3.2,
-              });
-              soundEngine.playEnemyShoot();
-              this.spawnBurst(spawnP.x, spawnP.y, spawnP.z, 0xf43f5e, 6, 2.5);
+        } else {
+          en.pos.set(
+            en.basePos.x + en.patrolOffset.x * s,
+            en.basePos.y + en.patrolOffset.y * s,
+            en.basePos.z + en.patrolOffset.z * s
+          );
+
+          if (en.kind === 'hopper') {
+            en.hopPhase += dt * 4.2;
+            const cycle = (en.hopPhase % Math.PI) / Math.PI;
+            if (cycle < 0.25 && en.springGroup) {
+              en.springGroup.scale.set(1.18, 0.72, 1.18);
+              en.pos.y = en.basePos.y;
+            } else {
+              if (en.springGroup) en.springGroup.scale.set(0.95, 1.08, 0.95);
+              en.pos.y = en.basePos.y + Math.sin(((cycle - 0.25) / 0.75) * Math.PI) * 1.25;
+            }
+          } else if (en.kind === 'chomper') {
+            if (en.jawUpper) {
+              en.jawUpper.rotation.x = -0.15 - Math.abs(Math.sin(this.totalTime * 7.5)) * 0.28;
+            }
+            if (en.windupKey) {
+              en.windupKey.rotation.y += dt * 5.0;
+            }
+          } else if (en.kind === 'flyer') {
+            en.pos.y += Math.sin(this.totalTime * 4.4 + en.phase) * 0.38;
+            if (en.wingL && en.wingR) {
+              const flap = Math.sin(this.totalTime * 14.5 + en.phase) * 0.55;
+              en.wingL.rotation.z = flap;
+              en.wingR.rotation.z = -flap;
+            }
+          } else if (en.kind === 'shooter') {
+            const sDx = this.playerPos.x - en.pos.x;
+            const sDz = this.playerPos.z - en.pos.z;
+            const sDistSq = sDx * sDx + sDz * sDz;
+            if (sDistSq < 18 * 18 && Math.abs(this.playerPos.y - en.pos.y) < 5.2) {
+              const targetYaw = Math.atan2(sDx, sDz);
+              en.group.rotation.y = targetYaw;
+              if (en.turretHead) en.turretHead.rotation.y = Math.sin(this.totalTime * 2) * 0.08;
+              en.shootTimer -= dt;
+              if (en.shootTimer <= 0) {
+                en.shootTimer = 2.25;
+                const pMesh = createEnemyProjectileMesh();
+                const spawnP = new THREE.Vector3(
+                  en.pos.x + Math.sin(targetYaw) * 0.75,
+                  en.pos.y + 1.05,
+                  en.pos.z + Math.cos(targetYaw) * 0.75
+                );
+                pMesh.position.copy(spawnP);
+                this.levelGroup.add(pMesh);
+                const dir = new THREE.Vector3(
+                  this.playerPos.x - spawnP.x,
+                  this.playerPos.y + 0.75 - spawnP.y,
+                  this.playerPos.z - spawnP.z
+                ).normalize();
+                this.enemyProjectiles.push({
+                  mesh: pMesh,
+                  pos: spawnP,
+                  vel: dir.multiplyScalar(11.2),
+                  life: 3.2,
+                });
+                soundEngine.playEnemyShoot();
+                this.spawnBurst(spawnP.x, spawnP.y, spawnP.z, 0xf43f5e, 6, 2.5);
+              }
             }
           }
-        }
 
-        if (en.kind !== 'shooter') {
-          if (Math.abs(en.patrolOffset.z) > Math.abs(en.patrolOffset.x)) {
-            en.group.rotation.y = Math.cos(t) >= 0 ? 0 : Math.PI;
-          } else {
-            en.group.rotation.y = Math.cos(t) >= 0 ? Math.PI / 2 : -Math.PI / 2;
+          if (en.kind !== 'shooter') {
+            if (Math.abs(en.patrolOffset.z) > Math.abs(en.patrolOffset.x)) {
+              en.group.rotation.y = Math.cos(t) >= 0 ? 0 : Math.PI;
+            } else {
+              en.group.rotation.y = Math.cos(t) >= 0 ? Math.PI / 2 : -Math.PI / 2;
+            }
           }
         }
       }
@@ -9788,8 +10429,8 @@ export class GameEngine {
         this.damageEnemy(en);
         continue;
       }
-      if (this.spinTimer > 0 && en.kind !== 'spiky' && horizDistSq < (isLarge ? 2.6 : 2.1) && Math.abs(dy) < 1.3) {
-        if (en.kind === 'guardian') {
+      if (this.spinTimer > 0 && (en.kind !== 'spiky' || isWebbed) && horizDistSq < (isLarge ? 2.6 : 2.1) && Math.abs(dy) < 1.3) {
+        if (en.kind === 'guardian' && !isWebbed) {
           const dLen = Math.hypot(dx, dz) || 1;
           const fwdX = Math.sin(en.group.rotation.y);
           const fwdZ = Math.cos(en.group.rotation.y);
@@ -9804,7 +10445,7 @@ export class GameEngine {
         continue;
       }
       if (this.playerVel.y < -0.5 && horizDistSq < (isLarge ? 1.35 : 0.9) && dy > 0.35 && dy < (isLarge ? 1.55 : 1.15)) {
-        if (en.kind === 'spiky') {
+        if (en.kind === 'spiky' && !isWebbed) {
           this.damagePlayer(dx, dz);
         } else {
           this.damageEnemy(en);
@@ -9812,6 +10453,7 @@ export class GameEngine {
         }
         continue;
       }
+      if (isWebbed) continue;
       if (horizDistSq < (isLarge ? 1.05 : 0.72) && Math.abs(dy) < (isLarge ? 1.3 : 0.95)) {
         this.damagePlayer(dx, dz);
       }
@@ -10758,7 +11400,427 @@ export class GameEngine {
     }
   }
 
+  private findBestWebAnchor(): THREE.Vector3 | null {
+    if (!this.hasSpiderSuit || this.webAnchorPoints.length === 0) return null;
+    const camFwdX = -Math.sin(this.camYaw);
+    const camFwdZ = -Math.cos(this.camYaw);
+    let bestAnchor: THREE.Vector3 | null = null;
+    let bestScore = -Infinity;
+    for (const a of this.webAnchorPoints) {
+      if (a.y < this.playerPos.y + 0.8) continue;
+      const dx = a.x - this.playerPos.x;
+      const dy = a.y - this.playerPos.y;
+      const dz = a.z - this.playerPos.z;
+      const dist = Math.hypot(dx, dy, dz);
+      if (dist < 4.0 || dist > 30.0) continue;
+      const horizDist = Math.hypot(dx, dz) || 1;
+      const dot = (dx * camFwdX + dz * camFwdZ) / horizDist;
+      if (dot < -0.15) continue;
+      const idealDistScore = 1.0 - Math.abs(dist - 15.0) / 18.0;
+      const score = dot * 2.4 + idealDistScore * 1.4 + Math.min(1.0, dy / 14.0) * 0.8;
+      if (score > bestScore) {
+        bestScore = score;
+        bestAnchor = a;
+      }
+    }
+    return bestAnchor;
+  }
+
+  public triggerSpiderWebAction() {
+    if (
+      this.phase !== 'playing' ||
+      !this.hasSpiderSuit ||
+      this.spiderTransformTimer > 0 ||
+      this.rocketState === 'flying' ||
+      this.gliderState === 'flying' ||
+      this.boatState === 'sailing'
+    ) {
+      return;
+    }
+    if (this.webActive) {
+      this.releaseWeb(true);
+      return;
+    }
+    if (this.webCooldown > 0) return;
+
+    // Check if an un-webbed enemy is directly ahead for quick web-combat
+    const fwdX = Math.sin(this.playerYaw);
+    const fwdZ = Math.cos(this.playerYaw);
+    let directEnemy = false;
+    for (const en of this.enemies) {
+      if (!en.alive) continue;
+      const dx = en.pos.x - this.playerPos.x;
+      const dy = en.pos.y - this.playerPos.y;
+      const dz = en.pos.z - this.playerPos.z;
+      const d = Math.hypot(dx, dz);
+      if (d < 16 && Math.abs(dy) < 3.4) {
+        const dot = (dx * fwdX + dz * fwdZ) / (d || 1);
+        if (dot > 0.52 && (this.grounded || d < 9.5)) {
+          directEnemy = true;
+          break;
+        }
+      }
+    }
+
+    const anchor = !directEnemy ? (this.highlightedWebAnchor ?? this.findBestWebAnchor()) : null;
+    if (anchor) {
+      this.webActive = true;
+      this.webAnchor.copy(anchor);
+      const dist = this.playerPos.distanceTo(anchor);
+      this.webLength = THREE.MathUtils.clamp(dist * 0.93, 4.2, 26.5);
+      this.grounded = false;
+      this.standingPlatform = null;
+      this.isClimbing = false;
+      this.climbingWall = null;
+      this.climbFace = null;
+      this.isHovering = false;
+      this.hasDoubleJump = true;
+      this.hoverFuel = 1;
+      soundEngine.stopHover();
+
+      // Launch upward/forward impulse so swinging from a rooftop feels snappy and dynamic
+      const toAx = anchor.x - this.playerPos.x;
+      const toAz = anchor.z - this.playerPos.z;
+      const toLen = Math.hypot(toAx, toAz) || 1;
+      this.playerVel.x = this.playerVel.x * 0.72 + (toAx / toLen) * 8.2;
+      this.playerVel.z = this.playerVel.z * 0.72 + (toAz / toLen) * 8.2;
+      this.playerVel.y = Math.max(this.playerVel.y, 4.8);
+      this.webCooldown = 0.14;
+      soundEngine.playWebShoot();
+      this.spawnBurst(anchor.x, anchor.y, anchor.z, 0xf8fafc, 10, 4.2);
+      this.pushHud(true);
+      return;
+    }
+
+    this.shootWebBolt();
+  }
+
+  public releaseWeb(withJumpBoost: boolean) {
+    if (!this.webActive) return;
+    this.webActive = false;
+    if (this.webLineMesh) this.webLineMesh.visible = false;
+    this.hasDoubleJump = true;
+    this.hoverFuel = 1;
+    if (withJumpBoost) {
+      this.playerVel.y = Math.max(this.playerVel.y + 6.4, 10.6);
+      this.doubleJumpFlipTimer = 0.4;
+      this.playerSquash.set(0.82, 1.24, 0.82);
+      this.spawnBurst(this.playerPos.x, this.playerPos.y + 0.5, this.playerPos.z, 0xf8fafc, 12, 4.0);
+    }
+    soundEngine.playWebRelease();
+    this.pushHud(true);
+  }
+
+  private shootWebBolt() {
+    this.webCooldown = 0.24;
+    soundEngine.playWebShoot();
+    const origin = new THREE.Vector3(this.playerPos.x, this.playerPos.y + 0.95, this.playerPos.z);
+    let dir = new THREE.Vector3(Math.sin(this.playerYaw), 0.04, Math.cos(this.playerYaw)).normalize();
+    let bestScore = -Infinity;
+    for (const en of this.enemies) {
+      if (!en.alive) continue;
+      _vec3A.set(en.pos.x - origin.x, en.pos.y + 0.75 - origin.y, en.pos.z - origin.z);
+      const d = _vec3A.length();
+      if (d > 22 || d < 0.3) continue;
+      _vec3A.multiplyScalar(1 / d);
+      const dot = _vec3A.dot(dir);
+      if (dot > 0.52 && dot * 10 - d * 0.2 > bestScore) {
+        bestScore = dot * 10 - d * 0.2;
+        dir = _vec3A.clone();
+      }
+    }
+
+    const bolt = new THREE.Group();
+    const orb = new THREE.Mesh(
+      new THREE.SphereGeometry(0.18, 8, 8),
+      new THREE.MeshStandardMaterial({ color: 0xf8fafc, emissive: 0xe2e8f0, emissiveIntensity: 0.55 })
+    );
+    const tail = new THREE.Mesh(
+      new THREE.ConeGeometry(0.1, 0.65, 6),
+      new THREE.MeshBasicMaterial({ color: 0xf8fafc, transparent: true, opacity: 0.85 })
+    );
+    tail.rotation.x = -Math.PI / 2;
+    tail.position.z = -0.35;
+    bolt.add(orb, tail);
+    bolt.position.copy(origin);
+    bolt.lookAt(origin.clone().add(dir));
+    this.levelGroup.add(bolt);
+    this.webShots.push({ mesh: bolt, pos: origin, vel: dir.multiplyScalar(34), life: 0.85 });
+  }
+
+  private stepWebShots(dt: number) {
+    for (let i = this.webShots.length - 1; i >= 0; i--) {
+      const ws = this.webShots[i];
+      ws.life -= dt;
+      ws.pos.addScaledVector(ws.vel, dt);
+      ws.mesh.position.copy(ws.pos);
+
+      let remove = ws.life <= 0;
+      if (!remove) {
+        for (const en of this.enemies) {
+          if (!en.alive) continue;
+          const dx = ws.pos.x - en.pos.x;
+          const dy = ws.pos.y - (en.pos.y + 0.75);
+          const dz = ws.pos.z - en.pos.z;
+          if (dx * dx + dy * dy + dz * dz < 1.35) {
+            if (en.webbedTimer && en.webbedTimer > 0) {
+              this.damageEnemy(en);
+            } else {
+              en.webbedTimer = 6.5;
+              if (!en.webCocoon) {
+                en.webCocoon = createWebCocoonMesh();
+                en.group.add(en.webCocoon);
+              }
+              en.webCocoon.visible = true;
+              soundEngine.playWebHit();
+              this.spawnBurst(en.pos.x, en.pos.y + 0.8, en.pos.z, 0xf8fafc, 16, 4.8);
+            }
+            remove = true;
+            break;
+          }
+        }
+      }
+      if (!remove) {
+        for (const cr of this.crates) {
+          if (cr.broken) continue;
+          const dx = ws.pos.x - cr.pos.x;
+          const dy = ws.pos.y - (cr.pos.y + 0.5);
+          const dz = ws.pos.z - cr.pos.z;
+          if (dx * dx + dy * dy + dz * dz < 1.2) {
+            this.breakCrate(cr);
+            remove = true;
+            break;
+          }
+        }
+      }
+      if (remove) {
+        this.levelGroup.remove(ws.mesh);
+        ws.mesh.traverse((o) => {
+          const m = o as THREE.Mesh;
+          if (m.geometry) m.geometry.dispose();
+          if (m.material) {
+            if (Array.isArray(m.material)) m.material.forEach((mt) => mt.dispose());
+            else m.material.dispose();
+          }
+        });
+        this.webShots.splice(i, 1);
+      }
+    }
+  }
+
+  private stepWebSwinging(dt: number, worldDirX: number, worldDirZ: number) {
+    soundEngine.stopHover();
+    this.isHovering = false;
+    this.grounded = false;
+    this.standingPlatform = null;
+    this.contactShadowMesh.visible = false;
+
+    // Gravity + directional pump
+    this.playerVel.y -= 28.0 * dt;
+    this.playerVel.x += worldDirX * 26.5 * dt;
+    this.playerVel.z += worldDirZ * 26.5 * dt;
+
+    // Gentle reel-in when low over avenues or holding jump slightly
+    if (this.playerPos.y < this.currentLevel.theme.hazardFloorY + 9.0) {
+      this.webLength = Math.max(4.6, this.webLength - dt * 2.8);
+    }
+
+    const prevY = this.playerPos.y;
+    this.playerPos.addScaledVector(this.playerVel, dt);
+
+    // Enforce taut radial pendulum constraint |playerPos - webAnchor| <= webLength
+    _vec3A.subVectors(this.playerPos, this.webAnchor);
+    const dist = _vec3A.length();
+    if (dist > this.webLength && dist > 0.001) {
+      _vec3A.multiplyScalar(1 / dist);
+      this.playerPos.copy(this.webAnchor).addScaledVector(_vec3A, this.webLength);
+      const vRad = this.playerVel.dot(_vec3A);
+      if (vRad > 0) {
+        this.playerVel.addScaledVector(_vec3A, -vRad);
+      }
+      this.playerVel.multiplyScalar(0.996);
+    }
+
+    // Face swing velocity horizontally
+    const hSpd = Math.hypot(this.playerVel.x, this.playerVel.z);
+    if (hSpd > 0.6) {
+      const targetYaw = Math.atan2(this.playerVel.x, this.playerVel.z);
+      let diff = targetYaw - this.playerYaw;
+      while (diff > Math.PI) diff -= Math.PI * 2;
+      while (diff < -Math.PI) diff += Math.PI * 2;
+      this.playerYaw += diff * Math.min(1, dt * 10);
+    }
+
+    // Solid building collision during swing (prevents clipping inside skyscrapers)
+    const playerRadius = 0.38;
+    const playerHeight = 1.45;
+    for (const p of this.platforms) {
+      if (!p.visible) continue;
+      const topY = p.pos.y + p.halfSize.y;
+      const botY = p.pos.y - p.halfSize.y;
+      const minX = p.pos.x - p.halfSize.x - playerRadius;
+      const maxX = p.pos.x + p.halfSize.x + playerRadius;
+      const minZ = p.pos.z - p.halfSize.z - playerRadius;
+      const maxZ = p.pos.z + p.halfSize.z + playerRadius;
+      if (this.playerPos.x < minX || this.playerPos.x > maxX || this.playerPos.z < minZ || this.playerPos.z > maxZ) {
+        continue;
+      }
+      if (this.playerVel.y <= 0 && prevY >= topY - 0.35 && this.playerPos.y <= topY + 0.08) {
+        this.playerPos.y = topY;
+        this.playerVel.y = 0;
+        this.grounded = true;
+        this.standingPlatform = p;
+        this.releaseWeb(false);
+        return;
+      } else if (this.playerPos.y < topY - 0.15 && this.playerPos.y + playerHeight > botY + 0.15) {
+        const dxMin = Math.abs(this.playerPos.x - minX);
+        const dxMax = Math.abs(maxX - this.playerPos.x);
+        const dzMin = Math.abs(this.playerPos.z - minZ);
+        const dzMax = Math.abs(maxZ - this.playerPos.z);
+        const m = Math.min(dxMin, dxMax, dzMin, dzMax);
+        let hitFace: 'pz' | 'nz' | 'px' | 'nx' = 'pz';
+        if (m === dxMin) {
+          this.playerPos.x = minX;
+          this.playerVel.x = Math.min(0, this.playerVel.x);
+          hitFace = 'nx';
+        } else if (m === dxMax) {
+          this.playerPos.x = maxX;
+          this.playerVel.x = Math.max(0, this.playerVel.x);
+          hitFace = 'px';
+        } else if (m === dzMin) {
+          this.playerPos.z = minZ;
+          this.playerVel.z = Math.min(0, this.playerVel.z);
+          hitFace = 'nz';
+        } else {
+          this.playerPos.z = maxZ;
+          this.playerVel.z = Math.max(0, this.playerVel.z);
+          hitFace = 'pz';
+        }
+        if (p.halfSize.y >= 1.8 && p.def.kind !== 'glass' && !p.def.invisible) {
+          this.releaseWeb(false);
+          this.isClimbing = true;
+          this.climbFace = hitFace;
+          this.climbBoxCenter.copy(p.pos);
+          this.climbBoxHalf.copy(p.halfSize);
+          this.playerVel.set(0, 0, 0);
+          soundEngine.playClimbStep();
+          return;
+        }
+      }
+    }
+
+    // Update 3D white web line cylinder from Spider-Man's wrist to webAnchor
+    if (this.webLineMesh) {
+      _vec3B.set(
+        this.playerPos.x + Math.sin(this.playerYaw + 0.35) * 0.35,
+        this.playerPos.y + 1.15,
+        this.playerPos.z + Math.cos(this.playerYaw + 0.35) * 0.35
+      );
+      _vec3C.subVectors(this.webAnchor, _vec3B);
+      const len = Math.max(0.1, _vec3C.length());
+      this.webLineMesh.visible = true;
+      this.webLineMesh.position.lerpVectors(_vec3B, this.webAnchor, 0.5);
+      this.webLineMesh.scale.set(1, len, 1);
+      _vec3C.multiplyScalar(1 / len);
+      this.webLineMesh.quaternion.setFromUnitVectors(_vec3A.set(0, 1, 0), _vec3C);
+    }
+
+    // Jump releases swing with aerial boost
+    if (this.jumpBufferTimer > 0) {
+      this.jumpBufferTimer = 0;
+      this.releaseWeb(true);
+    }
+  }
+
+  private stepTimedChallenges(dt: number) {
+    for (const tc of this.timedChallengesRuntime) {
+      tc.startPad.rotation.y += dt * 1.4;
+      for (let g = 0; g < tc.gates.length; g++) {
+        const gate = tc.gates[g];
+        const ring = gate.userData.ring as THREE.Mesh | undefined;
+        const rMat = gate.userData.ringMat as THREE.MeshStandardMaterial | undefined;
+        if (ring) ring.rotation.z += dt * (tc.active && g === tc.currentIdx ? 4.5 : 1.4);
+        if (rMat) {
+          if (tc.completed) {
+            rMat.color.setHex(0x22c55e);
+            rMat.emissive.setHex(0x16a34a);
+          } else if (tc.active && g === tc.currentIdx) {
+            rMat.color.setHex(0xfacc15);
+            rMat.emissive.setHex(0xf59e0b);
+          } else if (tc.active && g < tc.currentIdx) {
+            rMat.color.setHex(0x4ade80);
+            rMat.emissive.setHex(0x22c55e);
+          } else {
+            rMat.color.setHex(0x38bdf8);
+            rMat.emissive.setHex(0x0284c7);
+          }
+        }
+      }
+
+      if (!tc.completed && !tc.active) {
+        const dx = this.playerPos.x - tc.startPos.x;
+        const dy = this.playerPos.y - tc.startPos.y;
+        const dz = this.playerPos.z - tc.startPos.z;
+        if (dx * dx + dz * dz < 3.6 && Math.abs(dy) < 2.2) {
+          for (const other of this.timedChallengesRuntime) {
+            other.active = false;
+            other.currentIdx = 0;
+            other.timer = 0;
+          }
+          tc.active = true;
+          tc.currentIdx = 0;
+          tc.timer = tc.timeLimit;
+          tc.lastTickSec = Math.ceil(tc.timeLimit);
+          soundEngine.playSwitch();
+          this.spawnBurst(tc.startPos.x, tc.startPos.y + 0.6, tc.startPos.z, 0xfacc15, 16, 4.8);
+          this.showBanner(`¡${tc.label}! Cruza los ${tc.checkpoints.length} anillos antes de ${tc.timeLimit}s`, 3.0);
+          this.pushHud(true);
+        }
+      } else if (tc.active) {
+        tc.timer -= dt;
+        const ceilSec = Math.ceil(tc.timer);
+        if (ceilSec <= 5 && ceilSec > 0 && ceilSec !== tc.lastTickSec) {
+          tc.lastTickSec = ceilSec;
+          soundEngine.playChallengeTick();
+        }
+        const targetPos = tc.checkpoints[tc.currentIdx];
+        if (targetPos) {
+          const dx = this.playerPos.x - targetPos.x;
+          const dy = this.playerPos.y + 0.7 - targetPos.y;
+          const dz = this.playerPos.z - targetPos.z;
+          if (dx * dx + dy * dy + dz * dz < 11.5) {
+            this.spawnBurst(targetPos.x, targetPos.y, targetPos.z, 0xfacc15, 18, 5.5);
+            soundEngine.playCoin();
+            tc.currentIdx++;
+            if (tc.currentIdx >= tc.checkpoints.length) {
+              tc.active = false;
+              tc.completed = true;
+              this.coinsCollected += tc.rewardCoins;
+              soundEngine.playChallengeComplete();
+              this.spawnBurst(this.playerPos.x, this.playerPos.y + 1.0, this.playerPos.z, 0x22c55e, 28, 7.2);
+              this.showBanner(`¡${tc.label} completado! (+${tc.rewardCoins} Monedas)`, 3.8);
+            }
+            this.pushHud(true);
+          }
+        }
+        if (tc.active && tc.timer <= 0) {
+          tc.active = false;
+          tc.currentIdx = 0;
+          tc.timer = 0;
+          soundEngine.playHurt();
+          this.showBanner('¡Tiempo agotado! Vuelve a la plataforma dorada para reintentar', 3.0);
+          this.pushHud(true);
+        }
+      }
+    }
+  }
+
   private handleFallDamage() {
+    this.webActive = false;
+    if (this.webLineMesh) this.webLineMesh.visible = false;
+    this.isClimbing = false;
+    this.climbingWall = null;
+    this.climbFace = null;
     const biome = this.currentLevel.theme.biome;
     if (biome === 'temple' || biome === 'jungle' || biome === 'rapids') {
       soundEngine.playSplash();
@@ -10828,6 +11890,17 @@ export class GameEngine {
       rig.thrusterLeft.visible = false;
       rig.thrusterRight.visible = false;
       rig.botRocketRig.visible = false;
+    } else if (this.hasSpiderSuit && this.spiderTransformTimer > 0) {
+      rig.bodyGroup.rotation.x = -0.12;
+      rig.leftArm.rotation.x = -2.4;
+      rig.rightArm.rotation.x = -2.4;
+      rig.rightArm.rotation.z = 0.4;
+      rig.leftLeg.rotation.x = 0.25;
+      rig.rightLeg.rotation.x = -0.15;
+      rig.hoverBeam.visible = false;
+      rig.thrusterLeft.visible = false;
+      rig.thrusterRight.visible = false;
+      rig.botRocketRig.visible = false;
     } else {
       rig.rightArm.rotation.z = 0;
       if (this.isClimbing) {
@@ -10837,6 +11910,14 @@ export class GameEngine {
         rig.rightArm.rotation.x = -2.35 - climbMotion * 0.45;
         rig.leftLeg.rotation.x = -climbMotion * 0.45;
         rig.rightLeg.rotation.x = climbMotion * 0.45;
+        rig.bodyGroup.position.y = 0;
+      } else if (this.hasSpiderSuit && this.webActive) {
+        const swingLean = THREE.MathUtils.clamp(Math.hypot(this.playerVel.x, this.playerVel.z) * 0.028, 0.12, 0.55);
+        rig.bodyGroup.rotation.x = THREE.MathUtils.damp(rig.bodyGroup.rotation.x, swingLean, 10, dt);
+        rig.rightArm.rotation.x = -2.55;
+        rig.leftArm.rotation.x = 0.55;
+        rig.leftLeg.rotation.x = 0.72;
+        rig.rightLeg.rotation.x = -0.35;
         rig.bodyGroup.position.y = 0;
       } else {
         const runFactor = Math.min(1, groundSpeed / 8.5);
@@ -10934,7 +12015,24 @@ export class GameEngine {
     const isBossActive = Boolean(this.bossRuntime?.alive && this.bossRuntime.active);
     const dz = !this.active2DZone ? this.activeDiscoveryZone : null;
     const boatSpeedBoost = this.boatState === 'sailing' ? Math.max(0, getRiverZoneSpeedFactor(this.boatPos.z) - 1) * 10 : 0;
-    const baseFov = isBoosting ? 63 : isVehicle ? (this.boatState === 'sailing' ? 59 + boatSpeedBoost : 59) : isBossActive ? 60 : dz?.fov ? dz.fov : groundSpd > 6.5 ? 58 : 55;
+    const baseFov =
+      this.spiderTransformTimer > 0
+        ? 48
+        : this.webActive
+          ? 64
+          : isBoosting
+            ? 63
+            : isVehicle
+              ? this.boatState === 'sailing'
+                ? 59 + boatSpeedBoost
+                : 59
+              : isBossActive
+                ? 60
+                : dz?.fov
+                  ? dz.fov
+                  : groundSpd > 6.5
+                    ? 58
+                    : 55;
     this.camDynamicFov = THREE.MathUtils.damp(this.camDynamicFov, baseFov, 6, dt);
     if (Math.abs(this.camera.fov - this.camDynamicFov) > 0.05) {
       this.camera.fov = this.camDynamicFov;
@@ -10952,6 +12050,22 @@ export class GameEngine {
       this.camera.position.lerp(_vec3A, 1 - Math.exp(-4 * dt));
       _vec3B.set(this.playerPos.x, this.playerPos.y + 1.0, this.playerPos.z);
       this.camera.lookAt(_vec3B);
+      return;
+    }
+
+    if (this.hasSpiderSuit && this.spiderTransformTimer > 0) {
+      const orbitAng = (2.15 - this.spiderTransformTimer) * 1.45;
+      const closeDist = 4.4;
+      _vec3A.set(
+        this.playerPos.x + Math.sin(orbitAng) * closeDist,
+        this.playerPos.y + 1.85,
+        this.playerPos.z + Math.cos(orbitAng) * closeDist
+      );
+      this.camCurrentPos.lerp(_vec3A, 1 - Math.exp(-7 * dt));
+      _vec3B.set(this.playerPos.x, this.playerPos.y + 1.05, this.playerPos.z);
+      this.camLookTarget.lerp(_vec3B, 1 - Math.exp(-10 * dt));
+      this.camera.position.copy(this.camCurrentPos);
+      this.camera.lookAt(this.camLookTarget);
       return;
     }
 
@@ -11007,9 +12121,21 @@ export class GameEngine {
       return;
     }
 
-    const dist = this.active2DZone ? 13.5 : isBossActive ? 11.4 : dz?.dist ?? 9.6;
+    let climbYawOverride: number | null = null;
+    if (this.isClimbing && (this.climbingWall || this.climbFace)) {
+      const cFace = this.climbingWall ? this.climbingWall.def.face : this.climbFace!;
+      climbYawOverride =
+        cFace === 'pz' ? 0 : cFace === 'nz' ? Math.PI : cFace === 'px' ? Math.PI / 2 : -Math.PI / 2;
+    }
+    const dist = this.active2DZone
+      ? 13.5
+      : this.webActive
+        ? 11.8
+        : isBossActive
+          ? 11.4
+          : dz?.dist ?? 9.6;
     const effPitch = this.active2DZone ? this.camPitch : isBossActive ? 0.46 : dz?.pitch ?? this.camPitch;
-    const effYaw = this.camYaw + (dz?.yawOffset ?? 0);
+    const effYaw = climbYawOverride !== null ? climbYawOverride : this.camYaw + (dz?.yawOffset ?? 0);
     const horizDist = dist * Math.cos(effPitch);
     const heightOffset = dist * Math.sin(effPitch) + (this.active2DZone ? 1.8 : isBossActive ? 1.6 : 1.2);
 
@@ -11095,6 +12221,7 @@ export class GameEngine {
             phase: this.bossRuntime.phase,
           }
         : null;
+    const activeTc = this.timedChallengesRuntime.find((tc) => tc.active) ?? null;
     this.onHudUpdate({
       phase: this.phase,
       levelIndex: this.currentLevel.index,
@@ -11104,6 +12231,14 @@ export class GameEngine {
       hasBow: this.hasBow,
       hasMonkeySuit: this.hasMonkeySuit,
       isClimbing: this.isClimbing,
+      hasSpiderSuit: this.hasSpiderSuit,
+      isSwinging: this.webActive,
+      canWebTarget: Boolean(this.highlightedWebAnchor),
+      spiderTransforming: this.spiderTransformTimer > 0,
+      challengeTimer: activeTc ? Math.max(0, activeTc.timer) : null,
+      challengeProgress: activeTc
+        ? `${activeTc.label}: ${activeTc.currentIdx}/${activeTc.checkpoints.length}`
+        : null,
       boss: bossHud,
       health: this.health,
       maxHealth: this.maxHealth,

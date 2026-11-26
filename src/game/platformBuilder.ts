@@ -154,6 +154,7 @@ export function buildStyledPlatformMesh(
     nebulaCitadelV2?: boolean;
     parisSkyV2?: boolean;
     rapidsRiverV2?: boolean;
+    newYorkV2?: boolean;
   }
 ): THREE.Mesh {
   const [w, h, d] = def.size;
@@ -167,6 +168,7 @@ export function buildStyledPlatformMesh(
   const nebulaV2 = Boolean(options?.nebulaCitadelV2);
   const parisV2 = Boolean(options?.parisSkyV2);
   const rapidsV2 = Boolean(options?.rapidsRiverV2);
+  const newYorkV2 = Boolean(options?.newYorkV2);
   const seed = hashSeed(def.id);
 
   // Use a sculpted composite Mesh as the primary entity (Engine still reads mesh.position & mesh.material cleanly)
@@ -536,9 +538,11 @@ export function buildStyledPlatformMesh(
                             ? textures.nebulaSide
                             : style === 'paris'
                               ? textures.parisStone
-                              : textures.climbStone,
+                              : style === 'newyork'
+                                ? textures.nycGlassTower
+                                : textures.climbStone,
               roughness: 0.88,
-              metalness: style === 'nebula' || style === 'tech' ? 0.35 : 0.08,
+              metalness: style === 'nebula' || style === 'tech' || style === 'newyork' ? 0.35 : 0.08,
             });
 
     if (useDisc) {
@@ -1085,6 +1089,70 @@ export function buildStyledPlatformMesh(
           ];
           mesh.add(new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(archPts), 14, 0.28, 6, false), stonePierMat));
         }
+      } else if (newYorkV2) {
+        // Manhattan Riveted Steel Suspension Bridge with catenary cables, street lamps & girder deck
+        const steelMat = new THREE.MeshStandardMaterial({
+          color: 0x334155,
+          metalness: 0.78,
+          roughness: 0.34,
+        });
+        const cableMat = new THREE.MeshStandardMaterial({
+          color: 0x94a3b8,
+          metalness: 0.82,
+          roughness: 0.28,
+        });
+        const lampGlowMat = new THREE.MeshStandardMaterial({
+          color: 0xfef08a,
+          emissive: 0xfbbf24,
+          emissiveIntensity: 2.0,
+        });
+        for (const side of [-1, 1]) {
+          const edge = side * (width * 0.46);
+          // Steel side guardrail & vertical posts
+          const rail = new THREE.Mesh(
+            alongZ ? new THREE.BoxGeometry(0.16, 0.16, span * 0.96) : new THREE.BoxGeometry(span * 0.96, 0.16, 0.16),
+            steelMat
+          );
+          rail.position.set(alongZ ? edge : 0, h * 0.5 + 0.65, alongZ ? 0 : edge);
+          mesh.add(rail);
+
+          for (const end of [-1, 1]) {
+            const zEnd = end * (span * 0.44);
+            const px = alongZ ? edge : zEnd;
+            const pz = alongZ ? zEnd : edge;
+            const pylon = new THREE.Mesh(new THREE.BoxGeometry(0.55, 4.4, 0.55), steelMat);
+            pylon.position.set(px, h * 0.5 + 2.1, pz);
+            pylon.castShadow = !isSoftwareGl;
+            const beacon = new THREE.Mesh(new THREE.SphereGeometry(0.22, 8, 8), lampGlowMat);
+            beacon.position.set(px, h * 0.5 + 4.45, pz);
+            mesh.add(pylon, beacon);
+          }
+
+          const sagPts: THREE.Vector3[] = [];
+          for (let s = 0; s <= 10; s++) {
+            const u = -1 + (s / 10) * 2;
+            const pAlong = u * span * 0.44;
+            const sagY = h * 0.5 + 4.1 - (1 - u * u) * 2.45;
+            sagPts.push(new THREE.Vector3(alongZ ? edge : pAlong, sagY, alongZ ? pAlong : edge));
+          }
+          mesh.add(new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(sagPts), 16, 0.08, 6, false), cableMat));
+
+          for (let s = 1; s < 10; s += 2) {
+            const u = -1 + (s / 10) * 2;
+            const pAlong = u * span * 0.44;
+            const topY = h * 0.5 + 4.1 - (1 - u * u) * 2.45;
+            const dropH = Math.max(0.2, topY - h * 0.5);
+            const drop = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, dropH, 5), cableMat);
+            drop.position.set(alongZ ? edge : pAlong, h * 0.5 + dropH * 0.5, alongZ ? pAlong : edge);
+            mesh.add(drop);
+          }
+        }
+        const underBeam = new THREE.Mesh(
+          alongZ ? new THREE.BoxGeometry(width * 0.88, 0.65, span * 0.94) : new THREE.BoxGeometry(span * 0.94, 0.65, width * 0.88),
+          steelMat
+        );
+        underBeam.position.y = -h * 0.5 - 0.3;
+        mesh.add(underBeam);
       } else {
         const railMat = new THREE.MeshStandardMaterial({
           map: textures.barkTexture,
@@ -2277,6 +2345,76 @@ export function buildStyledPlatformMesh(
           mound.scale.set(w / Math.min(w, d), 1, d / Math.min(w, d));
           mound.position.y = -h * 0.45 - 1.4;
           mesh.add(mound);
+        }
+      } else if (newYorkV2) {
+        const concreteMat = new THREE.MeshStandardMaterial({
+          map: textures.nycRooftopConcrete,
+          roughness: 0.82,
+          metalness: 0.14,
+        });
+        const steelTrimMat = new THREE.MeshStandardMaterial({
+          color: 0x334155,
+          metalness: 0.72,
+          roughness: 0.34,
+        });
+
+        if (def.kind === 'moving' || def.kind === 'elevator') {
+          // Construction steel gantry frame & caution yellow trim under moving lifts
+          const hazardMat = new THREE.MeshStandardMaterial({
+            color: 0xfacc15,
+            emissive: 0xca8a04,
+            emissiveIntensity: 0.35,
+            metalness: 0.55,
+            roughness: 0.35,
+          });
+          const frame = new THREE.Mesh(new THREE.BoxGeometry(w * 0.92, 0.34, d * 0.92), hazardMat);
+          frame.position.y = -h * 0.5 - 0.16;
+          mesh.add(frame);
+        } else {
+          // Real Skyscraper Tower Shaft descending down toward the Manhattan avenues!
+          const facadeKind = Math.floor(seed * 3) % 3;
+          const facadeMat =
+            facadeKind === 0
+              ? new THREE.MeshStandardMaterial({
+                  map: textures.nycGlassTower,
+                  emissiveMap: textures.nycGlassTowerEmissive,
+                  emissive: 0xffffff,
+                  emissiveIntensity: 0.85,
+                  metalness: 0.52,
+                  roughness: 0.22,
+                })
+              : facadeKind === 1
+                ? new THREE.MeshStandardMaterial({
+                    map: textures.nycArtDecoStone,
+                    roughness: 0.64,
+                    metalness: 0.22,
+                  })
+                : new THREE.MeshStandardMaterial({
+                    map: textures.nycBrickFacade,
+                    roughness: 0.82,
+                    metalness: 0.08,
+                  });
+
+          const towerH = 42.0;
+          const shaft = new THREE.Mesh(new THREE.BoxGeometry(w * 0.96, towerH, d * 0.96), facadeMat);
+          shaft.position.y = -h * 0.5 - towerH * 0.5;
+          shaft.receiveShadow = !isSoftwareGl;
+          mesh.add(shaft);
+
+          // Concrete cornice parapet trim around the rooftop edges
+          const cornice = new THREE.Mesh(new THREE.BoxGeometry(w + 0.34, 0.42, d + 0.34), concreteMat);
+          cornice.position.y = h * 0.32;
+          mesh.add(cornice);
+
+          // Rooftop HVAC vents & corner beacon lights on wide rooftops
+          if (w >= 7 && d >= 7) {
+            const hvac = new THREE.Mesh(new THREE.BoxGeometry(1.4, 0.72, 1.1), steelTrimMat);
+            hvac.position.set(-w * 0.32, h * 0.5 + 0.36, -d * 0.34);
+            hvac.castShadow = !isSoftwareGl;
+            const fan = new THREE.Mesh(new THREE.CylinderGeometry(0.36, 0.36, 0.14, 10), concreteMat);
+            fan.position.set(-w * 0.32, h * 0.5 + 0.76, -d * 0.34);
+            mesh.add(hvac, fan);
+          }
         }
       } else {
         const skirtH = Math.min(3.2, Math.max(1.2, h * 1.45));

@@ -11,6 +11,8 @@ interface GameHUDProps {
   onTouchJump: (held: boolean, justPressed: boolean) => void;
   onTouchSpin: () => void;
   onTouchBow: () => void;
+  onTouchWeb: () => void;
+  onTouchReleaseWeb: () => void;
 }
 
 function formatTime(seconds: number): string {
@@ -29,6 +31,8 @@ export const GameHUD: React.FC<GameHUDProps> = ({
   onTouchJump,
   onTouchSpin,
   onTouchBow,
+  onTouchWeb,
+  onTouchReleaseWeb,
 }) => {
   const [isTouchDevice, setIsTouchDevice] = useState(false);
 
@@ -46,11 +50,17 @@ export const GameHUD: React.FC<GameHUDProps> = ({
         ? 'Cruceta / WASD Planear · OK / A / Espacio Corriente térmica · Volver Pausa'
         : hud.perspectiveMode === 'BARCO'
           ? 'Cruceta / WASD Timón · OK / A / Espacio Saltar ola · Volver Pausa'
-          : hud.isClimbing
-            ? 'Cruceta / Stick Trepar y Lateral · OK / A / Espacio Saltar del muro'
-            : hud.hasBow
-              ? 'Cruceta / Mando Mover · OK / A Saltar (×2 Doble salto) · 2×OK / X / B Girar y Arco · Volver Pausa'
-              : 'Cruceta / Mando Mover · OK / A Saltar (×2 Doble salto) y Planear · 2×OK / X Girar · Volver Pausa';
+          : hud.hasSpiderSuit
+            ? hud.isSwinging
+              ? 'WASD Balancearse · Espacio / Clic Der Soltar telaraña · Clic Izq / G Reenganchar'
+              : hud.isClimbing
+                ? 'WASD / Cruceta Escalar rascacielos · Espacio Saltar de la fachada'
+                : 'WASD Mover · Clic Izq / G / RT Telaraña (Balanceo / Enredar) · Empuja edificios para escalar'
+            : hud.isClimbing
+              ? 'Cruceta / Stick Trepar y Lateral · OK / A / Espacio Saltar del muro'
+              : hud.hasBow
+                ? 'Cruceta / Mando Mover · OK / A Saltar (×2 Doble salto) · 2×OK / X / B Girar y Arco · Volver Pausa'
+                : 'Cruceta / Mando Mover · OK / A Saltar (×2 Doble salto) y Planear · 2×OK / X Girar · Volver Pausa';
 
   return (
     <div className="pointer-events-none fixed inset-0 z-10 flex flex-col justify-between p-4 pt-[max(1rem,env(safe-area-inset-top))] pb-[max(1rem,env(safe-area-inset-bottom))] pl-[max(1rem,env(safe-area-inset-left))] pr-[max(1rem,env(safe-area-inset-right))] sm:p-6">
@@ -100,6 +110,15 @@ export const GameHUD: React.FC<GameHUDProps> = ({
               <>
                 <span className="text-white/30" aria-hidden="true">·</span>
                 <span className="text-xs font-semibold text-emerald-300">Traje Mono</span>
+              </>
+            )}
+
+            {hud.hasSpiderSuit && (
+              <>
+                <span className="text-white/30" aria-hidden="true">·</span>
+                <span className="text-xs font-semibold text-rose-300">
+                  {hud.isSwinging ? 'Balanceo' : 'Traje Arácnido'}
+                </span>
               </>
             )}
 
@@ -259,6 +278,32 @@ export const GameHUD: React.FC<GameHUDProps> = ({
         </div>
       )}
 
+      {/* Timed Challenge Countdown (Level 09) */}
+      {hud.challengeTimer !== null && hud.challengeProgress && (
+        <div className="mx-auto mt-2 flex items-center gap-3 rounded-xl border border-amber-400/50 bg-[#0d1326]/90 px-4 py-2 text-white shadow-xl">
+          <span className="font-display text-xs font-bold tracking-wide text-amber-300 uppercase">
+            {hud.challengeProgress}
+          </span>
+          <span className="text-white/25" aria-hidden="true">·</span>
+          <span
+            className={`font-mono-num text-sm font-extrabold ${
+              hud.challengeTimer <= 5 ? 'text-rose-400' : 'text-white'
+            }`}
+          >
+            {hud.challengeTimer.toFixed(1)}s
+          </span>
+        </div>
+      )}
+
+      {/* Web Anchor Target Prompt */}
+      {hud.hasSpiderSuit && hud.canWebTarget && !hud.isSwinging && !hud.spiderTransforming && !hud.bannerText && (
+        <div className="mx-auto mt-2 rounded-lg border border-rose-400/40 bg-[#0d1326]/82 px-3.5 py-1 text-center shadow">
+          <span className="font-display text-xs font-semibold text-rose-200">
+            Anclaje fijado · Pulsa Clic Izq / G / RT para balancearte
+          </span>
+        </div>
+      )}
+
       {/* Transient Event Banner */}
       {hud.bannerText && (
         <div className="mx-auto mt-3 rounded-lg border border-sky-400/35 bg-[#070d1d]/88 px-5 py-2 text-center shadow-lg">
@@ -313,6 +358,24 @@ export const GameHUD: React.FC<GameHUDProps> = ({
           </div>
 
           <div className="pointer-events-auto flex items-center gap-2.5">
+            {hud.hasSpiderSuit && hud.isSwinging && (
+              <button
+                type="button"
+                onPointerDown={onTouchReleaseWeb}
+                className="flex h-14 w-14 items-center justify-center rounded-full border border-amber-400/60 bg-amber-950/90 font-display text-xs font-bold text-amber-200 active:bg-amber-600"
+              >
+                Soltar
+              </button>
+            )}
+            {hud.hasSpiderSuit && (
+              <button
+                type="button"
+                onPointerDown={onTouchWeb}
+                className="flex h-14 w-14 items-center justify-center rounded-full border border-rose-400/60 bg-rose-950/90 font-display text-[11px] font-bold text-rose-200 active:bg-rose-600"
+              >
+                Telaraña
+              </button>
+            )}
             {hud.hasBow && (
               <button
                 type="button"

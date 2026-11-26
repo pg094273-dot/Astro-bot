@@ -9,6 +9,7 @@ export type MusicTheme =
   | 'nebula'
   | 'paris'
   | 'rapids'
+  | 'newyork'
   | 'rocket'
   | 'boss';
 
@@ -22,7 +23,7 @@ interface ThemeArrangement {
   leadFilterHz: number;
   padWave: OscillatorType;
   bassWave: OscillatorType;
-  drumStyle: 'soft' | 'jungle' | 'desert' | 'ice' | 'volcanic' | 'nebula' | 'paris' | 'rapids' | 'rocket' | 'boss';
+  drumStyle: 'soft' | 'jungle' | 'desert' | 'ice' | 'volcanic' | 'nebula' | 'paris' | 'rapids' | 'newyork' | 'rocket' | 'boss';
 }
 
 function midiToFreq(midi: number): number {
@@ -349,6 +350,38 @@ const ARRANGEMENTS: Record<MusicTheme, ThemeArrangement> = {
     padWave: 'triangle',
     bassWave: 'sawtooth',
     drumStyle: 'rapids',
+  },
+
+  // "Héroe de Manhattan" — Heroic New York brass-synth & urban swing groove at 134 BPM (C minor heroic)
+  newyork: {
+    bpm: 134,
+    chords: [
+      [60, 63, 67, 70, 74], // Cm9
+      [56, 60, 63, 67, 70], // Abmaj9
+      [58, 62, 65, 70, 74], // Bb6/9
+      [55, 59, 62, 67, 70], // G7#9
+    ],
+    bass: [
+      36, null, 36, 48, null, 36, 43, null, 36, null, 48, null, 43, null, 46, null,
+      32, null, 32, 44, null, 32, 39, null, 32, null, 44, null, 39, null, 43, null,
+      34, null, 34, 46, null, 34, 41, null, 34, null, 46, null, 41, null, 44, null,
+      31, null, 31, 43, null, 31, 38, null, 31, null, 43, null, 46, null, 43, null,
+    ],
+    arp: [
+      72, 75, 79, 82, 79, 75, 84, 79, 68, 72, 75, 79, 82, 79, 75, 72,
+      70, 74, 77, 82, 86, 82, 77, 74, 67, 71, 74, 79, 82, 79, 74, 71,
+    ],
+    lead: [
+      72, null, null, 79, null, null, 78, null, 79, null, 84, null, 82, null, 79, null,
+      75, null, null, 79, null, null, 82, null, 79, null, null, null, 75, null, null, null,
+      74, null, null, 77, null, null, 82, null, 86, null, 84, null, 82, null, 79, null,
+      79, null, null, 74, null, null, 71, null, 74, null, 79, null, 84, null, null, null,
+    ],
+    leadWave: 'sawtooth',
+    leadFilterHz: 2900,
+    padWave: 'sawtooth',
+    bassWave: 'sawtooth',
+    drumStyle: 'newyork',
   },
 };
 
@@ -843,11 +876,13 @@ class SoundEngine {
     const kickHits =
       style === 'rocket' || style === 'boss' || style === 'volcanic' || style === 'rapids'
         ? stepInBar % 4 === 0 || (style === 'boss' && stepInBar === 14)
-        : style === 'desert' || style === 'nebula'
-          ? stepInBar === 0 || stepInBar === 6 || stepInBar === 8 || stepInBar === 14
-          : style === 'jungle' || style === 'paris'
-            ? stepInBar === 0 || stepInBar === 3 || stepInBar === 8 || stepInBar === 11
-            : stepInBar === 0 || stepInBar === 8;
+        : style === 'newyork'
+          ? stepInBar === 0 || stepInBar === 3 || stepInBar === 8 || stepInBar === 10 || stepInBar === 14
+          : style === 'desert' || style === 'nebula'
+            ? stepInBar === 0 || stepInBar === 6 || stepInBar === 8 || stepInBar === 14
+            : style === 'jungle' || style === 'paris'
+              ? stepInBar === 0 || stepInBar === 3 || stepInBar === 8 || stepInBar === 11
+              : stepInBar === 0 || stepInBar === 8;
 
     if (kickHits) {
       const osc = this.ctx.createOscillator();
@@ -1695,6 +1730,125 @@ class SoundEngine {
     osc.start(now);
     osc.stop(now + 0.19);
     this.playNoiseBurst(now, 0.12, 'bandpass', 900, 2200, 0.12);
+  }
+
+  public playWebShoot() {
+    const dest = this.getSfxDest();
+    if (!dest || !this.ctx) return;
+    const now = this.ctx.currentTime;
+    // Crisp mechanical thwip + high silk zip
+    this.playNoiseBurst(now, 0.14, 'bandpass', 2600, 950, 0.28, 1.4);
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+    osc.type = 'triangle';
+    osc.frequency.setValueAtTime(1180, now);
+    osc.frequency.exponentialRampToValueAtTime(420, now + 0.09);
+    gain.gain.setValueAtTime(0.18, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.11);
+    osc.connect(gain).connect(dest);
+    osc.start(now);
+    osc.stop(now + 0.12);
+  }
+
+  public playWebRelease() {
+    const dest = this.getSfxDest();
+    if (!dest || !this.ctx) return;
+    const now = this.ctx.currentTime;
+    this.playNoiseBurst(now, 0.22, 'bandpass', 620, 1750, 0.18, 0.8);
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(380, now);
+    osc.frequency.exponentialRampToValueAtTime(840, now + 0.14);
+    gain.gain.setValueAtTime(0.12, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.16);
+    osc.connect(gain).connect(dest);
+    osc.start(now);
+    osc.stop(now + 0.17);
+  }
+
+  public playWebHit() {
+    const dest = this.getSfxDest();
+    if (!dest || !this.ctx) return;
+    const now = this.ctx.currentTime;
+    this.playNoiseBurst(now, 0.16, 'bandpass', 1800, 650, 0.24, 1.1);
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(640, now);
+    osc.frequency.exponentialRampToValueAtTime(280, now + 0.13);
+    gain.gain.setValueAtTime(0.16, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.15);
+    osc.connect(gain).connect(dest);
+    osc.start(now);
+    osc.stop(now + 0.16);
+  }
+
+  public playSpiderTransform() {
+    const dest = this.getSfxDest();
+    if (!dest || !this.ctx) return;
+    const now = this.ctx.currentTime;
+    this.playNoiseBurst(now, 0.9, 'bandpass', 400, 3200, 0.22, 1.0);
+    const sweep = this.ctx.createOscillator();
+    const sGain = this.ctx.createGain();
+    sweep.type = 'sawtooth';
+    sweep.frequency.setValueAtTime(140, now);
+    sweep.frequency.exponentialRampToValueAtTime(780, now + 0.95);
+    sGain.gain.setValueAtTime(0.08, now);
+    sGain.gain.linearRampToValueAtTime(0.18, now + 0.65);
+    sGain.gain.exponentialRampToValueAtTime(0.001, now + 1.05);
+    sweep.connect(sGain).connect(dest);
+    sweep.start(now);
+    sweep.stop(now + 1.08);
+
+    // Heroic chord fanfare burst at transformation completion
+    [523.25, 622.25, 783.99, 1046.5].forEach((freq, i) => {
+      if (!this.ctx) return;
+      const t = now + 0.95 + i * 0.045;
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(freq, t);
+      gain.gain.setValueAtTime(0.18, t);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.52);
+      osc.connect(gain).connect(dest);
+      osc.start(t);
+      osc.stop(t + 0.55);
+    });
+  }
+
+  public playChallengeTick() {
+    const dest = this.getSfxDest();
+    if (!dest || !this.ctx) return;
+    const now = this.ctx.currentTime;
+    const osc = this.ctx.createOscillator();
+    const gain = this.ctx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(880, now);
+    gain.gain.setValueAtTime(0.11, now);
+    gain.gain.exponentialRampToValueAtTime(0.001, now + 0.09);
+    osc.connect(gain).connect(dest);
+    osc.start(now);
+    osc.stop(now + 0.1);
+  }
+
+  public playChallengeComplete() {
+    const dest = this.getSfxDest();
+    if (!dest || !this.ctx) return;
+    const now = this.ctx.currentTime;
+    [587.33, 739.99, 880, 1174.66].forEach((freq, i) => {
+      if (!this.ctx) return;
+      const t = now + i * 0.065;
+      const osc = this.ctx.createOscillator();
+      const gain = this.ctx.createGain();
+      osc.type = 'triangle';
+      osc.frequency.setValueAtTime(freq, t);
+      gain.gain.setValueAtTime(0.19, t);
+      gain.gain.exponentialRampToValueAtTime(0.001, t + 0.36);
+      osc.connect(gain).connect(dest);
+      osc.start(t);
+      osc.stop(t + 0.38);
+    });
   }
 }
 

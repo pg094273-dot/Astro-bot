@@ -22,6 +22,12 @@ const INITIAL_HUD: HudSnapshot = {
   hasBow: false,
   hasMonkeySuit: false,
   isClimbing: false,
+  hasSpiderSuit: false,
+  isSwinging: false,
+  canWebTarget: false,
+  spiderTransforming: false,
+  challengeTimer: null,
+  challengeProgress: null,
   boss: null,
   health: 3,
   maxHealth: 3,
@@ -303,6 +309,14 @@ export default function App() {
     engineRef.current?.shootArrow();
   }, []);
 
+  const handleTouchWeb = useCallback(() => {
+    engineRef.current?.triggerSpiderWebAction();
+  }, []);
+
+  const handleTouchReleaseWeb = useCallback(() => {
+    engineRef.current?.releaseWeb(false);
+  }, []);
+
   return (
     <main className="relative h-screen w-screen overflow-hidden bg-[#060b19]">
       {/* Isolated WebGL Canvas Container */}
@@ -328,6 +342,8 @@ export default function App() {
         onTouchJump={handleTouchJump}
         onTouchSpin={handleTouchSpin}
         onTouchBow={handleTouchBow}
+        onTouchWeb={handleTouchWeb}
+        onTouchReleaseWeb={handleTouchReleaseWeb}
       />
 
       <GameMenus

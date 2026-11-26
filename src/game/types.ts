@@ -1,6 +1,6 @@
 export type GamePhase = 'title' | 'playing' | 'paused' | 'victory' | 'gameover';
 
-export type BiomeKind = 'jungle' | 'temple' | 'desert' | 'ice' | 'volcanic' | 'nebula' | 'paris' | 'rapids';
+export type BiomeKind = 'jungle' | 'temple' | 'desert' | 'ice' | 'volcanic' | 'nebula' | 'paris' | 'rapids' | 'newyork';
 
 export type PlatformKind =
   | 'solid'
@@ -24,7 +24,8 @@ export type PlatformStyle =
   | 'volcanic'
   | 'nebula'
   | 'paris'
-  | 'river';
+  | 'river'
+  | 'newyork';
 
 export interface PlatformDef {
   id: string;
@@ -306,6 +307,15 @@ export interface CameraDiscoveryZoneDef {
   banner?: string;
 }
 
+export interface TimedChallengeDef {
+  id: string;
+  startPos: [number, number, number];
+  checkpoints: [number, number, number][];
+  timeLimit: number;
+  rewardCoins?: number;
+  label?: string;
+}
+
 export interface LevelDef {
   index: number;
   id: string;
@@ -316,6 +326,9 @@ export interface LevelDef {
   goalPos: [number, number, number];
   bowPickupPos?: [number, number, number];
   monkeySuitPos?: [number, number, number];
+  spiderSuitLevel?: boolean;
+  webAnchors?: [number, number, number][];
+  timedChallenges?: TimedChallengeDef[];
   climbWalls?: ClimbWallDef[];
   targets?: ArcheryTargetDef[];
   switches?: SwitchDef[];
@@ -346,6 +359,12 @@ export interface HudSnapshot {
   hasBow: boolean;
   hasMonkeySuit: boolean;
   isClimbing: boolean;
+  hasSpiderSuit: boolean;
+  isSwinging: boolean;
+  canWebTarget: boolean;
+  spiderTransforming: boolean;
+  challengeTimer: number | null;
+  challengeProgress: string | null;
   boss: { name: string; hp: number; maxHp: number; phase: number } | null;
   health: number;
   maxHealth: number;

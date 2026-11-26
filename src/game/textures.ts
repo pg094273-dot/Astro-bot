@@ -72,6 +72,15 @@ export interface ProceduralTextures {
   calmLakeSurface: THREE.CanvasTexture;
   rapidsRiverbed: THREE.CanvasTexture;
   skyRapids: THREE.CanvasTexture;
+  spiderSuitWebTex: THREE.CanvasTexture;
+  nycRooftopConcrete: THREE.CanvasTexture;
+  nycGlassTower: THREE.CanvasTexture;
+  nycGlassTowerEmissive: THREE.CanvasTexture;
+  nycBrickFacade: THREE.CanvasTexture;
+  nycArtDecoStone: THREE.CanvasTexture;
+  nycAsphaltRoad: THREE.CanvasTexture;
+  nycBillboardTex: THREE.CanvasTexture;
+  skyNewYork: THREE.CanvasTexture;
 }
 
 function makeCanvas(w: number, h: number): [HTMLCanvasElement, CanvasRenderingContext2D] {
@@ -2454,6 +2463,307 @@ export function createProceduralTextures(maxAnisotropy: number): ProceduralTextu
     ctx.fill();
   });
 
+  // SPIDER-MAN CRIMSON WEB SUIT TEXTURE (Seamless crimson + crisp black concentric/radial spiderweb pattern)
+  const spiderSuitWebTex = (() => {
+    const [canvas, ctx] = makeCanvas(256, 256);
+    const g = ctx.createLinearGradient(0, 0, 0, 256);
+    g.addColorStop(0, '#ef4444');
+    g.addColorStop(0.5, '#dc2626');
+    g.addColorStop(1, '#b91c1c');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, 256, 256);
+
+    // Subtle hexagonal micro-weave fabric grain
+    ctx.fillStyle = 'rgba(127, 29, 29, 0.16)';
+    for (let y = 0; y < 256; y += 8) {
+      for (let x = (y % 16 === 0 ? 0 : 4); x < 256; x += 8) {
+        ctx.fillRect(x, y, 3, 3);
+      }
+    }
+
+    // Crisp black webbing grid & curved concentric arcs
+    ctx.strokeStyle = '#111827';
+    ctx.lineWidth = 2.6;
+    const cols = 8;
+    const rows = 8;
+    const cw = 256 / cols;
+    const ch = 256 / rows;
+    for (let c = 0; c <= cols; c++) {
+      ctx.beginPath();
+      ctx.moveTo(c * cw, 0);
+      ctx.lineTo(c * cw, 256);
+      ctx.stroke();
+    }
+    for (let r = 0; r < rows; r++) {
+      const y0 = r * ch;
+      for (let c = 0; c < cols; c++) {
+        const x0 = c * cw;
+        ctx.beginPath();
+        ctx.moveTo(x0, y0);
+        ctx.quadraticCurveTo(x0 + cw * 0.5, y0 + ch * 0.42, x0 + cw, y0);
+        ctx.stroke();
+      }
+    }
+    return finalizeColorTexture(canvas, maxAnisotropy, 1, 1);
+  })();
+
+  // NYC ROOFTOP TAR & GRAVEL CONCRETE DECK WITH EXPANSION SEAMS
+  const nycRooftopConcrete = (() => {
+    const [canvas, ctx] = makeCanvas(512, 512);
+    ctx.fillStyle = '#475569';
+    ctx.fillRect(0, 0, 512, 512);
+    for (let i = 0; i < 1600; i++) {
+      const rx = (i * 137 + 19) % 512;
+      const ry = (i * 199 + 31) % 512;
+      const shade = 58 + ((i * 29) % 44);
+      ctx.fillStyle = `rgba(${shade}, ${shade + 8}, ${shade + 18}, 0.55)`;
+      ctx.fillRect(rx, ry, 3 + (i % 4), 3 + (i % 4));
+    }
+    // Concrete slab expansion joints & safety yellow edge markings
+    ctx.strokeStyle = 'rgba(15, 23, 42, 0.6)';
+    ctx.lineWidth = 4;
+    for (let p = 0; p < 512; p += 128) {
+      ctx.beginPath();
+      ctx.moveTo(p, 0);
+      ctx.lineTo(p, 512);
+      ctx.stroke();
+      ctx.beginPath();
+      ctx.moveTo(0, p);
+      ctx.lineTo(512, p);
+      ctx.stroke();
+    }
+    return finalizeColorTexture(canvas, maxAnisotropy, 2, 2);
+  })();
+
+  // NYC MODERN CURTAIN-WALL GLASS SKYSCRAPER & LIT OFFICE WINDOWS
+  const [nycGlassTower, nycGlassTowerEmissive] = (() => {
+    const [cBase, ctxB] = makeCanvas(512, 512);
+    const [cEmit, ctxE] = makeCanvas(512, 512);
+
+    const bg = ctxB.createLinearGradient(0, 0, 512, 512);
+    bg.addColorStop(0, '#1e293b');
+    bg.addColorStop(0.5, '#0f2847');
+    bg.addColorStop(1, '#1e3a5f');
+    ctxB.fillStyle = bg;
+    ctxB.fillRect(0, 0, 512, 512);
+
+    ctxE.fillStyle = '#000000';
+    ctxE.fillRect(0, 0, 512, 512);
+
+    const cols = 8;
+    const rows = 16;
+    const cellW = 512 / cols;
+    const cellH = 512 / rows;
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        const seed = r * 31 + c * 17;
+        const lit = (seed % 7) !== 0 && (seed % 5) !== 2;
+        const isWarm = seed % 3 !== 0;
+        const x = c * cellW + 5;
+        const y = r * cellH + 4;
+        const w = cellW - 10;
+        const h = cellH - 8;
+
+        if (lit) {
+          ctxB.fillStyle = isWarm ? '#fde68a' : '#7dd3fc';
+          ctxB.fillRect(x, y, w, h);
+          ctxE.fillStyle = isWarm ? '#f59e0b' : '#38bdf8';
+          ctxE.fillRect(x, y, w, h);
+        } else {
+          ctxB.fillStyle = '#172554';
+          ctxB.fillRect(x, y, w, h);
+        }
+        // Subtle sky reflection sheen across glass panes
+        ctxB.fillStyle = 'rgba(186, 230, 253, 0.16)';
+        ctxB.fillRect(x, y, w * 0.45, h);
+      }
+      // Horizontal spandrel steel beam
+      ctxB.fillStyle = '#334155';
+      ctxB.fillRect(0, r * cellH, 512, 4);
+    }
+    // Vertical steel mullions
+    ctxB.fillStyle = '#1e293b';
+    for (let c = 0; c < cols; c++) {
+      ctxB.fillRect(c * cellW, 0, 4, 512);
+    }
+    return [
+      finalizeColorTexture(cBase, maxAnisotropy, 1, 2),
+      finalizeColorTexture(cEmit, maxAnisotropy, 1, 2),
+    ];
+  })();
+
+  // NYC CLASSIC MANHATTAN BROWNSTONE / BRICK APARTMENT FACADE
+  const nycBrickFacade = (() => {
+    const [canvas, ctx] = makeCanvas(512, 512);
+    ctx.fillStyle = '#7c3f2c';
+    ctx.fillRect(0, 0, 512, 512);
+    for (let y = 0; y < 512; y += 16) {
+      const offset = (y / 16) % 2 === 0 ? 0 : 24;
+      for (let x = -24; x < 512; x += 48) {
+        const tone = ((x * 13 + y * 7) % 26) - 13;
+        ctx.fillStyle = `rgb(${128 + tone}, ${66 + Math.floor(tone * 0.6)}, ${46 + Math.floor(tone * 0.4)})`;
+        ctx.fillRect(x + offset + 2, y + 2, 44, 12);
+      }
+    }
+    // Warm lit apartment windows with stone lintels
+    for (let r = 0; r < 4; r++) {
+      for (let c = 0; c < 4; c++) {
+        const wx = 26 + c * 124;
+        const wy = 24 + r * 124;
+        ctx.fillStyle = '#d6c5ae';
+        ctx.fillRect(wx - 4, wy - 8, 72, 10);
+        ctx.fillRect(wx - 4, wy + 78, 72, 8);
+        ctx.fillStyle = (r + c * 2) % 3 === 0 ? '#1e293b' : '#fcd34d';
+        ctx.fillRect(wx, wy + 2, 64, 76);
+        ctx.strokeStyle = '#334155';
+        ctx.lineWidth = 4;
+        ctx.strokeRect(wx, wy + 2, 64, 76);
+      }
+    }
+    return finalizeColorTexture(canvas, maxAnisotropy, 1, 2);
+  })();
+
+  // NYC ART DECO LIMESTONE & BRONZE SKYSCRAPER FACADE
+  const nycArtDecoStone = (() => {
+    const [canvas, ctx] = makeCanvas(512, 512);
+    ctx.fillStyle = '#94a3b8';
+    ctx.fillRect(0, 0, 512, 512);
+    for (let x = 0; x < 512; x += 64) {
+      // Limestone fluted rib
+      const g = ctx.createLinearGradient(x, 0, x + 64, 0);
+      g.addColorStop(0, '#cbd5e1');
+      g.addColorStop(0.5, '#94a3b8');
+      g.addColorStop(1, '#64748b');
+      ctx.fillStyle = g;
+      ctx.fillRect(x, 0, 26, 512);
+      // Recessed window bay
+      ctx.fillStyle = '#1e293b';
+      ctx.fillRect(x + 28, 0, 32, 512);
+      for (let y = 12; y < 512; y += 64) {
+        ctx.fillStyle = (x + y) % 128 === 0 ? '#fef08a' : '#38bdf8';
+        ctx.fillRect(x + 32, y, 24, 42);
+      }
+      // Art Deco gold-bronze spandrel trim
+      ctx.fillStyle = '#d97706';
+      ctx.fillRect(x + 26, 56, 36, 6);
+    }
+    return finalizeColorTexture(canvas, maxAnisotropy, 1, 2);
+  })();
+
+  // NYC MANHATTAN AVENUE ASPHALT WITH YELLOW DOUBLE LINES & CROSSWALK
+  const nycAsphaltRoad = (() => {
+    const [canvas, ctx] = makeCanvas(512, 512);
+    ctx.fillStyle = '#1e2430';
+    ctx.fillRect(0, 0, 512, 512);
+    for (let i = 0; i < 1200; i++) {
+      const gx = (i * 173 + 11) % 512;
+      const gy = (i * 227 + 23) % 512;
+      ctx.fillStyle = i % 2 === 0 ? 'rgba(255,255,255,0.04)' : 'rgba(0,0,0,0.16)';
+      ctx.fillRect(gx, gy, 3, 3);
+    }
+    // Center double yellow lines
+    ctx.fillStyle = '#facc15';
+    ctx.fillRect(244, 0, 8, 512);
+    ctx.fillRect(260, 0, 8, 512);
+    // Dashed lane dividers
+    ctx.fillStyle = '#e2e8f0';
+    for (let y = 16; y < 512; y += 64) {
+      ctx.fillRect(122, y, 6, 34);
+      ctx.fillRect(384, y, 6, 34);
+    }
+    return finalizeColorTexture(canvas, maxAnisotropy, 2, 14);
+  })();
+
+  // TIMES SQUARE NEON BILLBOARD GRAPHIC
+  const nycBillboardTex = (() => {
+    const [canvas, ctx] = makeCanvas(512, 256);
+    const bg = ctx.createLinearGradient(0, 0, 512, 256);
+    bg.addColorStop(0, '#0f172a');
+    bg.addColorStop(0.5, '#311042');
+    bg.addColorStop(1, '#0c4a6e');
+    ctx.fillStyle = bg;
+    ctx.fillRect(0, 0, 512, 256);
+
+    ctx.strokeStyle = '#22d3ee';
+    ctx.lineWidth = 8;
+    ctx.strokeRect(10, 10, 492, 236);
+    ctx.strokeStyle = '#f43f5e';
+    ctx.lineWidth = 4;
+    ctx.strokeRect(20, 20, 472, 216);
+
+    // Stylized neon bars & emblem
+    ctx.fillStyle = '#facc15';
+    ctx.font = 'bold 54px sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('MIDTOWN', 256, 106);
+    ctx.fillStyle = '#38bdf8';
+    ctx.font = 'bold 42px sans-serif';
+    ctx.fillText('METRO PLAZA', 256, 168);
+    ctx.fillStyle = '#fb7185';
+    ctx.fillRect(68, 192, 376, 12);
+    return finalizeColorTexture(canvas, maxAnisotropy, 1, 1);
+  })();
+
+  // NEW YORK GOLDEN-DUSK MANHATTAN PANORAMIC SKY
+  const skyNewYork = makePanoramicSky((ctx, w, h) => {
+    const g = ctx.createLinearGradient(0, 0, 0, h);
+    g.addColorStop(0, '#0b1536');
+    g.addColorStop(0.24, '#1e3566');
+    g.addColorStop(0.46, '#6d4578');
+    g.addColorStop(0.62, '#d96b52');
+    g.addColorStop(0.72, '#fbbf24');
+    g.addColorStop(0.8, '#1e293b');
+    g.addColorStop(1, '#090d16');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, w, h);
+
+    // Early evening stars near zenith
+    for (let i = 0; i < 170; i++) {
+      ctx.fillStyle = i % 3 === 0 ? 'rgba(255,248,220,0.75)' : 'rgba(186,230,253,0.5)';
+      ctx.fillRect((i * 211 + 19) % w, (i * 83 + 13) % 240, 1.8, 1.8);
+    }
+
+    // Warm sunset glow over Hudson River horizon
+    const sunGlow = ctx.createRadialGradient(1024, 620, 24, 1024, 620, 360);
+    sunGlow.addColorStop(0, 'rgba(255, 251, 214, 0.96)');
+    sunGlow.addColorStop(0.28, 'rgba(251, 191, 36, 0.65)');
+    sunGlow.addColorStop(0.62, 'rgba(234, 88, 12, 0.25)');
+    sunGlow.addColorStop(1, 'rgba(234, 88, 12, 0)');
+    ctx.fillStyle = sunGlow;
+    ctx.fillRect(0, 0, w, h);
+
+    // Warm dusk cloud banks
+    for (let i = 0; i < 10; i++) {
+      paintCloudBank(
+        ctx,
+        (i * 205 + 70) % w,
+        290 + (i % 3) * 62,
+        0.9 + (i % 3) * 0.25,
+        'rgba(253, 212, 168, 0.62)'
+      );
+    }
+
+    // Far Manhattan skyscraper silhouette belt
+    ctx.fillStyle = '#1e293b';
+    for (let x = 0; x < w; x += 38) {
+      const bh = 68 + ((x * 37 + 19) % 145);
+      const bw = 30 + ((x * 11) % 16);
+      ctx.fillRect(x, 735 - bh, bw, bh + 120);
+      if ((x / 38) % 4 === 1) {
+        // Art Deco spire silhouette
+        ctx.fillRect(x + bw * 0.28, 735 - bh - 26, bw * 0.44, 26);
+        ctx.fillRect(x + bw * 0.46, 735 - bh - 62, 3, 36);
+      }
+      ctx.fillStyle = 'rgba(253, 224, 130, 0.52)';
+      for (let wy = 745 - bh; wy < 720; wy += 12) {
+        for (let wx = x + 5; wx < x + bw - 6; wx += 9) {
+          if ((wx + wy) % 3 !== 0) ctx.fillRect(wx, wy, 4, 6);
+        }
+      }
+      ctx.fillStyle = '#1e293b';
+    }
+  });
+
   // PBR Roughness Data Maps (varying micro-specular response for stone, brushed metal, weathered wood, and polished ice)
   const makeRoughnessMap = (baseVal: number, variance: number, streaks: boolean): THREE.CanvasTexture => {
     const [rC, rCtx] = makeCanvas(256, 256);
@@ -2552,6 +2862,15 @@ export function createProceduralTextures(maxAnisotropy: number): ProceduralTextu
     calmLakeSurface,
     rapidsRiverbed,
     skyRapids,
+    spiderSuitWebTex,
+    nycRooftopConcrete,
+    nycGlassTower,
+    nycGlassTowerEmissive,
+    nycBrickFacade,
+    nycArtDecoStone,
+    nycAsphaltRoad,
+    nycBillboardTex,
+    skyNewYork,
   };
 }
 

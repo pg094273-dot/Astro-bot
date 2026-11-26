@@ -520,6 +520,7 @@ export function createBiomeAmbientParticles(biome: BiomeKind, count = 160): Ambi
     nebula: { color: 0x67e8f9, size: 0.3, speedY: 0.42, drift: 0.65, opacity: 0.84 },
     paris: { color: 0xfbcfe8, size: 0.26, speedY: -0.55, drift: 1.75, opacity: 0.72 },
     rapids: { color: 0xe0f2fe, size: 0.26, speedY: 0.5, drift: 1.4, opacity: 0.65 },
+    newyork: { color: 0xfde68a, size: 0.22, speedY: -0.18, drift: 1.15, opacity: 0.55 },
   };
 
   const cfg = palette[biome];

@@ -20,6 +20,13 @@ export interface AstroBotRig {
   bowMesh: THREE.Group;
   monkeyParts: THREE.Object3D[];
   monkeyTail: THREE.Group;
+  astroParts: THREE.Object3D[];
+  spiderParts: THREE.Object3D[];
+  spiderEyeL: THREE.Mesh;
+  spiderEyeR: THREE.Mesh;
+  webShooterL: THREE.Mesh;
+  webShooterR: THREE.Mesh;
+  transformAura: THREE.Mesh;
   botRocketRig: THREE.Group;
 }
 
@@ -81,35 +88,43 @@ export function createAstroBot(): AstroBotRig {
     side: THREE.DoubleSide,
   });
 
+  const astroParts: THREE.Object3D[] = [];
+
   // Sculpted Torso Core & Layered Chest Armor
   const torso = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.18, 0.42, 12), titaniumMat);
   torso.position.y = 0.7;
   torso.castShadow = true;
   bodyGroup.add(torso);
+  astroParts.push(torso);
 
   const collar = new THREE.Mesh(new THREE.TorusGeometry(0.19, 0.042, 8, 16), amberGold);
   collar.rotation.x = Math.PI / 2;
   collar.position.y = 0.9;
   bodyGroup.add(collar);
+  astroParts.push(collar);
 
   const chestBevel = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.2, 0.24, 6), cobaltArmor);
   chestBevel.rotation.y = Math.PI / 6;
   chestBevel.position.set(0, 0.74, 0.06);
   chestBevel.castShadow = true;
   bodyGroup.add(chestBevel);
+  astroParts.push(chestBevel);
 
   const coreRing = new THREE.Mesh(new THREE.TorusGeometry(0.085, 0.022, 8, 16), amberGold);
   coreRing.position.set(0, 0.75, 0.23);
   bodyGroup.add(coreRing);
+  astroParts.push(coreRing);
 
   const coreLight = new THREE.Mesh(new THREE.OctahedronGeometry(0.065, 0), cyanGlow);
   coreLight.scale.set(1, 1, 0.55);
   coreLight.position.set(0, 0.75, 0.24);
   bodyGroup.add(coreLight);
+  astroParts.push(coreLight);
 
   const belt = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.2, 0.075, 12), darkCarbon);
   belt.position.y = 0.51;
   bodyGroup.add(belt);
+  astroParts.push(belt);
 
   // Twin-Turbine Vector Jetpack
   const pack = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.16, 0.32, 8), darkCarbon);
@@ -117,6 +132,7 @@ export function createAstroBot(): AstroBotRig {
   pack.position.set(0, 0.74, -0.22);
   pack.castShadow = true;
   bodyGroup.add(pack);
+  astroParts.push(pack);
 
   const finShape = new THREE.Shape();
   finShape.moveTo(0, 0);
@@ -133,6 +149,7 @@ export function createAstroBot(): AstroBotRig {
   finR.position.x = 0.18;
   finR.rotation.set(0.2, 0.45, -0.35);
   bodyGroup.add(finL, finR);
+  astroParts.push(finL, finR);
 
   const nozzleGeo = new THREE.CylinderGeometry(0.06, 0.082, 0.14, 12);
   const nozzleL = new THREE.Mesh(nozzleGeo, amberGold);
@@ -140,6 +157,7 @@ export function createAstroBot(): AstroBotRig {
   const nozzleR = new THREE.Mesh(nozzleGeo, amberGold);
   nozzleR.position.set(0.12, 0.55, -0.24);
   bodyGroup.add(nozzleL, nozzleR);
+  astroParts.push(nozzleL, nozzleR);
 
   const thrusterLeft = new THREE.Mesh(new THREE.ConeGeometry(0.08, 0.3, 12), cyanGlow);
   thrusterLeft.rotation.x = Math.PI;
@@ -169,6 +187,7 @@ export function createAstroBot(): AstroBotRig {
   capeMesh.rotation.x = 0.22;
   capeGroup.add(capeMesh);
   bodyGroup.add(capeGroup);
+  astroParts.push(capeGroup);
 
   // Original Angular Aero-Explorer Helmet (Faceted crown + swept side telemetry fins + panoramic visor)
   const headGroup = new THREE.Group();
@@ -179,12 +198,14 @@ export function createAstroBot(): AstroBotRig {
   helmetBase.scale.set(1.06, 0.95, 1.08);
   helmetBase.castShadow = true;
   headGroup.add(helmetBase);
+  astroParts.push(helmetBase);
 
   // Cobalt Aero-Hood Crest sweeping back
   const hoodCrest = new THREE.Mesh(new THREE.CylinderGeometry(0.12, 0.22, 0.52, 6), cobaltArmor);
   hoodCrest.rotation.x = Math.PI / 2 - 0.16;
   hoodCrest.position.set(0, 0.28, -0.08);
   headGroup.add(hoodCrest);
+  astroParts.push(hoodCrest);
 
   // Twin Swept Telemetry Ear Fins (Gold + Cyan accent)
   for (const sx of [-1, 1]) {
@@ -199,16 +220,19 @@ export function createAstroBot(): AstroBotRig {
     const earGlow = new THREE.Mesh(new THREE.BoxGeometry(0.03, 0.16, 0.05), cyanGlow);
     earGlow.position.set(sx * 0.43, 0.04, 0.05);
     headGroup.add(earPod, earWing, earGlow);
+    astroParts.push(earPod, earWing, earGlow);
   }
 
   // Panoramic Angular Visor + Amber Rim
   const visorBezel = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.29, 0.25, 8, 1, false, -Math.PI * 0.36, Math.PI * 0.72), amberGold);
   visorBezel.position.set(0, 0.01, 0.09);
   headGroup.add(visorBezel);
+  astroParts.push(visorBezel);
 
   const visorFront = new THREE.Mesh(new THREE.CylinderGeometry(0.33, 0.3, 0.21, 12, 1, false, -Math.PI * 0.33, Math.PI * 0.66), visorGlass);
   visorFront.position.set(0, 0.01, 0.11);
   headGroup.add(visorFront);
+  astroParts.push(visorFront);
 
   // Expressive Hex-Cut Optic Eyes
   const eyeGeo = new THREE.BoxGeometry(0.085, 0.095, 0.05);
@@ -216,21 +240,25 @@ export function createAstroBot(): AstroBotRig {
   leftEye.position.set(-0.11, 0.02, 0.38);
   leftEye.rotation.y = -0.22;
   headGroup.add(leftEye);
+  astroParts.push(leftEye);
 
   const rightEye = new THREE.Mesh(eyeGeo, cyanGlow);
   rightEye.position.set(0.11, 0.02, 0.38);
   rightEye.rotation.y = 0.22;
   headGroup.add(rightEye);
+  astroParts.push(rightEye);
 
   // Orbital Compass Antenna
   const antennaStem = new THREE.Mesh(new THREE.CylinderGeometry(0.02, 0.03, 0.22, 8), amberGold);
   antennaStem.position.set(0, 0.42, -0.06);
   antennaStem.rotation.x = -0.22;
   headGroup.add(antennaStem);
+  astroParts.push(antennaStem);
 
   const antennaTip = new THREE.Mesh(new THREE.OctahedronGeometry(0.072, 0), cyanGlow);
   antennaTip.position.set(0, 0.54, -0.09);
   headGroup.add(antennaTip);
+  astroParts.push(antennaTip);
 
   // Articulated Arms with Angular Pauldrons & Gauntlets
   const makeArm = (side: number) => {
@@ -253,6 +281,7 @@ export function createAstroBot(): AstroBotRig {
     glove.position.y = -0.32;
     glove.castShadow = true;
     arm.add(glove);
+    astroParts.push(pauldron, upper, cuff, glove);
     return arm;
   };
   const leftArm = makeArm(-1);
@@ -288,6 +317,7 @@ export function createAstroBot(): AstroBotRig {
     const vent = new THREE.Mesh(new THREE.BoxGeometry(0.12, 0.025, 0.18), cyanGlow);
     vent.position.set(0, -0.455, 0.04);
     leg.add(vent);
+    astroParts.push(shin, boot, sole, vent);
 
     return leg;
   };
@@ -413,6 +443,270 @@ export function createAstroBot(): AstroBotRig {
   bodyGroup.add(monkeyTail);
   monkeyParts.push(monkeyTail);
 
+  // Full Spider-Man Transformation Suit (sculpted red-webbed + cobalt-blue suit, large white angular eyes, chest/back spider emblems, wrist web-shooters)
+  const spiderParts: THREE.Object3D[] = [];
+  const webCanvas = document.createElement('canvas');
+  webCanvas.width = 256;
+  webCanvas.height = 256;
+  const wCtx = webCanvas.getContext('2d')!;
+  const wGrad = wCtx.createLinearGradient(0, 0, 0, 256);
+  wGrad.addColorStop(0, '#ef4444');
+  wGrad.addColorStop(0.5, '#dc2626');
+  wGrad.addColorStop(1, '#b91c1c');
+  wCtx.fillStyle = wGrad;
+  wCtx.fillRect(0, 0, 256, 256);
+  wCtx.strokeStyle = '#111827';
+  wCtx.lineWidth = 2.6;
+  for (let c = 0; c <= 8; c++) {
+    wCtx.beginPath();
+    wCtx.moveTo(c * 32, 0);
+    wCtx.lineTo(c * 32, 256);
+    wCtx.stroke();
+  }
+  for (let r = 0; r < 8; r++) {
+    const y0 = r * 32;
+    for (let c = 0; c < 8; c++) {
+      const x0 = c * 32;
+      wCtx.beginPath();
+      wCtx.moveTo(x0, y0);
+      wCtx.quadraticCurveTo(x0 + 16, y0 + 13, x0 + 32, y0);
+      wCtx.stroke();
+    }
+  }
+  const webTex = new THREE.CanvasTexture(webCanvas);
+  webTex.colorSpace = THREE.SRGBColorSpace;
+  webTex.wrapS = THREE.RepeatWrapping;
+  webTex.wrapT = THREE.RepeatWrapping;
+
+  const spiderRedMat = new THREE.MeshPhysicalMaterial({
+    map: webTex,
+    roughness: 0.34,
+    metalness: 0.08,
+    clearcoat: 0.35,
+    clearcoatRoughness: 0.25,
+  });
+  const spiderBlueMat = new THREE.MeshPhysicalMaterial({
+    color: 0x1d4ed8,
+    roughness: 0.38,
+    metalness: 0.1,
+    clearcoat: 0.28,
+  });
+  const spiderBlackMat = new THREE.MeshStandardMaterial({
+    color: 0x0f172a,
+    roughness: 0.35,
+    metalness: 0.25,
+  });
+  const spiderWhiteEyeMat = new THREE.MeshStandardMaterial({
+    color: 0xffffff,
+    emissive: 0xe0f2fe,
+    emissiveIntensity: 0.72,
+    roughness: 0.14,
+    metalness: 0.05,
+  });
+  const webShooterSilverMat = new THREE.MeshStandardMaterial({
+    color: 0xcbd5e1,
+    metalness: 0.85,
+    roughness: 0.22,
+  });
+
+  // Spider-Man Sculpted Masked Head + Large Iconic White Angular Eyes
+  const spHeadMask = new THREE.Mesh(new THREE.SphereGeometry(0.345, 24, 20), spiderRedMat);
+  spHeadMask.scale.set(0.95, 1.03, 1.02);
+  spHeadMask.castShadow = true;
+  spHeadMask.visible = false;
+  headGroup.add(spHeadMask);
+  spiderParts.push(spHeadMask);
+
+  const makeSpiderEyeShape = (w: number, h: number) => {
+    const s = new THREE.Shape();
+    s.moveTo(-w * 0.45, -h * 0.28);
+    s.quadraticCurveTo(0, -h * 0.45, w * 0.5, -h * 0.05);
+    s.quadraticCurveTo(w * 0.46, h * 0.46, w * 0.08, h * 0.48);
+    s.quadraticCurveTo(-w * 0.42, h * 0.24, -w * 0.45, -h * 0.28);
+    return s;
+  };
+  const spEyeFrameGeo = new THREE.ExtrudeGeometry(makeSpiderEyeShape(0.24, 0.19), {
+    depth: 0.032,
+    bevelEnabled: true,
+    bevelThickness: 0.01,
+    bevelSize: 0.008,
+    bevelSegments: 2,
+  });
+  const spEyeLensGeo = new THREE.ExtrudeGeometry(makeSpiderEyeShape(0.185, 0.135), {
+    depth: 0.025,
+    bevelEnabled: false,
+  });
+
+  const spEyeFrameL = new THREE.Mesh(spEyeFrameGeo, spiderBlackMat);
+  spEyeFrameL.position.set(-0.145, 0.03, 0.305);
+  spEyeFrameL.rotation.set(-0.08, -0.34, -0.34);
+  spEyeFrameL.scale.x = -1;
+  spEyeFrameL.visible = false;
+  headGroup.add(spEyeFrameL);
+  spiderParts.push(spEyeFrameL);
+
+  const spiderEyeL = new THREE.Mesh(spEyeLensGeo, spiderWhiteEyeMat);
+  spiderEyeL.position.set(-0.145, 0.03, 0.318);
+  spiderEyeL.rotation.set(-0.08, -0.34, -0.34);
+  spiderEyeL.scale.x = -1;
+  spiderEyeL.visible = false;
+  headGroup.add(spiderEyeL);
+  spiderParts.push(spiderEyeL);
+
+  const spEyeFrameR = new THREE.Mesh(spEyeFrameGeo, spiderBlackMat);
+  spEyeFrameR.position.set(0.145, 0.03, 0.305);
+  spEyeFrameR.rotation.set(-0.08, 0.34, 0.34);
+  spEyeFrameR.visible = false;
+  headGroup.add(spEyeFrameR);
+  spiderParts.push(spEyeFrameR);
+
+  const spiderEyeR = new THREE.Mesh(spEyeLensGeo, spiderWhiteEyeMat);
+  spiderEyeR.position.set(0.145, 0.03, 0.318);
+  spiderEyeR.rotation.set(-0.08, 0.34, 0.34);
+  spiderEyeR.visible = false;
+  headGroup.add(spiderEyeR);
+  spiderParts.push(spiderEyeR);
+
+  // Athletic Red & Cobalt Torso + Chest/Back Spider Emblems
+  const spWaist = new THREE.Mesh(new THREE.CylinderGeometry(0.205, 0.175, 0.43, 14), spiderBlueMat);
+  spWaist.position.y = 0.7;
+  spWaist.castShadow = true;
+  spWaist.visible = false;
+  bodyGroup.add(spWaist);
+  spiderParts.push(spWaist);
+
+  const spChest = new THREE.Mesh(new THREE.CylinderGeometry(0.235, 0.185, 0.26, 12), spiderRedMat);
+  spChest.scale.set(1.06, 1, 0.92);
+  spChest.position.set(0, 0.78, 0.02);
+  spChest.castShadow = true;
+  spChest.visible = false;
+  bodyGroup.add(spChest);
+  spiderParts.push(spChest);
+
+  const spBelt = new THREE.Mesh(new THREE.CylinderGeometry(0.186, 0.186, 0.072, 14), spiderRedMat);
+  spBelt.position.y = 0.525;
+  spBelt.visible = false;
+  bodyGroup.add(spBelt);
+  spiderParts.push(spBelt);
+
+  const buildSpiderEmblem = (mat: THREE.Material) => {
+    const em = new THREE.Group();
+    const abd = new THREE.Mesh(new THREE.SphereGeometry(0.038, 8, 8), mat);
+    abd.scale.set(0.8, 1.35, 0.5);
+    const thorax = new THREE.Mesh(new THREE.SphereGeometry(0.025, 8, 8), mat);
+    thorax.position.y = 0.052;
+    em.add(abd, thorax);
+    const legGeo = new THREE.BoxGeometry(0.085, 0.014, 0.015);
+    for (const sx of [-1, 1]) {
+      for (let i = 0; i < 4; i++) {
+        const leg = new THREE.Mesh(legGeo, mat);
+        leg.position.set(sx * 0.052, (i - 1.5) * 0.028 + 0.02, 0);
+        leg.rotation.z = sx * (i < 2 ? -0.58 + i * 0.25 : 0.45 - (i - 2) * 0.22);
+        em.add(leg);
+      }
+    }
+    return em;
+  };
+
+  const frontEmblem = buildSpiderEmblem(spiderBlackMat);
+  frontEmblem.position.set(0, 0.76, 0.215);
+  frontEmblem.visible = false;
+  bodyGroup.add(frontEmblem);
+  spiderParts.push(frontEmblem);
+
+  const backEmblem = buildSpiderEmblem(spiderRedMat);
+  backEmblem.scale.setScalar(1.25);
+  backEmblem.position.set(0, 0.76, -0.205);
+  backEmblem.rotation.y = Math.PI;
+  backEmblem.visible = false;
+  bodyGroup.add(backEmblem);
+  spiderParts.push(backEmblem);
+
+  // Spider-Man Sculpted Limbs + Wrist Web-Shooters
+  const addSpiderArmParts = (arm: THREE.Group): THREE.Mesh => {
+    const spShoulder = new THREE.Mesh(new THREE.SphereGeometry(0.095, 10, 10), spiderRedMat);
+    spShoulder.visible = false;
+    arm.add(spShoulder);
+    spiderParts.push(spShoulder);
+
+    const spUpper = new THREE.Mesh(new THREE.CapsuleGeometry(0.062, 0.16, 6, 10), spiderBlueMat);
+    spUpper.position.y = -0.14;
+    spUpper.castShadow = true;
+    spUpper.visible = false;
+    arm.add(spUpper);
+    spiderParts.push(spUpper);
+
+    const spForearm = new THREE.Mesh(new THREE.CapsuleGeometry(0.058, 0.13, 6, 10), spiderRedMat);
+    spForearm.position.y = -0.25;
+    spForearm.visible = false;
+    arm.add(spForearm);
+    spiderParts.push(spForearm);
+
+    const spHand = new THREE.Mesh(new THREE.SphereGeometry(0.075, 10, 10), spiderRedMat);
+    spHand.position.y = -0.35;
+    spHand.visible = false;
+    arm.add(spHand);
+    spiderParts.push(spHand);
+
+    const shooter = new THREE.Mesh(new THREE.CylinderGeometry(0.068, 0.068, 0.055, 10), webShooterSilverMat);
+    shooter.position.y = -0.27;
+    shooter.visible = false;
+    const nozzle = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.04, 0.055), spiderBlackMat);
+    nozzle.position.set(0, -0.01, 0.068);
+    shooter.add(nozzle);
+    arm.add(shooter);
+    spiderParts.push(shooter);
+    return shooter;
+  };
+  const webShooterL = addSpiderArmParts(leftArm);
+  const webShooterR = addSpiderArmParts(rightArm);
+
+  const addSpiderLegParts = (leg: THREE.Group) => {
+    const spThigh = new THREE.Mesh(new THREE.CapsuleGeometry(0.074, 0.18, 6, 10), spiderBlueMat);
+    spThigh.position.y = -0.14;
+    spThigh.castShadow = true;
+    spThigh.visible = false;
+    leg.add(spThigh);
+    spiderParts.push(spThigh);
+
+    const spBoot = new THREE.Mesh(new THREE.CapsuleGeometry(0.076, 0.14, 6, 10), spiderRedMat);
+    spBoot.position.y = -0.31;
+    spBoot.visible = false;
+    leg.add(spBoot);
+    spiderParts.push(spBoot);
+
+    const spFoot = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.09, 0.24), spiderRedMat);
+    spFoot.position.set(0, -0.4, 0.045);
+    spFoot.castShadow = true;
+    spFoot.visible = false;
+    leg.add(spFoot);
+    spiderParts.push(spFoot);
+
+    const spSole = new THREE.Mesh(new THREE.BoxGeometry(0.145, 0.032, 0.245), spiderBlackMat);
+    spSole.position.set(0, -0.45, 0.045);
+    spSole.visible = false;
+    leg.add(spSole);
+    spiderParts.push(spSole);
+  };
+  addSpiderLegParts(leftLeg);
+  addSpiderLegParts(rightLeg);
+
+  // Transformation Energy Cocoon Sphere (animated during Level 09 start transformation)
+  const transformAura = new THREE.Mesh(
+    new THREE.IcosahedronGeometry(0.95, 1),
+    new THREE.MeshBasicMaterial({
+      color: 0xef4444,
+      wireframe: true,
+      transparent: true,
+      opacity: 0.85,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    })
+  );
+  transformAura.position.y = 0.78;
+  transformAura.visible = false;
+  root.add(transformAura);
+
   // Emergency Companion Drone Rocket Rescue Booster beneath boots
   const botRocketRig = new THREE.Group();
   botRocketRig.position.set(0, -0.32, 0);
@@ -460,6 +754,13 @@ export function createAstroBot(): AstroBotRig {
     bowMesh,
     monkeyParts,
     monkeyTail,
+    astroParts,
+    spiderParts,
+    spiderEyeL,
+    spiderEyeR,
+    webShooterL,
+    webShooterR,
+    transformAura,
     botRocketRig,
   };
 }
@@ -2413,4 +2714,208 @@ export function createArcDeTriompheMesh(stoneTex?: THREE.Texture): THREE.Group {
 
   return g;
 }
+
+export function createNycVehicleMesh(colorHex: number, isTaxi = false): THREE.Group {
+  const g = new THREE.Group();
+  const bodyMat = new THREE.MeshStandardMaterial({
+    color: isTaxi ? 0xfacc15 : colorHex,
+    roughness: 0.28,
+    metalness: 0.55,
+  });
+  const glassMat = new THREE.MeshStandardMaterial({
+    color: 0x0f172a,
+    roughness: 0.12,
+    metalness: 0.45,
+  });
+  const wheelMat = new THREE.MeshStandardMaterial({ color: 0x090d16, roughness: 0.85 });
+  const headMat = new THREE.MeshStandardMaterial({
+    color: 0xfef9c3,
+    emissive: 0xfef08a,
+    emissiveIntensity: 2.0,
+  });
+  const tailMat = new THREE.MeshStandardMaterial({
+    color: 0xf43f5e,
+    emissive: 0xe11d48,
+    emissiveIntensity: 1.8,
+  });
+
+  const chassis = new THREE.Mesh(new THREE.BoxGeometry(1.75, 0.62, 3.8), bodyMat);
+  chassis.position.y = 0.55;
+  const cabin = new THREE.Mesh(new THREE.BoxGeometry(1.5, 0.54, 1.95), glassMat);
+  cabin.position.set(0, 1.08, -0.1);
+  const roof = new THREE.Mesh(new THREE.BoxGeometry(1.46, 0.08, 1.85), bodyMat);
+  roof.position.set(0, 1.36, -0.1);
+  g.add(chassis, cabin, roof);
+
+  if (isTaxi) {
+    const sign = new THREE.Mesh(
+      new THREE.BoxGeometry(0.55, 0.2, 0.24),
+      new THREE.MeshStandardMaterial({ color: 0xfef08a, emissive: 0xf59e0b, emissiveIntensity: 1.4 })
+    );
+    sign.position.set(0, 1.48, 0.12);
+    g.add(sign);
+  }
+
+  for (const sx of [-0.62, 0.62]) {
+    const hl = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.15, 0.08), headMat);
+    hl.position.set(sx, 0.58, 1.91);
+    const tl = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.15, 0.08), tailMat);
+    tl.position.set(sx, 0.58, -1.91);
+    g.add(hl, tl);
+
+    for (const sz of [-1.15, 1.15]) {
+      const wheel = new THREE.Mesh(new THREE.CylinderGeometry(0.32, 0.32, 0.22, 10), wheelMat);
+      wheel.rotation.z = Math.PI / 2;
+      wheel.position.set(sx * 1.42, 0.32, sz);
+      g.add(wheel);
+    }
+  }
+  return g;
+}
+
+export function createNycHelicopterMesh(): THREE.Group {
+  const g = new THREE.Group();
+  const hullMat = new THREE.MeshStandardMaterial({
+    color: 0x1e3a8a,
+    roughness: 0.3,
+    metalness: 0.65,
+  });
+  const stripeMat = new THREE.MeshStandardMaterial({
+    color: 0xfacc15,
+    emissive: 0xd97706,
+    emissiveIntensity: 0.35,
+    roughness: 0.3,
+  });
+  const glassMat = new THREE.MeshStandardMaterial({
+    color: 0x38bdf8,
+    emissive: 0x0369a1,
+    emissiveIntensity: 0.35,
+    roughness: 0.08,
+    metalness: 0.25,
+  });
+  const metalMat = new THREE.MeshStandardMaterial({ color: 0x334155, metalness: 0.85, roughness: 0.25 });
+
+  const hull = new THREE.Mesh(new THREE.SphereGeometry(1.15, 14, 12), hullMat);
+  hull.scale.set(0.95, 0.82, 1.65);
+  const cockpit = new THREE.Mesh(new THREE.SphereGeometry(0.92, 12, 10), glassMat);
+  cockpit.position.set(0, 0.08, 0.92);
+  cockpit.scale.set(0.9, 0.78, 0.95);
+  const stripe = new THREE.Mesh(new THREE.BoxGeometry(2.05, 0.18, 2.2), stripeMat);
+  stripe.position.set(0, -0.08, 0.05);
+  const boom = new THREE.Mesh(new THREE.CylinderGeometry(0.18, 0.28, 3.6, 8), hullMat);
+  boom.rotation.x = Math.PI / 2;
+  boom.position.set(0, 0.12, -2.55);
+  const tailFin = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.95, 0.62), stripeMat);
+  tailFin.position.set(0, 0.45, -4.15);
+  g.add(hull, cockpit, stripe, boom, tailFin);
+
+  for (const sx of [-0.75, 0.75]) {
+    const skid = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 2.8, 8), metalMat);
+    skid.rotation.x = Math.PI / 2;
+    skid.position.set(sx, -1.05, 0.25);
+    g.add(skid);
+  }
+
+  const mainRotor = new THREE.Group();
+  mainRotor.position.set(0, 1.12, 0);
+  const bladeA = new THREE.Mesh(new THREE.BoxGeometry(6.8, 0.06, 0.28), metalMat);
+  const bladeB = new THREE.Mesh(new THREE.BoxGeometry(0.28, 0.06, 6.8), metalMat);
+  const hub = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.26, 0.35, 10), stripeMat);
+  mainRotor.add(bladeA, bladeB, hub);
+  g.add(mainRotor);
+
+  const tailRotor = new THREE.Group();
+  tailRotor.position.set(0.22, 0.58, -4.2);
+  const tBladeA = new THREE.Mesh(new THREE.BoxGeometry(0.05, 1.1, 0.14), stripeMat);
+  const tBladeB = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.14, 1.1), stripeMat);
+  tailRotor.add(tBladeA, tBladeB);
+  g.add(tailRotor);
+
+  g.userData.mainRotor = mainRotor;
+  g.userData.tailRotor = tailRotor;
+  return g;
+}
+
+export function createNycWaterTowerMesh(): THREE.Group {
+  const g = new THREE.Group();
+  const woodMat = new THREE.MeshStandardMaterial({ color: 0x7c4a2d, roughness: 0.85 });
+  const ironMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, metalness: 0.75, roughness: 0.35 });
+  const roofMat = new THREE.MeshStandardMaterial({ color: 0x475569, metalness: 0.55, roughness: 0.45 });
+
+  for (let i = 0; i < 4; i++) {
+    const ang = (i / 4) * Math.PI * 2 + Math.PI * 0.25;
+    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.11, 2.3, 6), ironMat);
+    leg.position.set(Math.cos(ang) * 0.92, 1.15, Math.sin(ang) * 0.92);
+    g.add(leg);
+  }
+  const tank = new THREE.Mesh(new THREE.CylinderGeometry(1.08, 1.1, 1.95, 14), woodMat);
+  tank.position.y = 3.15;
+  tank.castShadow = true;
+  const hoopA = new THREE.Mesh(new THREE.TorusGeometry(1.11, 0.04, 6, 18), ironMat);
+  hoopA.rotation.x = Math.PI / 2;
+  hoopA.position.y = 2.65;
+  const hoopB = hoopA.clone();
+  hoopB.position.y = 3.65;
+  const cone = new THREE.Mesh(new THREE.ConeGeometry(1.22, 0.95, 14), roofMat);
+  cone.position.y = 4.58;
+  g.add(tank, hoopA, hoopB, cone);
+  return g;
+}
+
+export function createWebCocoonMesh(): THREE.Group {
+  const g = new THREE.Group();
+  const webMat = new THREE.MeshStandardMaterial({
+    color: 0xf8fafc,
+    emissive: 0xe2e8f0,
+    emissiveIntensity: 0.35,
+    roughness: 0.45,
+    transparent: true,
+    opacity: 0.9,
+  });
+  const core = new THREE.Mesh(new THREE.SphereGeometry(0.82, 12, 10), webMat);
+  core.scale.set(1.05, 0.95, 1.05);
+  g.add(core);
+  for (let i = 0; i < 5; i++) {
+    const band = new THREE.Mesh(new THREE.TorusGeometry(0.86, 0.065, 6, 18), webMat);
+    band.rotation.set(i * 0.62, i * 0.95, i * 0.41);
+    g.add(band);
+  }
+  return g;
+}
+
+export function createWebAnchorBeaconMesh(): THREE.Group {
+  const g = new THREE.Group();
+  const ringMat = new THREE.MeshStandardMaterial({
+    color: 0xf8fafc,
+    emissive: 0x38bdf8,
+    emissiveIntensity: 1.5,
+    roughness: 0.18,
+  });
+  const coreMat = new THREE.MeshStandardMaterial({
+    color: 0xef4444,
+    emissive: 0xdc2626,
+    emissiveIntensity: 1.6,
+    roughness: 0.2,
+  });
+  const outer = new THREE.Mesh(new THREE.TorusGeometry(0.68, 0.09, 8, 22), ringMat);
+  const core = new THREE.Mesh(new THREE.OctahedronGeometry(0.32, 0), coreMat);
+  g.add(outer, core);
+  return g;
+}
+
+export function createChallengeGateMesh(activeColorHex = 0x22d3ee): THREE.Group {
+  const g = new THREE.Group();
+  const mat = new THREE.MeshStandardMaterial({
+    color: activeColorHex,
+    emissive: activeColorHex,
+    emissiveIntensity: 1.65,
+    roughness: 0.2,
+    transparent: true,
+    opacity: 0.9,
+  });
+  const ring = new THREE.Mesh(new THREE.TorusGeometry(2.1, 0.14, 10, 28), mat);
+  g.add(ring);
+  return g;
+}
+
 
