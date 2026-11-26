@@ -51,6 +51,7 @@ import {
   applyGlacialIceSheenShader,
   applyMoltenLavaShader,
   applyNebulaVoidShader,
+  applyRiverRapidsShader,
   applyShiftingSandShader,
   applyWaterSurfaceShader,
   applyWindSwayShader,
@@ -71,7 +72,11 @@ import {
   EnemyKind,
   GamePhase,
   getRiverCenterX,
+  getRiverChannelBounds,
+  getRiverDropSlope,
   getRiverSlopeAngle,
+  getRiverWaterY,
+  getRiverZoneSpeedFactor,
   HudSnapshot,
   LevelDef,
   PlatformDef,
@@ -466,6 +471,16 @@ export class GameEngine {
   private parisLeafMesh: THREE.InstancedMesh | null = null;
   private parisLeafStates: { x: number; y: number; z: number; fallSpeed: number; swayPhase: number; rotSpeed: number }[] = [];
 
+  // Rápidos del Río Bravo (Level 8) dynamic logs, moving rocks, whirlpools, side waterfalls, mist & wake ripples
+  private rapidsWaterfallTex: THREE.CanvasTexture | null = null;
+  private rapidsDriftingLogs: { group: THREE.Group; pos: THREE.Vector3; baseX: number; baseZ: number; swingAmp: number; speed: number; phase: number; halfWidth: number; halfLen: number }[] = [];
+  private rapidsMovingRocks: { mesh: THREE.Mesh; foam: THREE.Mesh; baseX: number; pos: THREE.Vector3; radius: number; ampX: number; speed: number; phase: number }[] = [];
+  private rapidsWhirlpools: { group: THREE.Group; pos: THREE.Vector3; radius: number; spinDir: number }[] = [];
+  private rapidsMistZones: THREE.Vector3[] = [];
+  private rapidsMistPlumes: { mesh: THREE.Mesh; baseY: number; baseScale: number; phase: number }[] = [];
+  private rapidsRipples: { mesh: THREE.Mesh; life: number; maxLife: number }[] = [];
+  private rapidsRippleCooldown = 0;
+
   // Player state
   private playerPos = new THREE.Vector3(0, 1.5, 0);
   private playerVel = new THREE.Vector3(0, 0, 0);
@@ -816,7 +831,7 @@ export class GameEngine {
               this.boatVelY = 10.6;
               this.boatJumpCooldown = 0.72;
               soundEngine.playSplash();
-              this.spawnBurst(this.boatPos.x, 0.2, this.boatPos.z, 0xe0f2fe, 14, 4.8);
+              this.spawnBurst(this.boatPos.x, this.boatPos.y + 0.15, this.boatPos.z, 0xe0f2fe, 14, 4.8);
             }
           } else {
             const now = performance.now();
@@ -1196,6 +1211,17 @@ export class GameEngine {
     this.parisUpdraftZones = [];
     this.parisLeafMesh = null;
     this.parisLeafStates = [];
+    if (this.rapidsWaterfallTex) {
+      this.rapidsWaterfallTex.dispose();
+      this.rapidsWaterfallTex = null;
+    }
+    this.rapidsDriftingLogs = [];
+    this.rapidsMovingRocks = [];
+    this.rapidsWhirlpools = [];
+    this.rapidsMistZones = [];
+    this.rapidsMistPlumes = [];
+    this.rapidsRipples = [];
+    this.rapidsRippleCooldown = 0;
     this.activeDiscoveryZone = null;
     this.triggeredDiscoveryBanners.clear();
   }
@@ -5980,41 +6006,92 @@ export class GameEngine {
       if (this.parisLeafMesh.instanceColor) this.parisLeafMesh.instanceColor.needsUpdate = true;
       this.levelGroup.add(this.parisLeafMesh);
     } else if (biome === 'rapids') {
-      // Mist-shrouded Blue Mountain Peak & Lush Rainforest Slopes (Selva Esmeralda aesthetic)
-      this.addHorizonMountainRing(0, -145, level.theme.hazardFloorY - 2, 142, 230, 64, 0x355f7d, 0x9cc0d9, 3.1, 0.88);
-      this.addHorizonMountainRing(0, -145, level.theme.hazardFloorY - 1, 96, 150, 32, 0x1b4332, 0x3f7a38, 1.9, 0.9);
+      // Mist-shrouded Blue Mountain Peak & Lush Rainforest Slopes (Selva Esmeralda canyon horizon)
+      this.addHorizonMountainRing(0, -145, level.theme.hazardFloorY - 2, 148, 238, 72, 0x355f7d, 0x9cc0d9, 3.1, 0.88);
+      this.addHorizonMountainRing(0, -145, level.theme.hazardFloorY - 1, 102, 158, 38, 0x1b4332, 0x3f7a38, 1.9, 0.9);
 
-      // Winding S-Curve Rapids Channel Ribbon (z = 14 down to z = -278)
-      const curveSegments = 120;
-      const waterHalfW = 9.6;
+      // Cloned scrolling waterfall texture for main cascades & side cliff waterfalls
+      this.rapidsWaterfallTex = this.textures.waterfallSurface.clone();
+      this.rapidsWaterfallTex.wrapS = THREE.RepeatWrapping;
+      this.rapidsWaterfallTex.wrapT = THREE.RepeatWrapping;
+      this.rapidsWaterfallTex.repeat.set(2, 1.6);
+      this.rapidsWaterfallTex.needsUpdate = true;
+
+      // 3D Winding S-Curve Sloped Rapids Channel (5-column wave grid + 3-column submerged riverbed + sloping canyon banks)
+      const curveSegments = 160;
+      const riverCols = 5;
       const riverPositions: number[] = [];
       const riverUvs: number[] = [];
       const riverIndices: number[] = [];
 
+      const bedPositions: number[] = [];
+      const bedUvs: number[] = [];
+      const bedIndices: number[] = [];
+
       const bankPositionsL: number[] = [];
       const bankPositionsR: number[] = [];
       const bankUvs: number[] = [];
+      const bankIndices: number[] = [];
 
       for (let i = 0; i <= curveSegments; i++) {
         const frac = i / curveSegments;
         const z = 14 - frac * 292;
         const cx = getRiverCenterX(z);
+        const waterY = getRiverWaterY(z);
+        const [minOff, maxOff] = getRiverChannelBounds(z, 9.2);
+        const xL = cx + minOff - 1.6;
+        const xR = cx + maxOff + 1.6;
         const vCoord = frac * 22;
 
-        // Water ribbon vertices
-        riverPositions.push(cx - waterHalfW, 0.0, z, cx + waterHalfW, 0.0, z);
-        riverUvs.push(0, vCoord, 1, vCoord);
+        // 5 vertices across channel for smooth 3D wave displacement + shallow alpha edge fade
+        for (let c = 0; c < riverCols; c++) {
+          const u = c / (riverCols - 1);
+          const x = THREE.MathUtils.lerp(xL, xR, u);
+          riverPositions.push(x, waterY, z);
+          riverUvs.push(u, vCoord);
+        }
 
-        // Left & Right mossy lush riverbanks sloping gently upward
-        bankPositionsL.push(cx - 27.5, 2.5, z, cx - 9.2, -0.18, z);
-        bankPositionsR.push(cx + 9.2, -0.18, z, cx + 27.5, 2.5, z);
+        // Submerged 3-column riverbed (shallow sunlit gravel banks -> deeper emerald center)
+        bedPositions.push(
+          xL + 0.35, waterY - 0.52, z,
+          cx + (minOff + maxOff) * 0.5, waterY - 1.55, z,
+          xR - 0.35, waterY - 0.52, z
+        );
+        bedUvs.push(0, vCoord, 0.5, vCoord, 1, vCoord);
+
+        // Left & Right mossy lush riverbanks sloping upward from the shallow bed edge
+        bankPositionsL.push(xL - 22.0, waterY + 3.8, z, xL + 0.45, waterY - 0.58, z);
+        bankPositionsR.push(xR - 0.45, waterY - 0.58, z, xR + 22.0, waterY + 3.8, z);
         bankUvs.push(0, vCoord * 1.4, 1, vCoord * 1.4);
 
         if (i < curveSegments) {
-          const r = i * 2;
-          riverIndices.push(r, r + 2, r + 1, r + 1, r + 2, r + 3);
+          const r5 = i * riverCols;
+          for (let c = 0; c < riverCols - 1; c++) {
+            riverIndices.push(r5 + c, r5 + riverCols + c, r5 + c + 1, r5 + c + 1, r5 + riverCols + c, r5 + riverCols + c + 1);
+          }
+          const r3 = i * 3;
+          for (let c = 0; c < 2; c++) {
+            bedIndices.push(r3 + c, r3 + 3 + c, r3 + c + 1, r3 + c + 1, r3 + 3 + c, r3 + 4 + c);
+          }
+          const r2 = i * 2;
+          bankIndices.push(r2, r2 + 2, r2 + 1, r2 + 1, r2 + 2, r2 + 3);
         }
       }
+
+      const bedGeo = new THREE.BufferGeometry();
+      bedGeo.setAttribute('position', new THREE.Float32BufferAttribute(bedPositions, 3));
+      bedGeo.setAttribute('uv', new THREE.Float32BufferAttribute(bedUvs, 2));
+      bedGeo.setIndex(bedIndices);
+      bedGeo.computeVertexNormals();
+      const bedMat = new THREE.MeshStandardMaterial({
+        map: this.textures.rapidsRiverbed,
+        bumpMap: this.textures.stoneBump,
+        bumpScale: 0.14,
+        roughness: 0.92,
+      });
+      const bedMesh = new THREE.Mesh(bedGeo, bedMat);
+      bedMesh.receiveShadow = true;
+      this.levelGroup.add(bedMesh);
 
       const riverGeo = new THREE.BufferGeometry();
       riverGeo.setAttribute('position', new THREE.Float32BufferAttribute(riverPositions, 3));
@@ -6025,17 +6102,19 @@ export class GameEngine {
       const rapidsMat = new THREE.MeshStandardMaterial({
         map: this.textures.rapidsWaterSurface,
         bumpMap: this.textures.waterBump,
-        bumpScale: 0.14,
-        roughness: 0.14,
-        metalness: 0.22,
+        bumpScale: 0.16,
+        roughness: 0.12,
+        metalness: 0.24,
+        transparent: true,
+        opacity: 0.88,
+        envMapIntensity: 1.35,
       });
-      applyWaterSurfaceShader(rapidsMat, this.shaderTimeUniform, {
-        waveAmp: 0.2,
-        waveFreq: 0.42,
-        speed: 4.5,
-        fresnelColor: 0xbae6fd,
-        fresnelStrength: 0.52,
-        foamStrength: 0.34,
+      applyRiverRapidsShader(rapidsMat, this.shaderTimeUniform, {
+        waveAmp: 0.14,
+        speed: 4.9,
+        fresnelColor: 0xdbeafe,
+        canopyColor: 0x2dd4bf,
+        baseOpacity: 0.88,
       });
       const rapidsMesh = new THREE.Mesh(riverGeo, rapidsMat);
       this.levelGroup.add(rapidsMesh);
@@ -6043,44 +6122,391 @@ export class GameEngine {
       const bankMat = new THREE.MeshStandardMaterial({
         map: this.textures.jungleGrass,
         bumpMap: this.textures.grassBump,
-        bumpScale: 0.1,
+        bumpScale: 0.12,
         roughness: 0.86,
       });
       for (const posArr of [bankPositionsL, bankPositionsR]) {
         const bGeo = new THREE.BufferGeometry();
         bGeo.setAttribute('position', new THREE.Float32BufferAttribute(posArr, 3));
         bGeo.setAttribute('uv', new THREE.Float32BufferAttribute(bankUvs, 2));
-        bGeo.setIndex(riverIndices);
+        bGeo.setIndex(bankIndices);
         bGeo.computeVertexNormals();
         const bMesh = new THREE.Mesh(bGeo, bankMat);
         bMesh.receiveShadow = true;
         this.levelGroup.add(bMesh);
       }
 
-      // Serene Turquoise Calm Lake at the end of the river (z = -270 to -390)
+      // Serene Turquoise Calm Lake & Shallow Sandbar Reef at the end of the river (z = -270 to -390)
+      const lakeBedMat = new THREE.MeshStandardMaterial({
+        map: this.textures.rapidsRiverbed,
+        roughness: 0.9,
+      });
+      const lakeBedPlane = new THREE.Mesh(new THREE.PlaneGeometry(220, 120, 1, 1), lakeBedMat);
+      lakeBedPlane.rotation.x = -Math.PI / 2;
+      lakeBedPlane.position.set(0, -1.25, -330);
+      lakeBedPlane.receiveShadow = true;
+      this.levelGroup.add(lakeBedPlane);
+
       const lakeMat = new THREE.MeshStandardMaterial({
         map: this.textures.calmLakeSurface,
         bumpMap: this.textures.waterBump,
         bumpScale: 0.06,
         roughness: 0.08,
         metalness: 0.28,
-        envMapIntensity: 1.4,
+        transparent: true,
+        opacity: 0.86,
+        envMapIntensity: 1.45,
       });
       applyWaterSurfaceShader(lakeMat, this.shaderTimeUniform, {
         waveAmp: 0.05,
         waveFreq: 0.26,
         speed: 1.8,
         fresnelColor: 0xe0f2fe,
-        fresnelStrength: 0.6,
-        foamStrength: 0.1,
+        fresnelStrength: 0.62,
+        foamStrength: 0.12,
       });
       const calmLakePlane = new THREE.Mesh(new THREE.PlaneGeometry(220, 120, 24, 24), lakeMat);
       calmLakePlane.rotation.x = -Math.PI / 2;
       calmLakePlane.position.set(0, -0.02, -330);
       this.levelGroup.add(calmLakePlane);
 
-      // Dense Selva Esmeralda Background Forest flanking the winding riverbanks
-      const bgTreeCount = 68;
+      // Shared Canyon Rock, Waterfall & Foliage Materials
+      const cliffStoneMat = new THREE.MeshStandardMaterial({
+        map: this.textures.jungleRuinStone,
+        bumpMap: this.textures.stoneBump,
+        bumpScale: 0.22,
+        color: 0x64748b,
+        roughness: 0.9,
+      });
+      const bankRockMat = new THREE.MeshStandardMaterial({
+        color: 0x78827a,
+        bumpMap: this.textures.stoneBump,
+        bumpScale: 0.16,
+        roughness: 0.88,
+      });
+      const mossCapMat = new THREE.MeshStandardMaterial({
+        map: this.textures.jungleGrass,
+        bumpMap: this.textures.grassBump,
+        bumpScale: 0.09,
+        roughness: 0.85,
+      });
+      const heroBarkMat = new THREE.MeshStandardMaterial({
+        map: this.textures.barkTexture,
+        bumpMap: this.textures.barkBump,
+        bumpScale: 0.18,
+        roughness: 0.88,
+      });
+      const leafSunMat = new THREE.MeshStandardMaterial({ color: 0x57a62e, roughness: 0.78 });
+      const leafMidMat = new THREE.MeshStandardMaterial({ color: 0x387822, roughness: 0.82 });
+      const leafDeepMat = new THREE.MeshStandardMaterial({ color: 0x224d16, roughness: 0.85 });
+      const lianaMat = new THREE.MeshStandardMaterial({ color: 0x4b8728, roughness: 0.76 });
+      applyWindSwayShader(leafSunMat, this.shaderTimeUniform, 0.24, 2.1);
+      applyWindSwayShader(leafMidMat, this.shaderTimeUniform, 0.2, 1.9);
+      applyWindSwayShader(lianaMat, this.shaderTimeUniform, 0.28, 1.5);
+
+      const waterfallMat = new THREE.MeshStandardMaterial({
+        map: this.rapidsWaterfallTex,
+        color: 0xe0f2fe,
+        emissive: 0x0284c7,
+        emissiveIntensity: 0.35,
+        transparent: true,
+        opacity: 0.82,
+        roughness: 0.18,
+        side: THREE.DoubleSide,
+      });
+      const foamPlumeMat = new THREE.MeshBasicMaterial({
+        color: 0xf0f9ff,
+        transparent: true,
+        opacity: 0.44,
+        depthWrite: false,
+      });
+      const foamRingMat = new THREE.MeshBasicMaterial({
+        color: 0xf0f9ff,
+        transparent: true,
+        opacity: 0.7,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+      });
+
+      // Towering Stratified Canyon Cliff Walls along both sides of the gorge
+      const cliffGeo = this.createDisplacedRockGeometry(4.4, 9.7);
+      const cliffCount = 48;
+      const cliffInst = new THREE.InstancedMesh(cliffGeo, cliffStoneMat, cliffCount);
+      const cliffMossInst = new THREE.InstancedMesh(cliffGeo, mossCapMat, cliffCount);
+      for (let i = 0; i < cliffCount; i++) {
+        const side = i % 2 === 0 ? -1 : 1;
+        const row = Math.floor(i / 2);
+        const cz = 8 - row * 11.4;
+        const cx = getRiverCenterX(cz);
+        const cy = getRiverWaterY(cz);
+        const [minOff, maxOff] = getRiverChannelBounds(cz, 9.2);
+        const edgeX = side < 0 ? cx + minOff - 9.5 - (row % 3) * 1.8 : cx + maxOff + 9.5 + (row % 3) * 1.8;
+        const hScale = 1.45 + (row % 4) * 0.42;
+        const wScale = 1.3 + (row % 3) * 0.28;
+
+        dummy.position.set(edgeX, cy + 3.4 * hScale, cz);
+        dummy.rotation.set((row % 3 - 1) * 0.08, i * 1.35, (row % 2) * 0.12);
+        dummy.scale.set(wScale, hScale * 1.55, wScale * 1.28);
+        dummy.updateMatrix();
+        cliffInst.setMatrixAt(i, dummy.matrix);
+
+        dummy.position.set(edgeX, cy + 6.4 * hScale, cz);
+        dummy.rotation.set(0, i * 1.35, 0);
+        dummy.scale.set(wScale * 0.92, 0.34, wScale * 1.16);
+        dummy.updateMatrix();
+        cliffMossInst.setMatrixAt(i, dummy.matrix);
+      }
+      cliffInst.instanceMatrix.needsUpdate = true;
+      cliffMossInst.instanceMatrix.needsUpdate = true;
+      cliffInst.computeBoundingSphere();
+      cliffMossInst.computeBoundingSphere();
+      this.levelGroup.add(cliffInst, cliffMossInst);
+
+      // 2 Major Navigable River Waterfall Drops (z ≈ -92 and z ≈ -193) with foam sheets, plunge mist & flanking crags
+      for (const wfZ of [-92, -193]) {
+        const wCx = getRiverCenterX(wfZ);
+        const topY = getRiverWaterY(wfZ + 9);
+        const botY = getRiverWaterY(wfZ - 9);
+        const midY = (topY + botY) * 0.5;
+        const sheetH = Math.hypot(topY - botY, 16) * 0.92;
+        const sheet = new THREE.Mesh(new THREE.PlaneGeometry(21.5, sheetH, 8, 4), waterfallMat);
+        sheet.position.set(wCx, midY + 0.18, wfZ);
+        sheet.rotation.x = -Math.PI / 2 + Math.atan2(topY - botY, 15.5);
+        this.levelGroup.add(sheet);
+
+        // Plunge pool frothy foam apron & animated mist clouds
+        const apron = new THREE.Mesh(new THREE.CircleGeometry(10.5, 22), foamRingMat);
+        apron.rotation.x = -Math.PI / 2;
+        apron.scale.set(1.15, 0.58, 1);
+        apron.position.set(wCx, botY + 0.08, wfZ - 9.2);
+        this.levelGroup.add(apron);
+        this.rapidsMistZones.push(new THREE.Vector3(wCx, botY + 0.6, wfZ - 9.0));
+
+        for (let m = 0; m < 4; m++) {
+          const mist = new THREE.Mesh(new THREE.DodecahedronGeometry(1.75 + (m % 2) * 0.55, 1), foamPlumeMat);
+          const mx = wCx + (m - 1.5) * 4.5;
+          const my = botY + 1.1;
+          mist.position.set(mx, my, wfZ - 8.5 + (m % 2) * 1.4);
+          this.levelGroup.add(mist);
+          this.rapidsMistPlumes.push({ mesh: mist, baseY: my, baseScale: 1.0, phase: m * 1.3 + wfZ });
+        }
+
+        // Flanking monumental waterfall gateway boulders
+        for (const sx of [-1, 1]) {
+          const mon = new THREE.Mesh(this.createDisplacedRockGeometry(3.2, 5.5 + sx), cliffStoneMat);
+          mon.position.set(wCx + sx * 12.2, midY + 1.6, wfZ);
+          mon.scale.set(1.1, 1.9, 1.3);
+          this.levelGroup.add(mon);
+        }
+      }
+
+      // 6 Dramatic Canyon Side-Cliff Waterfalls spilling down into misty riverside pools
+      const sideWaterfallDefs: { z: number; side: -1 | 1; h: number; w: number }[] = [
+        { z: -34, side: -1, h: 12.5, w: 4.2 },
+        { z: -70, side: 1, h: 14.0, w: 4.8 },
+        { z: -114, side: 1, h: 13.5, w: 4.4 },
+        { z: -154, side: -1, h: 12.8, w: 4.5 },
+        { z: -214, side: -1, h: 14.5, w: 5.0 },
+        { z: -254, side: 1, h: 13.0, w: 4.4 },
+      ];
+      for (const swf of sideWaterfallDefs) {
+        const cx = getRiverCenterX(swf.z);
+        const wy = getRiverWaterY(swf.z);
+        const [minOff, maxOff] = getRiverChannelBounds(swf.z, 9.2);
+        const px = swf.side < 0 ? cx + minOff - 4.2 : cx + maxOff + 4.2;
+
+        const wSheet = new THREE.Mesh(new THREE.PlaneGeometry(swf.w, swf.h), waterfallMat);
+        wSheet.position.set(px, wy + swf.h * 0.48, swf.z);
+        wSheet.rotation.y = swf.side < 0 ? Math.PI * 0.42 : -Math.PI * 0.42;
+        wSheet.rotation.z = swf.side < 0 ? -0.1 : 0.1;
+        this.levelGroup.add(wSheet);
+
+        const poolFoam = new THREE.Mesh(new THREE.RingGeometry(0.4, swf.w * 0.72, 16), foamRingMat);
+        poolFoam.rotation.x = -Math.PI / 2;
+        poolFoam.position.set(px - swf.side * 1.4, wy + 0.08, swf.z);
+        this.levelGroup.add(poolFoam);
+        this.rapidsMistZones.push(new THREE.Vector3(px - swf.side * 1.4, wy + 0.5, swf.z));
+
+        const mistPuff = new THREE.Mesh(new THREE.DodecahedronGeometry(1.5, 1), foamPlumeMat);
+        mistPuff.position.set(px - swf.side * 1.5, wy + 0.9, swf.z);
+        this.levelGroup.add(mistPuff);
+        this.rapidsMistPlumes.push({ mesh: mistPuff, baseY: wy + 0.9, baseScale: 1.0, phase: swf.z * 0.1 });
+      }
+
+      // 2 Secret Bifurcation Islands (Left fork around z = -135, Right fork around z = -228)
+      const islandDefs: { z: number; offX: number; hasTotem: boolean }[] = [
+        { z: -135, offX: -9.6, hasTotem: false },
+        { z: -228, offX: 9.6, hasTotem: true },
+      ];
+      const lanternMat = new THREE.MeshStandardMaterial({
+        color: 0xfef08a,
+        emissive: 0xf59e0b,
+        emissiveIntensity: 2.0,
+        roughness: 0.18,
+      });
+      const caveCrystalMat = new THREE.MeshPhysicalMaterial({
+        color: 0x67e8f9,
+        emissive: 0x06b6d4,
+        emissiveIntensity: 1.85,
+        roughness: 0.12,
+        clearcoat: 1.0,
+      });
+
+      for (const isl of islandDefs) {
+        const ix = getRiverCenterX(isl.z) + isl.offX;
+        const iy = getRiverWaterY(isl.z);
+        const islGroup = new THREE.Group();
+        islGroup.position.set(ix, iy, isl.z);
+
+        const baseRock = new THREE.Mesh(this.createDisplacedRockGeometry(2.35, isl.z * 0.2), cliffStoneMat);
+        baseRock.scale.set(1.05, 0.72, 2.35);
+        baseRock.position.y = -0.15;
+        const grassCap = new THREE.Mesh(this.createDisplacedRockGeometry(2.05, isl.z * 0.3), mossCapMat);
+        grassCap.scale.set(1.0, 0.38, 2.15);
+        grassCap.position.y = 0.65;
+        const surfRing = new THREE.Mesh(new THREE.RingGeometry(2.2, 3.05, 22), foamRingMat);
+        surfRing.rotation.x = -Math.PI / 2;
+        surfRing.scale.set(1.0, 2.25, 1);
+        surfRing.position.y = 0.06;
+        islGroup.add(baseRock, grassCap, surfRing);
+
+        // Leaning coconut palm / jungle tree atop the mid-river island
+        const palmCurve = new THREE.CatmullRomCurve3([
+          new THREE.Vector3(0, 0.6, 0),
+          new THREE.Vector3(isl.offX < 0 ? -0.45 : 0.45, 2.6, -0.3),
+          new THREE.Vector3(isl.offX < 0 ? -0.9 : 0.9, 4.8, 0.15),
+        ]);
+        islGroup.add(new THREE.Mesh(new THREE.TubeGeometry(palmCurve, 8, 0.26, 7, false), heroBarkMat));
+        const tipPt = palmCurve.getPoint(1);
+        for (let f = 0; f < 6; f++) {
+          const ang = (f / 6) * Math.PI * 2;
+          const frond = new THREE.Mesh(new THREE.ConeGeometry(0.42, 2.3, 4), leafSunMat);
+          frond.position.set(tipPt.x + Math.cos(ang) * 0.85, tipPt.y - 0.15, tipPt.z + Math.sin(ang) * 0.85);
+          frond.rotation.set(0, -ang, -1.12);
+          frond.scale.set(1.0, 1.0, 0.22);
+          islGroup.add(frond);
+        }
+
+        if (isl.hasTotem) {
+          const totem = new THREE.Mesh(new THREE.BoxGeometry(0.95, 2.2, 0.95), cliffStoneMat);
+          totem.position.set(0, 1.75, 1.6);
+          const gem = new THREE.Mesh(new THREE.OctahedronGeometry(0.35, 0), lanternMat);
+          gem.position.set(0, 3.15, 1.6);
+          islGroup.add(totem, gem);
+        }
+
+        // Guiding warm lantern buoy at upstream nose of the island pointing into the secret fork
+        const buoyPole = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.14, 1.8, 6), heroBarkMat);
+        buoyPole.position.set(isl.offX < 0 ? -1.4 : 1.4, 0.9, 4.8);
+        const buoyGem = new THREE.Mesh(new THREE.OctahedronGeometry(0.32, 0), lanternMat);
+        buoyGem.position.set(isl.offX < 0 ? -1.4 : 1.4, 2.0, 4.8);
+        islGroup.add(buoyPole, buoyGem);
+
+        this.levelGroup.add(islGroup);
+      }
+
+      // Natural Tropical River Cave Tunnel (z = -160 to -182) with stone arches, stalactites, bioluminescent crystals & lanterns
+      for (let cIdx = 0; cIdx < 5; cIdx++) {
+        const cz = -161 - cIdx * 4.8;
+        const cx = getRiverCenterX(cz);
+        const cy = getRiverWaterY(cz);
+        const archPts = [
+          new THREE.Vector3(cx - 12.2, cy - 0.5, cz),
+          new THREE.Vector3(cx - 10.6, cy + 7.2, cz),
+          new THREE.Vector3(cx, cy + 10.8, cz),
+          new THREE.Vector3(cx + 10.6, cy + 7.2, cz),
+          new THREE.Vector3(cx + 12.2, cy - 0.5, cz),
+        ];
+        const archTube = new THREE.TubeGeometry(new THREE.CatmullRomCurve3(archPts), 14, 2.55, 7, false);
+        const archMesh = new THREE.Mesh(archTube, cliffStoneMat);
+        this.levelGroup.add(archMesh);
+
+        // Hanging rock stalactites + glowing turquoise cave crystals under vault
+        for (let st = -1; st <= 1; st++) {
+          const sx = cx + st * 4.4 + (cIdx % 2 === 0 ? 0.6 : -0.6);
+          const sy = cy + 9.4 - Math.abs(st) * 1.4;
+          const stal = new THREE.Mesh(new THREE.ConeGeometry(0.55, 2.4, 6), cliffStoneMat);
+          stal.rotation.x = Math.PI;
+          stal.position.set(sx, sy - 0.9, cz);
+          this.levelGroup.add(stal);
+
+          if ((cIdx + st) % 2 === 0) {
+            const crys = new THREE.Mesh(new THREE.OctahedronGeometry(0.45, 0), caveCrystalMat);
+            crys.scale.set(0.65, 1.75, 0.65);
+            crys.position.set(sx + 0.5, sy - 0.45, cz);
+            this.levelGroup.add(crys);
+          }
+        }
+
+        // Warm explorer lantern buoys along cave flanks for crisp visibility
+        for (const side of [-1, 1]) {
+          const lx = cx + side * 8.9;
+          const post = new THREE.Mesh(new THREE.CylinderGeometry(0.11, 0.15, 2.1, 6), heroBarkMat);
+          post.position.set(lx, cy + 1.0, cz);
+          const orb = new THREE.Mesh(new THREE.OctahedronGeometry(0.28, 0), lanternMat);
+          orb.position.set(lx, cy + 2.2, cz);
+          this.levelGroup.add(post, orb);
+        }
+      }
+
+      // 3 Overhead Jungle Suspension Bridges spanning across the canyon cliffs (z = -56, -142, -238)
+      const bridgeTimberMat = new THREE.MeshStandardMaterial({
+        map: this.textures.riverTimber,
+        bumpMap: this.textures.barkBump,
+        bumpScale: 0.1,
+        roughness: 0.86,
+      });
+      const bridgeRopeMat = new THREE.MeshStandardMaterial({ color: 0xa17c46, roughness: 0.84 });
+      for (const bz of [-56, -142, -238]) {
+        const cx = getRiverCenterX(bz);
+        const wy = getRiverWaterY(bz);
+        const [minOff, maxOff] = getRiverChannelBounds(bz, 9.2);
+        const leftX = cx + minOff - 6.5;
+        const rightX = cx + maxOff + 6.5;
+        const spanW = rightX - leftX;
+        const midX = (leftX + rightX) * 0.5;
+        const deckY = wy + 10.6;
+
+        const bridgeGroup = new THREE.Group();
+        const plankCount = Math.max(12, Math.floor(spanW / 1.45));
+        for (let p = 0; p < plankCount; p++) {
+          const u = p / (plankCount - 1);
+          const px = THREE.MathUtils.lerp(leftX, rightX, u);
+          const sag = Math.sin(u * Math.PI) * 1.15;
+          const plank = new THREE.Mesh(new THREE.BoxGeometry(0.95, 0.16, 2.55), bridgeTimberMat);
+          plank.position.set(px, deckY - sag, bz);
+          plank.rotation.z = Math.cos(u * Math.PI) * 0.08;
+          bridgeGroup.add(plank);
+        }
+
+        // End tower posts & swaying warm lanterns + catenary cables
+        for (const endX of [leftX, rightX]) {
+          for (const sz of [-1.25, 1.25]) {
+            const tower = new THREE.Mesh(new THREE.CylinderGeometry(0.24, 0.34, 4.4, 7), heroBarkMat);
+            tower.position.set(endX, deckY + 1.1, bz + sz);
+            const lamp = new THREE.Mesh(new THREE.OctahedronGeometry(0.26, 0), lanternMat);
+            lamp.position.set(endX, deckY + 3.45, bz + sz);
+            bridgeGroup.add(tower, lamp);
+          }
+        }
+        for (const sz of [-1.25, 1.25]) {
+          const handPts: THREE.Vector3[] = [];
+          for (let s = 0; s <= 10; s++) {
+            const u = s / 10;
+            const px = THREE.MathUtils.lerp(leftX, rightX, u);
+            const sag = Math.sin(u * Math.PI) * 1.4;
+            handPts.push(new THREE.Vector3(px, deckY + 1.45 - sag, bz + sz));
+          }
+          bridgeGroup.add(new THREE.Mesh(new THREE.TubeGeometry(new THREE.CatmullRomCurve3(handPts), 16, 0.08, 6, false), bridgeRopeMat));
+        }
+        const archSupport = new THREE.Mesh(new THREE.BoxGeometry(spanW * 0.04, 0.1, 0.1), bridgeRopeMat);
+        archSupport.position.set(midX, deckY, bz);
+        bridgeGroup.add(archSupport);
+        this.levelGroup.add(bridgeGroup);
+      }
+
+      // Dense Selva Esmeralda Background Forest flanking the 3D sloped riverbanks
+      const bgTreeCount = 74;
       const trunkGeo = new THREE.CylinderGeometry(0.38, 0.98, 10.5, 9);
       const trunkMat = new THREE.MeshStandardMaterial({
         map: this.textures.barkTexture,
@@ -6092,6 +6518,7 @@ export class GameEngine {
       const canopyLowGeo = this.createDisplacedRockGeometry(3.1, 1.1);
       const canopyTopGeo = this.createDisplacedRockGeometry(2.4, 2.7);
       const canopyMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.82, metalness: 0.02 });
+      applyWindSwayShader(canopyMat, this.shaderTimeUniform, 0.18, 1.65);
 
       const bgTrunks = new THREE.InstancedMesh(trunkGeo, trunkMat, bgTreeCount);
       const bgRoots = new THREE.InstancedMesh(rootGeo, trunkMat, bgTreeCount);
@@ -6101,14 +6528,18 @@ export class GameEngine {
       for (let i = 0; i < bgTreeCount; i++) {
         const side = i % 2 === 0 ? -1 : 1;
         const row = Math.floor(i / 2);
-        const tz = 10 - row * 10.2;
+        const tz = 12 - row * 9.5;
         const isLake = tz < -274;
         const riverCx = getRiverCenterX(tz);
+        const waterY = getRiverWaterY(tz);
+        const [minOff, maxOff] = getRiverChannelBounds(tz, 9.2);
         const tx = isLake
           ? side * (17 + (row % 5) * 5.8)
-          : riverCx + side * (17.5 + (row % 4) * 3.4);
-        const ty = isLake ? -0.3 : 1.1 + (row % 3) * 0.45;
-        const scale = 0.85 + (i % 4) * 0.22;
+          : side < 0
+            ? riverCx + minOff - 7.5 - (row % 4) * 3.2
+            : riverCx + maxOff + 7.5 + (row % 4) * 3.2;
+        const ty = isLake ? -0.3 : waterY + 1.2 + (row % 3) * 0.45;
+        const scale = 0.88 + (i % 4) * 0.24;
 
         dummy.position.set(tx, ty + 5.0 * scale, tz);
         dummy.rotation.set((i % 3 - 1) * 0.04, i * 0.9, (i % 3 - 1) * 0.05);
@@ -6145,22 +6576,8 @@ export class GameEngine {
       }
       this.levelGroup.add(bgTrunks, bgRoots, bgCanopiesLow, bgCanopiesTop);
 
-      // Hero Twisted Mahogany Jungle Trees (matching Selva Esmeralda image: red-brown bark, buttress roots, broad lime foliage & hanging lianas)
-      const heroBarkMat = new THREE.MeshStandardMaterial({
-        map: this.textures.barkTexture,
-        bumpMap: this.textures.barkBump,
-        bumpScale: 0.18,
-        roughness: 0.88,
-      });
-      const leafSunMat = new THREE.MeshStandardMaterial({ color: 0x57a62e, roughness: 0.78 });
-      const leafMidMat = new THREE.MeshStandardMaterial({ color: 0x387822, roughness: 0.82 });
-      const leafDeepMat = new THREE.MeshStandardMaterial({ color: 0x224d16, roughness: 0.85 });
-      const lianaMat = new THREE.MeshStandardMaterial({ color: 0x4b8728, roughness: 0.76 });
-      applyWindSwayShader(leafSunMat, this.shaderTimeUniform, 0.24, 2.1);
-      applyWindSwayShader(leafMidMat, this.shaderTimeUniform, 0.2, 1.9);
-      applyWindSwayShader(lianaMat, this.shaderTimeUniform, 0.28, 1.5);
+      // Hero Twisted Mahogany Jungle Trees & Leaning Riverside Palms arching gracefully over the river
       const foliageClusterGeo = this.createDisplacedRockGeometry(2.25, 3.7);
-
       const heroBankZ = [-18, -38, -58, -78, -98, -118, -138, -158, -178, -198, -218, -238, -258, -288, -312];
       const bankRockSpots: [number, number, number, number][] = [];
       const heroCrownCoords: THREE.Vector3[] = [];
@@ -6170,13 +6587,17 @@ export class GameEngine {
         const side = idx % 2 === 0 ? -1 : 1;
         const isLake = hz < -274;
         const cx = getRiverCenterX(hz);
-        const hx = isLake ? side * 14.5 : cx + side * 12.6;
-        const hy = isLake ? 0.1 : 0.45;
+        const waterY = getRiverWaterY(hz);
+        const [minOff, maxOff] = getRiverChannelBounds(hz, 9.2);
+        const hx = isLake ? side * 14.5 : side < 0 ? cx + minOff - 3.6 : cx + maxOff + 3.6;
+        const hy = isLake ? 0.1 : waterY + 0.35;
         const sc = 0.95 + (idx % 3) * 0.14;
 
         const tg = new THREE.Group();
         tg.position.set(hx, hy, hz);
-        tg.rotation.y = idx * 0.85;
+        // Lean slightly inward over the river water for dramatic jungle tunnel framing
+        tg.rotation.z = isLake ? 0 : side * 0.18;
+        tg.rotation.y = idx * 0.65;
 
         const trunkCurve = new THREE.CatmullRomCurve3([
           new THREE.Vector3(0, -0.4, 0),
@@ -6233,11 +6654,39 @@ export class GameEngine {
         tg.add(topCrown);
 
         this.levelGroup.add(tg);
-        heroCrownCoords.push(new THREE.Vector3(hx, hy + 10.2 * sc, hz));
+        heroCrownCoords.push(new THREE.Vector3(hx - side * 1.8, hy + 10.2 * sc, hz));
         if (!isLake) {
-          bankRockSpots.push([cx + side * 10.4, 0.05, hz + 2.4, 0.85]);
-          bankRockSpots.push([cx - side * 10.6, 0.05, hz - 3.2, 0.72]);
+          bankRockSpots.push([cx + minOff - 1.1, getRiverWaterY(hz + 2.4), hz + 2.4, 0.92]);
+          bankRockSpots.push([cx + maxOff + 1.1, getRiverWaterY(hz - 3.2), hz - 3.2, 0.85]);
         }
+      }
+
+      // Dedicated Leaning Riverbank Coconut Palms extending out over the water bends
+      for (const pz of [-28, -64, -104, -148, -196, -244, -278]) {
+        const side = Math.abs(pz) % 4 === 0 ? -1 : 1;
+        const cx = getRiverCenterX(pz);
+        const wy = getRiverWaterY(pz);
+        const [minOff, maxOff] = getRiverChannelBounds(pz, 9.2);
+        const px = pz < -274 ? side * 14.2 : side < 0 ? cx + minOff - 2.2 : cx + maxOff + 2.2;
+        const palmGroup = new THREE.Group();
+        palmGroup.position.set(px, wy, pz);
+        const archPts = [
+          new THREE.Vector3(0, -0.3, 0),
+          new THREE.Vector3(-side * 1.8, 2.8, 0.2),
+          new THREE.Vector3(-side * 3.8, 5.4, -0.3),
+        ];
+        const pCurve = new THREE.CatmullRomCurve3(archPts);
+        palmGroup.add(new THREE.Mesh(new THREE.TubeGeometry(pCurve, 9, 0.25, 7, false), heroBarkMat));
+        const tip = pCurve.getPoint(1);
+        for (let f = 0; f < 7; f++) {
+          const ang = (f / 7) * Math.PI * 2;
+          const frond = new THREE.Mesh(new THREE.ConeGeometry(0.45, 2.6, 4), leafSunMat);
+          frond.position.set(tip.x + Math.cos(ang) * 0.95, tip.y - 0.1, tip.z + Math.sin(ang) * 0.95);
+          frond.rotation.set(0, -ang, -1.16);
+          frond.scale.set(1.0, 1.0, 0.22);
+          palmGroup.add(frond);
+        }
+        this.levelGroup.add(palmGroup);
       }
 
       // Overhead Draped Jungle Lianas arcing gracefully across river bends
@@ -6250,21 +6699,9 @@ export class GameEngine {
         this.levelGroup.add(new THREE.Mesh(new THREE.TubeGeometry(vineCurve, 14, 0.1, 5, false), lianaMat));
       }
 
-      // Mossy Pale Boulders & Multi-Blade Tropical Ferns along riverbanks
+      // Mossy Pale Boulders & Multi-Blade Tropical Ferns along 3D sloped riverbanks
       const rockGeo = this.createDisplacedRockGeometry(0.95, 7.3);
-      const bankRockMat = new THREE.MeshStandardMaterial({
-        color: 0x94a3b8,
-        bumpMap: this.textures.stoneBump,
-        bumpScale: 0.14,
-        roughness: 0.88,
-      });
       const mossCapGeo = this.createDisplacedRockGeometry(0.75, 4.9);
-      const mossCapMat = new THREE.MeshStandardMaterial({
-        map: this.textures.jungleGrass,
-        bumpMap: this.textures.grassBump,
-        bumpScale: 0.08,
-        roughness: 0.85,
-      });
       const rocksInst = new THREE.InstancedMesh(rockGeo, bankRockMat, bankRockSpots.length);
       const mossInst = new THREE.InstancedMesh(mossCapGeo, mossCapMat, bankRockSpots.length);
       for (let i = 0; i < bankRockSpots.length; i++) {
@@ -6287,7 +6724,7 @@ export class GameEngine {
       mossInst.computeBoundingSphere();
       this.levelGroup.add(rocksInst, mossInst);
 
-      const leafBladeGeo = new THREE.ConeGeometry(0.32, 1.55, 5);
+      const leafBladeGeo = new THREE.ConeGeometry(0.34, 1.65, 5);
       const totalLeaves = bankRockSpots.length * 6;
       const leavesInst = new THREE.InstancedMesh(leafBladeGeo, leafSunMat, totalLeaves);
       let lIdx = 0;
@@ -6311,6 +6748,133 @@ export class GameEngine {
       if (leavesInst.instanceColor) leavesInst.instanceColor.needsUpdate = true;
       leavesInst.computeBoundingSphere();
       this.levelGroup.add(leavesInst);
+
+      // 5 Drifting Mossy Timber Logs bobbing along the rapids (can dodge or jump!)
+      const driftingLogDefs: { z: number; offX: number; swingAmp: number; speed: number; phase: number; halfLen: number }[] = [
+        { z: -41, offX: -1.8, swingAmp: 2.2, speed: 1.15, phase: 0.4, halfLen: 1.65 },
+        { z: -79, offX: 1.6, swingAmp: 2.4, speed: 1.25, phase: 1.7, halfLen: 1.7 },
+        { z: -120, offX: -0.6, swingAmp: 2.0, speed: 1.35, phase: 2.8, halfLen: 1.55 },
+        { z: -184, offX: 1.5, swingAmp: 2.1, speed: 1.3, phase: 0.9, halfLen: 1.6 },
+        { z: -232, offX: -1.5, swingAmp: 2.3, speed: 1.2, phase: 3.1, halfLen: 1.65 },
+      ];
+      for (const ld of driftingLogDefs) {
+        const cx = getRiverCenterX(ld.z) + ld.offX;
+        const wy = getRiverWaterY(ld.z);
+        const logGroup = new THREE.Group();
+        logGroup.position.set(cx, wy + 0.08, ld.z);
+        const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.48, ld.halfLen * 2, 10), heroBarkMat);
+        trunk.rotation.z = Math.PI / 2;
+        trunk.castShadow = !this.isSoftwareGl;
+        const mossPatch = new THREE.Mesh(new THREE.BoxGeometry(ld.halfLen * 1.1, 0.16, 0.46), mossCapMat);
+        mossPatch.position.y = 0.42;
+        const wakeCollar = new THREE.Mesh(new THREE.RingGeometry(0.6, 1.05, 16), foamRingMat);
+        wakeCollar.rotation.x = -Math.PI / 2;
+        wakeCollar.scale.set(ld.halfLen * 1.05, 0.72, 1);
+        wakeCollar.position.y = -0.02;
+        logGroup.add(trunk, mossPatch, wakeCollar);
+        this.levelGroup.add(logGroup);
+        this.rapidsDriftingLogs.push({
+          group: logGroup,
+          pos: new THREE.Vector3(cx, wy, ld.z),
+          baseX: cx,
+          baseZ: ld.z,
+          swingAmp: ld.swingAmp,
+          speed: ld.speed,
+          phase: ld.phase,
+          halfWidth: 0.65,
+          halfLen: ld.halfLen,
+        });
+      }
+
+      // 4 Moving / Oscillating River Boulders creating dynamic narrow passes
+      const movingRockDefs: { z: number; offX: number; ampX: number; speed: number; phase: number; radius: number }[] = [
+        { z: -64, offX: 0.2, ampX: 3.2, speed: 1.35, phase: 0.3, radius: 1.35 },
+        { z: -104, offX: -0.4, ampX: 3.4, speed: 1.45, phase: 1.6, radius: 1.4 },
+        { z: -150, offX: 0.4, ampX: 3.1, speed: 1.5, phase: 2.9, radius: 1.35 },
+        { z: -216, offX: -0.5, ampX: 3.3, speed: 1.4, phase: 0.8, radius: 1.4 },
+      ];
+      for (let i = 0; i < movingRockDefs.length; i++) {
+        const mr = movingRockDefs[i];
+        const cx = getRiverCenterX(mr.z) + mr.offX;
+        const wy = getRiverWaterY(mr.z);
+        const rMesh = new THREE.Mesh(this.createDisplacedRockGeometry(mr.radius, i + 9.2), cliffStoneMat);
+        rMesh.position.set(cx, wy + 0.35, mr.z);
+        rMesh.scale.set(1.04, 0.9, 1.04);
+        rMesh.castShadow = !this.isSoftwareGl;
+        const rFoam = new THREE.Mesh(new THREE.RingGeometry(mr.radius * 0.86, mr.radius * 1.38, 18), foamRingMat);
+        rFoam.rotation.x = -Math.PI / 2;
+        rFoam.position.set(cx, wy + 0.06, mr.z);
+        this.levelGroup.add(rMesh, rFoam);
+        this.rapidsMovingRocks.push({
+          mesh: rMesh,
+          foam: rFoam,
+          baseX: cx,
+          pos: new THREE.Vector3(cx, wy, mr.z),
+          radius: mr.radius,
+          ampX: mr.ampX,
+          speed: mr.speed,
+          phase: mr.phase,
+        });
+      }
+
+      // 4 Swirling River Whirlpools with layered rotating turquoise-whitewater vortex rings
+      const whirlpoolDefs: { z: number; offX: number; radius: number; spinDir: number }[] = [
+        { z: -48, offX: 2.8, radius: 2.4, spinDir: 1 },
+        { z: -102, offX: 3.0, radius: 2.5, spinDir: -1 },
+        { z: -134, offX: 3.2, radius: 2.4, spinDir: 1 },
+        { z: -202, offX: -2.8, radius: 2.5, spinDir: -1 },
+      ];
+      const vortexCoreMat = new THREE.MeshBasicMaterial({
+        color: 0x0c4a6e,
+        transparent: true,
+        opacity: 0.72,
+        side: THREE.DoubleSide,
+        depthWrite: false,
+      });
+      for (const wp of whirlpoolDefs) {
+        const wx = getRiverCenterX(wp.z) + wp.offX;
+        const wy = getRiverWaterY(wp.z);
+        const wg = new THREE.Group();
+        wg.position.set(wx, wy + 0.06, wp.z);
+        const core = new THREE.Mesh(new THREE.CircleGeometry(wp.radius * 0.34, 18), vortexCoreMat);
+        core.rotation.x = -Math.PI / 2;
+        wg.add(core);
+        for (let r = 0; r < 3; r++) {
+          const rIn = wp.radius * (0.36 + r * 0.22);
+          const rOut = rIn + 0.24;
+          const arc = new THREE.Mesh(
+            new THREE.RingGeometry(rIn, rOut, 18, 1, r * 1.4, Math.PI * 1.35),
+            foamRingMat
+          );
+          arc.rotation.x = -Math.PI / 2;
+          arc.position.y = 0.01 * (r + 1);
+          wg.add(arc);
+        }
+        this.levelGroup.add(wg);
+        this.rapidsWhirlpools.push({
+          group: wg,
+          pos: new THREE.Vector3(wx, wy, wp.z),
+          radius: wp.radius,
+          spinDir: wp.spinDir,
+        });
+      }
+
+      // Pool of 14 dynamic Boat Water-Ripple Rings (zero per-frame allocations)
+      const rippleGeo = new THREE.RingGeometry(0.65, 0.98, 22);
+      rippleGeo.rotateX(-Math.PI / 2);
+      for (let i = 0; i < 14; i++) {
+        const rMat = new THREE.MeshBasicMaterial({
+          color: 0xe0f2fe,
+          transparent: true,
+          opacity: 0,
+          side: THREE.DoubleSide,
+          depthWrite: false,
+        });
+        const rMesh = new THREE.Mesh(rippleGeo, rMat);
+        rMesh.visible = false;
+        this.levelGroup.add(rMesh);
+        this.rapidsRipples.push({ mesh: rMesh, life: 0, maxLife: 0.9 });
+      }
 
       // Tranquil Lake Floating Lily Pads & Lotus Flowers (z = -278 to -340)
       const padGeo = new THREE.CylinderGeometry(1.15, 1.15, 0.08, 12);
@@ -6531,6 +7095,7 @@ export class GameEngine {
           volcanicCanyonV2: level.index === 4,
           nebulaCitadelV2: level.index === 5,
           parisSkyV2: level.index === 6,
+          rapidsRiverV2: level.index === 7,
         }
       );
       if (startsInactive || pDef.kind === 'disappearing' || (level.index === 1 && pDef.kind === 'crumble')) {
@@ -6735,6 +7300,7 @@ export class GameEngine {
       this.boatRig.root.position.copy(this.boatPos);
       this.boatRig.wakeL.visible = false;
       this.boatRig.wakeR.visible = false;
+      this.boatRig.bowSpray.visible = false;
       this.levelGroup.add(this.boatRig.root);
 
       const rockMat = new THREE.MeshStandardMaterial({
@@ -6762,7 +7328,7 @@ export class GameEngine {
 
         const foam = new THREE.Mesh(new THREE.RingGeometry(rad * 0.85, rad * 1.32, 18), foamMat);
         foam.rotation.x = -Math.PI / 2;
-        foam.position.set(rk.pos[0], 0.05, rk.pos[2]);
+        foam.position.set(rk.pos[0], rk.pos[1] + 0.06, rk.pos[2]);
         this.levelGroup.add(foam);
 
         this.riverRocks.push({ pos: new THREE.Vector3(...rk.pos), radius: rad });
@@ -6771,7 +7337,7 @@ export class GameEngine {
       for (const cr of bs.crocodiles) {
         const rig = createCrocodileMesh();
         const behavior = cr.behavior ?? 'patrol';
-        rig.group.position.set(cr.pos[0], behavior === 'ambush' ? -1.25 : cr.pos[1], cr.pos[2]);
+        rig.group.position.set(cr.pos[0], behavior === 'ambush' ? cr.pos[1] - 1.25 : cr.pos[1], cr.pos[2]);
         this.levelGroup.add(rig.group);
         this.crocodiles.push({
           rig,
@@ -7553,7 +8119,50 @@ export class GameEngine {
       this.textures.waterfallSurface.offset.y = (this.totalTime * 0.78) % 1;
     }
     if (this.currentLevel.theme.biome === 'rapids') {
-      this.textures.rapidsWaterSurface.offset.y = (this.totalTime * 1.45) % 1;
+      this.textures.rapidsWaterSurface.offset.y = (this.totalTime * 1.55) % 1;
+      if (this.rapidsWaterfallTex) {
+        this.rapidsWaterfallTex.offset.y = (this.totalTime * 1.35) % 1;
+      }
+      for (const dl of this.rapidsDriftingLogs) {
+        const sx = Math.sin(this.totalTime * dl.speed + dl.phase) * dl.swingAmp;
+        dl.pos.x = dl.baseX + sx;
+        dl.group.position.set(dl.pos.x, dl.pos.y + 0.08 + Math.sin(this.totalTime * 3.8 + dl.phase) * 0.05, dl.pos.z);
+        dl.group.rotation.y = Math.cos(this.totalTime * dl.speed + dl.phase) * 0.14;
+        dl.group.rotation.z = Math.sin(this.totalTime * 3.1 + dl.phase) * 0.06;
+      }
+      for (const mr of this.rapidsMovingRocks) {
+        mr.pos.x = mr.baseX + Math.sin(this.totalTime * mr.speed + mr.phase) * mr.ampX;
+        mr.mesh.position.set(mr.pos.x, mr.pos.y + 0.35 + Math.sin(this.totalTime * 3.2 + mr.phase) * 0.04, mr.pos.z);
+        mr.foam.position.set(mr.pos.x, mr.pos.y + 0.06, mr.pos.z);
+      }
+      for (const wp of this.rapidsWhirlpools) {
+        wp.group.rotation.y += dt * 3.6 * wp.spinDir;
+      }
+      for (const mp of this.rapidsMistPlumes) {
+        const cycle = (Math.sin(this.totalTime * 1.8 + mp.phase) + 1) * 0.5;
+        mp.mesh.position.y = mp.baseY + cycle * 1.1;
+        mp.mesh.scale.setScalar(mp.baseScale * (0.85 + cycle * 0.45));
+      }
+      if (this.rapidsMistZones.length > 0 && Math.random() < 0.35) {
+        const mz = this.rapidsMistZones[Math.floor(Math.random() * this.rapidsMistZones.length)];
+        const focusZ = this.boatState === 'sailing' ? this.boatPos.z : this.playerPos.z;
+        if (Math.abs(mz.z - focusZ) < 48) {
+          this.spawnBurst(mz.x + (Math.random() - 0.5) * 4.0, mz.y, mz.z + (Math.random() - 0.5) * 2.0, 0xe0f2fe, 1, 2.8);
+        }
+      }
+      for (const rp of this.rapidsRipples) {
+        if (rp.life > 0) {
+          rp.life -= dt;
+          if (rp.life <= 0) {
+            rp.life = 0;
+            rp.mesh.visible = false;
+          } else {
+            const p = 1 - rp.life / rp.maxLife;
+            rp.mesh.scale.setScalar(1 + p * 2.8);
+            (rp.mesh.material as THREE.MeshBasicMaterial).opacity = (1 - p) * 0.55;
+          }
+        }
+      }
     }
 
     // Animate Templo del Mono falling fluttering leaves, luminous fireflies & waterfall plunge spray
@@ -8209,6 +8818,7 @@ export class GameEngine {
     for (const croc of this.crocodiles) {
       const arg = this.totalTime * croc.speed + croc.phase;
       croc.pos.x = croc.baseX + Math.sin(arg) * croc.patrolX;
+      const baseWaterY = croc.pos.y;
       if (croc.behavior === 'ambush') {
         const distAhead = boatZ - croc.pos.z;
         const triggered = this.boatState === 'sailing' && distAhead < 34 && distAhead > -14;
@@ -8217,13 +8827,13 @@ export class GameEngine {
           if (!croc.emergedSplash && croc.emergeProgress > 0.25) {
             croc.emergedSplash = true;
             soundEngine.playSplash();
-            this.spawnBurst(croc.pos.x, 0.25, croc.pos.z, 0xe0f2fe, 14, 5.2);
+            this.spawnBurst(croc.pos.x, baseWaterY + 0.25, croc.pos.z, 0xe0f2fe, 14, 5.2);
           }
         } else if (!triggered) {
           croc.emergeProgress = Math.max(0, croc.emergeProgress - dt * 1.4);
           if (croc.emergeProgress <= 0.05) croc.emergedSplash = false;
         }
-        const targetY = THREE.MathUtils.lerp(-1.25, 0.08, croc.emergeProgress);
+        const targetY = THREE.MathUtils.lerp(baseWaterY - 1.25, baseWaterY + 0.08, croc.emergeProgress);
         const bob = croc.emergeProgress * Math.sin(this.totalTime * 5.2 + croc.phase) * 0.04;
         croc.rig.group.position.set(croc.pos.x, targetY + bob, croc.pos.z);
         croc.rig.group.rotation.y = Math.sin(arg) * 0.28;
@@ -8231,7 +8841,7 @@ export class GameEngine {
           -0.12 - croc.emergeProgress * (0.58 + Math.abs(Math.sin(this.totalTime * 6.0 + croc.phase)) * 0.22);
         croc.rig.tailGroup.rotation.y = Math.sin(this.totalTime * 7.5 + croc.phase) * 0.35;
       } else {
-        croc.rig.group.position.set(croc.pos.x, 0.04 + Math.sin(this.totalTime * 4 + croc.phase) * 0.04, croc.pos.z);
+        croc.rig.group.position.set(croc.pos.x, baseWaterY + 0.04 + Math.sin(this.totalTime * 4 + croc.phase) * 0.04, croc.pos.z);
         croc.rig.group.rotation.y = Math.cos(arg) >= 0 ? Math.PI / 2 : -Math.PI / 2;
         croc.rig.jawUpper.rotation.x = -0.14 - Math.abs(Math.sin(this.totalTime * 4.5 + croc.phase)) * 0.38;
         croc.rig.tailGroup.rotation.y = Math.sin(this.totalTime * 6.5 + croc.phase) * 0.32;
@@ -9228,7 +9838,11 @@ export class GameEngine {
       }
     }
 
-    if (this.playerPos.y < this.currentLevel.theme.hazardFloorY + 0.4) {
+    const fallThreshold =
+      this.currentLevel.theme.biome === 'rapids'
+        ? Math.max(this.currentLevel.theme.hazardFloorY + 0.4, getRiverWaterY(this.playerPos.z) - 0.55)
+        : this.currentLevel.theme.hazardFloorY + 0.4;
+    if (this.playerPos.y < fallThreshold) {
       this.handleFallDamage();
     }
 
@@ -9630,9 +10244,13 @@ export class GameEngine {
       soundEngine.playModeSwitch();
     }
 
-    const baseFwd = inCalmLake ? 7.6 : this.boatCruiseSpeed + throttle * 3.4;
+    const speedFactor = getRiverZoneSpeedFactor(this.boatPos.z);
+    const dropSlope = getRiverDropSlope(this.boatPos.z);
+    const waterY = getRiverWaterY(this.boatPos.z);
+
+    const baseFwd = inCalmLake ? 7.8 : this.boatCruiseSpeed * speedFactor + throttle * 3.6;
     this.boatVelZ = THREE.MathUtils.damp(this.boatVelZ, baseFwd, 5.5, dt);
-    this.boatVelX = THREE.MathUtils.damp(this.boatVelX, steerX * 9.8, 8.5, dt);
+    this.boatVelX = THREE.MathUtils.damp(this.boatVelX, steerX * 10.4, 8.5, dt);
 
     // Wave hop physics
     if (this.boatJumpY > 0 || this.boatVelY > 0) {
@@ -9642,7 +10260,7 @@ export class GameEngine {
         this.boatJumpY = 0;
         this.boatVelY = 0;
         soundEngine.playSplash();
-        this.spawnBurst(this.boatPos.x, 0.15, this.boatPos.z, 0xe0f2fe, 10, 3.6);
+        this.spawnBurst(this.boatPos.x, waterY + 0.15, this.boatPos.z, 0xe0f2fe, 12, 3.8);
       }
     }
 
@@ -9651,15 +10269,36 @@ export class GameEngine {
     const xAhead = getRiverCenterX(this.boatPos.z - 1.5);
     const xBehind = getRiverCenterX(this.boatPos.z + 1.5);
     const currentDriftVx = ((xAhead - xBehind) / 3.0) * this.boatVelZ * 0.48;
+    const [minOff, maxOff] = getRiverChannelBounds(this.boatPos.z, this.boatHalfWidth);
+
+    // Gentle tangential whirlpool current tug when sailing close to vortex rim
+    let vortexPullVx = 0;
+    if (this.boatJumpY < 0.75) {
+      for (const wp of this.rapidsWhirlpools) {
+        const dx = wp.pos.x - this.boatPos.x;
+        const dz = wp.pos.z - this.boatPos.z;
+        const dSq = dx * dx + dz * dz;
+        const pullRad = wp.radius * 1.15;
+        if (dSq < pullRad * pullRad && dSq > 0.05) {
+          const dist = Math.sqrt(dSq);
+          const falloff = 1 - dist / pullRad;
+          vortexPullVx += (dx / dist) * falloff * 5.2 + wp.spinDir * (dz / dist) * falloff * 3.4;
+          if (Math.random() < 0.35) {
+            this.spawnBurst(this.boatPos.x, waterY + 0.12, this.boatPos.z, 0xbae6fd, 1, 2.6);
+          }
+        }
+      }
+    }
 
     this.boatPos.x = THREE.MathUtils.clamp(
-      this.boatPos.x + (this.boatVelX + currentDriftVx) * dt,
-      riverCx - this.boatHalfWidth,
-      riverCx + this.boatHalfWidth
+      this.boatPos.x + (this.boatVelX + currentDriftVx + vortexPullVx) * dt,
+      riverCx + minOff,
+      riverCx + maxOff
     );
     this.boatPos.z -= this.boatVelZ * dt;
-    const waveBob = inCalmLake ? Math.sin(this.totalTime * 2.2) * 0.03 : Math.sin(this.totalTime * 11) * 0.12;
-    this.boatPos.y = 0.05 + this.boatJumpY + waveBob;
+    const updatedWaterY = getRiverWaterY(this.boatPos.z);
+    const waveBob = inCalmLake ? Math.sin(this.totalTime * 2.2) * 0.03 : Math.sin(this.totalTime * 11) * (0.1 + Math.max(0, speedFactor - 1) * 0.14);
+    this.boatPos.y = updatedWaterY + 0.05 + this.boatJumpY + waveBob;
 
     this.boatRig.root.position.copy(this.boatPos);
     this.boatRig.hullGroup.rotation.z = THREE.MathUtils.damp(this.boatRig.hullGroup.rotation.z, -this.boatVelX * 0.032, 9, dt);
@@ -9669,13 +10308,36 @@ export class GameEngine {
       9,
       dt
     );
-    this.boatRig.hullGroup.rotation.x = this.boatJumpY > 0.05 ? this.boatVelY * 0.025 : (inCalmLake ? 0 : Math.sin(this.totalTime * 9) * 0.04);
-    this.boatRig.propeller.rotation.z += dt * (inCalmLake ? 8 : 24);
-    this.boatRig.wakeL.visible = this.boatJumpY <= 0.1;
-    this.boatRig.wakeR.visible = this.boatJumpY <= 0.1;
+    const slopePitch = inCalmLake ? 0 : Math.atan(dropSlope) * 0.92;
+    const targetPitch = this.boatJumpY > 0.05 ? this.boatVelY * 0.025 : slopePitch + (inCalmLake ? 0 : Math.sin(this.totalTime * 9) * 0.04);
+    this.boatRig.hullGroup.rotation.x = THREE.MathUtils.damp(this.boatRig.hullGroup.rotation.x, targetPitch, 10, dt);
+    this.boatRig.propeller.rotation.z += dt * (inCalmLake ? 8 : 22 * speedFactor);
+    const onWater = this.boatJumpY <= 0.12;
+    this.boatRig.wakeL.visible = onWater;
+    this.boatRig.wakeR.visible = onWater;
+    this.boatRig.bowSpray.visible = onWater && !inCalmLake;
+    if (onWater) {
+      const wakeScale = 0.9 + (speedFactor - 1) * 0.8;
+      this.boatRig.bowSpray.scale.setScalar(0.92 + Math.sin(this.totalTime * 18) * 0.08 + (speedFactor - 1) * 0.45);
+      this.boatRig.wakeL.scale.set(wakeScale, 1, wakeScale);
+      this.boatRig.wakeR.scale.set(wakeScale, 1, wakeScale);
+    }
 
-    if (!inCalmLake && this.boatJumpY <= 0.1 && Math.random() < 0.45) {
-      this.spawnBurst(this.boatPos.x, 0.12, this.boatPos.z + 1.8, 0xe0f2fe, 1, 1.8);
+    // Expanding concentric ripple rings trailing behind boat
+    this.rapidsRippleCooldown -= dt;
+    if (onWater && this.rapidsRippleCooldown <= 0) {
+      this.rapidsRippleCooldown = inCalmLake ? 0.24 : 0.11;
+      const slot = this.rapidsRipples.find((r) => r.life <= 0);
+      if (slot) {
+        slot.life = slot.maxLife;
+        slot.mesh.position.set(this.boatPos.x, updatedWaterY + 0.05, this.boatPos.z + 1.25);
+        slot.mesh.scale.setScalar(1.0);
+        slot.mesh.visible = true;
+      }
+    }
+
+    if (!inCalmLake && onWater && (Math.random() < 0.45 || dropSlope < -0.14)) {
+      this.spawnBurst(this.boatPos.x, updatedWaterY + 0.15, this.boatPos.z + 1.6, 0xe0f2fe, dropSlope < -0.14 ? 2 : 1, 2.4);
     }
 
     // Rider sits cleanly at the boat helm
@@ -9689,7 +10351,7 @@ export class GameEngine {
     this.collectNearbyCoins(this.boatPos.x, this.boatPos.y + 0.8, this.boatPos.z, 7.2);
     this.collectNearbyRelics(this.boatPos.x, this.boatPos.y + 0.9, this.boatPos.z, 9.0);
 
-    // Hazard checks: jagged river rocks & patrolling/ambush crocodiles (can jump over hazards!)
+    // Hazard checks: river rocks, moving boulders, drifting logs & crocodiles (jump over hazards!)
     if (this.boatJumpY < 0.85) {
       for (const rk of this.riverRocks) {
         const dx = this.boatPos.x - rk.pos.x;
@@ -9697,9 +10359,36 @@ export class GameEngine {
         const hitDist = rk.radius + 0.72;
         if (dx * dx + dz * dz < hitDist * hitDist) {
           soundEngine.playSplash();
-          this.spawnBurst(this.boatPos.x, 0.35, this.boatPos.z, 0xf0f9ff, 20, 6.2);
+          this.spawnBurst(this.boatPos.x, updatedWaterY + 0.35, this.boatPos.z, 0xf0f9ff, 20, 6.2);
           this.boatVelX = dx >= 0 ? 5.5 : -5.5;
           this.boatPos.z += 1.2;
+          this.damagePlayer(dx, 1);
+          break;
+        }
+      }
+
+      for (const mr of this.rapidsMovingRocks) {
+        const dx = this.boatPos.x - mr.pos.x;
+        const dz = this.boatPos.z - mr.pos.z;
+        const hitDist = mr.radius + 0.72;
+        if (dx * dx + dz * dz < hitDist * hitDist) {
+          soundEngine.playSplash();
+          this.spawnBurst(this.boatPos.x, updatedWaterY + 0.35, this.boatPos.z, 0xf0f9ff, 20, 6.2);
+          this.boatVelX = dx >= 0 ? 5.5 : -5.5;
+          this.boatPos.z += 1.2;
+          this.damagePlayer(dx, 1);
+          break;
+        }
+      }
+
+      for (const dl of this.rapidsDriftingLogs) {
+        const dx = this.boatPos.x - dl.pos.x;
+        const dz = this.boatPos.z - dl.pos.z;
+        if (Math.abs(dx) < dl.halfLen + 0.72 && Math.abs(dz) < dl.halfWidth + 0.92) {
+          soundEngine.playSplash();
+          this.spawnBurst(this.boatPos.x, updatedWaterY + 0.35, this.boatPos.z, 0xbae6fd, 18, 5.8);
+          this.boatVelX = dx >= 0 ? 5.8 : -5.8;
+          this.boatPos.z += 1.3;
           this.damagePlayer(dx, 1);
           break;
         }
@@ -9712,7 +10401,7 @@ export class GameEngine {
           const dz = this.boatPos.z - croc.pos.z;
           if (Math.abs(dx) < 1.85 && Math.abs(dz) < 1.25) {
             soundEngine.playSplash();
-            this.spawnBurst(this.boatPos.x, 0.35, this.boatPos.z, 0x84cc16, 18, 6.0);
+            this.spawnBurst(this.boatPos.x, updatedWaterY + 0.35, this.boatPos.z, 0x84cc16, 18, 6.0);
             this.boatVelX = dx >= 0 ? 6.0 : -6.0;
             this.boatPos.z += 1.4;
             this.damagePlayer(dx, 1);
@@ -9728,6 +10417,7 @@ export class GameEngine {
       this.perspectiveMode = '3D';
       this.boatRig.wakeL.visible = false;
       this.boatRig.wakeR.visible = false;
+      this.boatRig.bowSpray.visible = false;
       this.boatRig.root.position.set(this.boatLakePos.x - 4.2, 0.05, this.boatLakePos.z + 2.0);
       this.boatRig.hullGroup.rotation.set(0, 0.25, 0);
 
@@ -10072,9 +10762,10 @@ export class GameEngine {
     const biome = this.currentLevel.theme.biome;
     if (biome === 'temple' || biome === 'jungle' || biome === 'rapids') {
       soundEngine.playSplash();
+      const splashY = biome === 'rapids' ? getRiverWaterY(this.playerPos.z) + 0.15 : this.currentLevel.theme.hazardFloorY + 0.25;
       this.spawnBurst(
         this.playerPos.x,
-        this.currentLevel.theme.hazardFloorY + 0.25,
+        splashY,
         this.playerPos.z,
         0xe0f2fe,
         22,
@@ -10242,7 +10933,8 @@ export class GameEngine {
     const groundSpd = Math.hypot(this.playerVel.x, this.playerVel.z);
     const isBossActive = Boolean(this.bossRuntime?.alive && this.bossRuntime.active);
     const dz = !this.active2DZone ? this.activeDiscoveryZone : null;
-    const baseFov = isBoosting ? 63 : isVehicle ? 59 : isBossActive ? 60 : dz?.fov ? dz.fov : groundSpd > 6.5 ? 58 : 55;
+    const boatSpeedBoost = this.boatState === 'sailing' ? Math.max(0, getRiverZoneSpeedFactor(this.boatPos.z) - 1) * 10 : 0;
+    const baseFov = isBoosting ? 63 : isVehicle ? (this.boatState === 'sailing' ? 59 + boatSpeedBoost : 59) : isBossActive ? 60 : dz?.fov ? dz.fov : groundSpd > 6.5 ? 58 : 55;
     this.camDynamicFov = THREE.MathUtils.damp(this.camDynamicFov, baseFov, 6, dt);
     if (Math.abs(this.camera.fov - this.camDynamicFov) > 0.05) {
       this.camera.fov = this.camDynamicFov;
@@ -10294,13 +10986,17 @@ export class GameEngine {
     if (this.boatState === 'sailing') {
       const riverCx = getRiverCenterX(this.boatPos.z);
       const riverAngle = getRiverSlopeAngle(this.boatPos.z);
+      const waterY = getRiverWaterY(this.boatPos.z);
+      const dropSlope = getRiverDropSlope(this.boatPos.z);
       const camX = THREE.MathUtils.lerp(riverCx, this.boatPos.x, 0.72) - Math.sin(riverAngle) * 7.5;
       const camZ = this.boatPos.z + Math.cos(riverAngle) * 11.4;
-      _vec3A.set(camX, 5.4 + this.boatJumpY * 0.45, camZ);
+      const camY = waterY + 5.6 + this.boatJumpY * 0.45 - Math.min(0, dropSlope) * 2.4;
+      _vec3A.set(camX, camY, camZ);
       this.camCurrentPos.lerp(_vec3A, 1 - Math.exp(-8.5 * dt));
-      const lookAheadZ = this.boatPos.z - 14;
-      const lookCx = THREE.MathUtils.lerp(getRiverCenterX(lookAheadZ), this.boatPos.x, 0.45);
-      _vec3B.set(lookCx, 0.9, lookAheadZ);
+      const lookAheadZ = this.boatPos.z - 14.5;
+      const lookCx = THREE.MathUtils.lerp(getRiverCenterX(lookAheadZ), this.boatPos.x, 0.48);
+      const lookY = getRiverWaterY(lookAheadZ) + 0.9;
+      _vec3B.set(lookCx, lookY, lookAheadZ);
       this.camLookTarget.lerp(_vec3B, 1 - Math.exp(-9.5 * dt));
       this.camera.position.copy(this.camCurrentPos);
       if (this.shakeIntensity > 0.005) {

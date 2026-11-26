@@ -114,6 +114,79 @@ export function applyWaterSurfaceShader(
 }
 
 /**
+ * Tailored shader for 3D sloped/curved river ribbon geometry (world-space Y up).
+ * Adds vertical wave turbulence, shallow-edge alpha transparency revealing the riverbed,
+ * sunlit sky + jungle canopy Fresnel sheen, and whitewater crest foam.
+ */
+export function applyRiverRapidsShader(
+  material: THREE.MeshStandardMaterial,
+  timeUniform: ShaderUniformRef,
+  options?: {
+    waveAmp?: number;
+    speed?: number;
+    fresnelColor?: number;
+    canopyColor?: number;
+    baseOpacity?: number;
+  }
+): void {
+  const waveAmp = options?.waveAmp ?? 0.14;
+  const speed = options?.speed ?? 4.8;
+  const fresnelCol = new THREE.Color(options?.fresnelColor ?? 0xdbeafe);
+  const canopyCol = new THREE.Color(options?.canopyColor ?? 0x2dd4bf);
+  const baseOpacity = options?.baseOpacity ?? 0.88;
+  const key = `river-rapids-${waveAmp.toFixed(2)}-${baseOpacity.toFixed(2)}`;
+  material.customProgramCacheKey = () => key;
+
+  material.onBeforeCompile = (shader) => {
+    shader.uniforms.uRiverTime = timeUniform;
+    shader.uniforms.uRiverWaveAmp = { value: waveAmp };
+    shader.uniforms.uRiverSpeed = { value: speed };
+    shader.uniforms.uRiverFresnel = { value: fresnelCol };
+    shader.uniforms.uRiverCanopy = { value: canopyCol };
+    shader.uniforms.uRiverBaseOpacity = { value: baseOpacity };
+
+    shader.vertexShader =
+      `uniform float uRiverTime;\nuniform float uRiverWaveAmp;\nuniform float uRiverSpeed;\nvarying float vRiverCrest;\nvarying vec3 vRiverWorldPos;\nvarying vec2 vRiverUv;\n` +
+      shader.vertexShader;
+
+    shader.vertexShader = shader.vertexShader.replace(
+      '#include <begin_vertex>',
+      `
+      #include <begin_vertex>
+      float rw1 = sin(position.x * 0.55 + position.z * 0.34 + uRiverTime * uRiverSpeed);
+      float rw2 = cos(position.z * 0.68 - position.x * 0.42 + uRiverTime * (uRiverSpeed * 1.25));
+      float rCrest = (rw1 * 0.58 + rw2 * 0.42);
+      transformed.y += rCrest * uRiverWaveAmp;
+      vRiverCrest = rCrest;
+      vRiverUv = uv;
+      vRiverWorldPos = (modelMatrix * vec4(transformed, 1.0)).xyz;
+      `
+    );
+
+    shader.fragmentShader =
+      `uniform float uRiverTime;\nuniform vec3 uRiverFresnel;\nuniform vec3 uRiverCanopy;\nuniform float uRiverBaseOpacity;\nvarying float vRiverCrest;\nvarying vec3 vRiverWorldPos;\nvarying vec2 vRiverUv;\n` +
+      shader.fragmentShader;
+
+    shader.fragmentShader = shader.fragmentShader.replace(
+      '#include <dithering_fragment>',
+      `
+      float bankDist = min(vRiverUv.x, 1.0 - vRiverUv.x) * 2.0;
+      float shallowMix = smoothstep(0.0, 0.34, bankDist);
+      vec3 rView = normalize(cameraPosition - vRiverWorldPos);
+      float rFresnel = pow(1.0 - max(dot(rView, vec3(0.0, 1.0, 0.0)), 0.0), 2.8);
+      float foamSparkle = smoothstep(0.42, 0.92, vRiverCrest) * (0.28 + 0.16 * sin(vRiverWorldPos.z * 0.9 + uRiverTime * 5.2));
+      vec3 reflectTint = mix(uRiverCanopy, uRiverFresnel, 0.55 + 0.45 * shallowMix);
+      gl_FragColor.rgb = mix(gl_FragColor.rgb, reflectTint, clamp(rFresnel * 0.52, 0.0, 0.62));
+      gl_FragColor.rgb += vec3(0.92, 0.98, 1.0) * foamSparkle;
+      gl_FragColor.a = mix(0.62, uRiverBaseOpacity, shallowMix);
+      #include <dithering_fragment>
+      `
+    );
+  };
+  material.needsUpdate = true;
+}
+
+/**
  * Upgrades a desert sand sea MeshStandardMaterial with slow drifting barchan dune undulation,
  * wind-blown sand streaks across crests, and warm golden sunset specular sheen.
  */

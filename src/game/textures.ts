@@ -70,6 +70,7 @@ export interface ProceduralTextures {
   riverTimber: THREE.CanvasTexture;
   rapidsWaterSurface: THREE.CanvasTexture;
   calmLakeSurface: THREE.CanvasTexture;
+  rapidsRiverbed: THREE.CanvasTexture;
   skyRapids: THREE.CanvasTexture;
 }
 
@@ -2310,27 +2311,51 @@ export function createProceduralTextures(maxAnisotropy: number): ProceduralTextu
     return finalizeColorTexture(canvas, maxAnisotropy, 2, 2);
   })();
 
-  // RUSHING RAPIDS WHITE-WATER FOAM SURFACE
+  // RUSHING RAPIDS WHITE-WATER FOAM & SHALLOW TURQUOISE SURFACE
   const rapidsWaterSurface = (() => {
     const [canvas, ctx] = makeCanvas(512, 512);
     const g = ctx.createLinearGradient(0, 0, 512, 0);
-    g.addColorStop(0, '#0c4a6e');
-    g.addColorStop(0.2, '#0284c7');
-    g.addColorStop(0.5, '#0ea5e9');
-    g.addColorStop(0.8, '#0284c7');
-    g.addColorStop(1, '#0c4a6e');
+    g.addColorStop(0, '#2dd4bf');
+    g.addColorStop(0.12, '#0891b2');
+    g.addColorStop(0.35, '#0369a1');
+    g.addColorStop(0.5, '#0284c7');
+    g.addColorStop(0.65, '#0369a1');
+    g.addColorStop(0.88, '#0891b2');
+    g.addColorStop(1, '#2dd4bf');
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, 512, 512);
 
+    // Subtle sunlit caustics & churning turquoise ribbons
+    for (let i = 0; i < 190; i++) {
+      const sx = (i * 89 + 13) % 512;
+      const sy = (i * 137 + 7) % 512;
+      ctx.fillStyle = i % 2 === 0 ? 'rgba(103, 232, 249, 0.28)' : 'rgba(45, 212, 191, 0.24)';
+      ctx.fillRect(sx, sy, 8 + (i % 10), 48 + (i % 38));
+    }
+
     // Churning directional whitewater streaks along Y (-Z downstream)
-    for (let i = 0; i < 260; i++) {
+    for (let i = 0; i < 310; i++) {
       const sx = (i * 67) % 512;
       const sy = (i * 113) % 512;
-      const len = 34 + (i % 5) * 18;
-      ctx.fillStyle = i % 3 === 0 ? 'rgba(240, 249, 255, 0.72)' : 'rgba(125, 211, 252, 0.45)';
-      ctx.fillRect(sx, sy, 3 + (i % 4), len);
+      const len = 32 + (i % 6) * 20;
+      const isCenterFoam = sx > 95 && sx < 417;
+      ctx.fillStyle =
+        i % 3 === 0
+          ? isCenterFoam
+            ? 'rgba(248, 250, 252, 0.8)'
+            : 'rgba(224, 242, 254, 0.56)'
+          : 'rgba(125, 211, 252, 0.45)';
+      ctx.fillRect(sx, sy, 2 + (i % 4), len);
     }
-    return finalizeColorTexture(canvas, maxAnisotropy, 2, 22);
+
+    // Frothy bank-edge surf foam lines
+    for (let y = 0; y < 512; y += 14) {
+      const wOff = Math.sin(y * 0.08) * 6;
+      ctx.fillStyle = 'rgba(240, 249, 255, 0.42)';
+      ctx.fillRect(6 + wOff, y, 12, 10);
+      ctx.fillRect(494 - wOff, y, 12, 10);
+    }
+    return finalizeColorTexture(canvas, maxAnisotropy, 1, 22);
   })();
 
   // CALM LAKE SERENE TURQUOISE SURFACE
@@ -2339,16 +2364,40 @@ export function createProceduralTextures(maxAnisotropy: number): ProceduralTextu
     const g = ctx.createLinearGradient(0, 0, 512, 512);
     g.addColorStop(0, '#0f766e');
     g.addColorStop(0.5, '#14b8a6');
-    g.addColorStop(1, '#0d9488');
+    g.addColorStop(1, '#0891b2');
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, 512, 512);
-    for (let i = 0; i < 120; i++) {
+    for (let i = 0; i < 180; i++) {
       const rx = (i * 97) % 512;
       const ry = (i * 151) % 512;
-      ctx.fillStyle = 'rgba(204, 251, 241, 0.22)';
-      ctx.fillRect(rx, ry, 36 + (i % 20), 2);
+      ctx.fillStyle = i % 2 === 0 ? 'rgba(204, 251, 241, 0.25)' : 'rgba(165, 243, 252, 0.2)';
+      ctx.fillRect(rx, ry, 34 + (i % 24), 3);
     }
-    return finalizeColorTexture(canvas, maxAnisotropy, 6, 6);
+    return finalizeColorTexture(canvas, maxAnisotropy, 8, 8);
+  })();
+
+  // SUBMERGED SAND & COBBLESTONE RIVERBED (visible through shallow water edges)
+  const rapidsRiverbed = (() => {
+    const [canvas, ctx] = makeCanvas(512, 512);
+    const g = ctx.createLinearGradient(0, 0, 512, 0);
+    g.addColorStop(0, '#a38961');
+    g.addColorStop(0.22, '#625e4b');
+    g.addColorStop(0.5, '#314542');
+    g.addColorStop(0.78, '#625e4b');
+    g.addColorStop(1, '#a38961');
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, 512, 512);
+    for (let i = 0; i < 420; i++) {
+      const px = (i * 73 + 19) % 512;
+      const py = (i * 131 + 29) % 512;
+      const r = 4 + (i % 9);
+      const tone = i % 4 === 0 ? '#78716c' : i % 4 === 1 ? '#57534e' : i % 4 === 2 ? '#4d7c46' : '#a8a29e';
+      ctx.fillStyle = tone;
+      ctx.beginPath();
+      ctx.ellipse(px, py, r * 1.25, r * 0.85, (i * 0.7) % Math.PI, 0, Math.PI * 2);
+      ctx.fill();
+    }
+    return finalizeColorTexture(canvas, maxAnisotropy, 2, 22);
   })();
 
   // RAPIDS JUNGLE CANYON SKY (Matched to Selva Esmeralda bright azure sky, distant blue peak & rainforest ridges)
@@ -2501,6 +2550,7 @@ export function createProceduralTextures(maxAnisotropy: number): ProceduralTextu
     riverTimber,
     rapidsWaterSurface,
     calmLakeSurface,
+    rapidsRiverbed,
     skyRapids,
   };
 }

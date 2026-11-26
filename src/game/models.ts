@@ -1850,6 +1850,7 @@ export interface RiverBoatRig {
   propeller: THREE.Group;
   wakeL: THREE.Mesh;
   wakeR: THREE.Mesh;
+  bowSpray: THREE.Mesh;
 }
 
 export function createRiverBoatRig(woodTex?: THREE.Texture): RiverBoatRig {
@@ -1859,9 +1860,9 @@ export function createRiverBoatRig(woodTex?: THREE.Texture): RiverBoatRig {
 
   const hullOrangeMat = new THREE.MeshPhysicalMaterial({
     color: 0xf97316,
-    roughness: 0.25,
-    metalness: 0.12,
-    clearcoat: 0.7,
+    roughness: 0.24,
+    metalness: 0.14,
+    clearcoat: 0.78,
   });
   const deckMat = new THREE.MeshStandardMaterial({
     map: woodTex,
@@ -1877,30 +1878,36 @@ export function createRiverBoatRig(woodTex?: THREE.Texture): RiverBoatRig {
   const goldMat = new THREE.MeshStandardMaterial({
     color: 0xfacc15,
     emissive: 0xca8a04,
-    emissiveIntensity: 0.35,
-    metalness: 0.7,
+    emissiveIntensity: 0.42,
+    metalness: 0.72,
     roughness: 0.25,
+  });
+  const lanternMat = new THREE.MeshStandardMaterial({
+    color: 0xfef08a,
+    emissive: 0xf59e0b,
+    emissiveIntensity: 1.9,
+    roughness: 0.18,
   });
 
   // Main wooden boat deck oriented with bow at -Z
-  const deck = new THREE.Mesh(new THREE.BoxGeometry(1.55, 0.26, 2.7), deckMat);
+  const deck = new THREE.Mesh(new THREE.BoxGeometry(1.58, 0.26, 2.75), deckMat);
   deck.position.y = 0.28;
   deck.castShadow = true;
   deck.receiveShadow = true;
   hullGroup.add(deck);
 
   // Pointed expedition bow
-  const bowGeo = new THREE.ConeGeometry(0.88, 1.15, 4);
+  const bowGeo = new THREE.ConeGeometry(0.92, 1.22, 4);
   bowGeo.rotateY(Math.PI / 4);
   bowGeo.rotateX(-Math.PI / 2);
   const bow = new THREE.Mesh(bowGeo, hullOrangeMat);
-  bow.scale.set(1.05, 0.42, 1.0);
-  bow.position.set(0, 0.32, -1.75);
+  bow.scale.set(1.06, 0.44, 1.0);
+  bow.position.set(0, 0.32, -1.8);
   bow.castShadow = true;
   hullGroup.add(bow);
 
-  // Twin inflatable expedition pontoons
-  const pontoonGeo = new THREE.CapsuleGeometry(0.28, 2.5, 6, 12);
+  // Twin inflatable expedition pontoons + side paddles
+  const pontoonGeo = new THREE.CapsuleGeometry(0.28, 2.55, 6, 12);
   pontoonGeo.rotateX(Math.PI / 2);
   const ponL = new THREE.Mesh(pontoonGeo, hullOrangeMat);
   ponL.position.set(-0.92, 0.3, 0);
@@ -1909,50 +1916,72 @@ export function createRiverBoatRig(woodTex?: THREE.Texture): RiverBoatRig {
   ponR.position.x = 0.92;
   hullGroup.add(ponL, ponR);
 
-  // Protective bow bumper & windshield bar
-  const rail = new THREE.Mesh(new THREE.TorusGeometry(0.56, 0.05, 8, 16, Math.PI), goldMat);
+  for (const sx of [-1, 1]) {
+    const strap = new THREE.Mesh(new THREE.BoxGeometry(0.14, 0.12, 2.1), trimMat);
+    strap.position.set(sx * 0.94, 0.42, 0);
+    const oarShaft = new THREE.Mesh(new THREE.CylinderGeometry(0.035, 0.035, 1.65, 6), deckMat);
+    oarShaft.rotation.x = Math.PI / 2;
+    oarShaft.position.set(sx * 1.15, 0.42, 0.15);
+    const blade = new THREE.Mesh(new THREE.BoxGeometry(0.04, 0.22, 0.54), goldMat);
+    blade.position.set(sx * 1.15, 0.42, 0.92);
+    hullGroup.add(strap, oarShaft, blade);
+  }
+
+  // Protective bow bumper, lantern & windshield arch
+  const rail = new THREE.Mesh(new THREE.TorusGeometry(0.58, 0.055, 8, 16, Math.PI), goldMat);
   rail.rotation.x = Math.PI / 2;
   rail.rotation.z = Math.PI;
-  rail.position.set(0, 0.56, -1.05);
+  rail.position.set(0, 0.56, -1.08);
   hullGroup.add(rail);
 
-  const helm = new THREE.Mesh(new THREE.BoxGeometry(0.7, 0.45, 0.32), trimMat);
+  const bowLamp = new THREE.Mesh(new THREE.OctahedronGeometry(0.14, 0), lanternMat);
+  bowLamp.position.set(0, 0.62, -1.62);
+  hullGroup.add(bowLamp);
+
+  const helm = new THREE.Mesh(new THREE.BoxGeometry(0.72, 0.48, 0.34), trimMat);
   helm.position.set(0, 0.58, -0.58);
   hullGroup.add(helm);
 
   // Rear outboard motor + spinning brass propeller
-  const motorHead = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.42, 0.45), trimMat);
-  motorHead.position.set(0, 0.56, 1.48);
+  const motorHead = new THREE.Mesh(new THREE.BoxGeometry(0.44, 0.44, 0.46), trimMat);
+  motorHead.position.set(0, 0.56, 1.5);
   const shaft = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 0.52, 8), trimMat);
-  shaft.position.set(0, 0.25, 1.56);
+  shaft.position.set(0, 0.25, 1.58);
   hullGroup.add(motorHead, shaft);
 
   const propeller = new THREE.Group();
-  propeller.position.set(0, 0.04, 1.64);
+  propeller.position.set(0, 0.04, 1.66);
   const hub = new THREE.Mesh(new THREE.SphereGeometry(0.08, 8, 8), goldMat);
   const bladeA = new THREE.Mesh(new THREE.BoxGeometry(0.42, 0.08, 0.04), goldMat);
   const bladeB = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.42, 0.04), goldMat);
   propeller.add(hub, bladeA, bladeB);
   hullGroup.add(propeller);
 
-  // Stern whitewater wake spray ribbons
+  // Stern whitewater wake spray ribbons + dynamic bow V-spray wave
   const wakeMat = new THREE.MeshBasicMaterial({
     color: 0xe0f2fe,
     transparent: true,
-    opacity: 0.65,
+    opacity: 0.7,
     side: THREE.DoubleSide,
+    depthWrite: false,
   });
-  const wakeGeo = new THREE.PlaneGeometry(0.45, 1.9);
+  const wakeGeo = new THREE.PlaneGeometry(0.54, 2.25);
   wakeGeo.rotateX(-Math.PI / 2);
   const wakeL = new THREE.Mesh(wakeGeo, wakeMat);
-  wakeL.position.set(-0.62, 0.06, 2.25);
-  wakeL.rotation.y = 0.22;
+  wakeL.position.set(-0.68, 0.06, 2.35);
+  wakeL.rotation.y = 0.24;
   const wakeR = new THREE.Mesh(wakeGeo, wakeMat);
-  wakeR.position.set(0.62, 0.06, 2.25);
-  wakeR.rotation.y = -0.22;
-  hullGroup.add(wakeL, wakeR);
+  wakeR.position.set(0.68, 0.06, 2.35);
+  wakeR.rotation.y = -0.24;
 
-  return { root, hullGroup, propeller, wakeL, wakeR };
+  const bowSprayGeo = new THREE.RingGeometry(0.75, 1.38, 16, 1, Math.PI * 0.15, Math.PI * 0.7);
+  bowSprayGeo.rotateX(-Math.PI / 2);
+  const bowSpray = new THREE.Mesh(bowSprayGeo, wakeMat);
+  bowSpray.position.set(0, 0.09, -1.65);
+  bowSpray.rotation.y = Math.PI;
+  hullGroup.add(wakeL, wakeR, bowSpray);
+
+  return { root, hullGroup, propeller, wakeL, wakeR, bowSpray };
 }
 
 export interface CrocodileRig {

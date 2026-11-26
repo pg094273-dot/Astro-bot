@@ -153,6 +153,7 @@ export function buildStyledPlatformMesh(
     volcanicCanyonV2?: boolean;
     nebulaCitadelV2?: boolean;
     parisSkyV2?: boolean;
+    rapidsRiverV2?: boolean;
   }
 ): THREE.Mesh {
   const [w, h, d] = def.size;
@@ -165,6 +166,7 @@ export function buildStyledPlatformMesh(
   const volcanicV2 = Boolean(options?.volcanicCanyonV2);
   const nebulaV2 = Boolean(options?.nebulaCitadelV2);
   const parisV2 = Boolean(options?.parisSkyV2);
+  const rapidsV2 = Boolean(options?.rapidsRiverV2);
   const seed = hashSeed(def.id);
 
   // Use a sculpted composite Mesh as the primary entity (Engine still reads mesh.position & mesh.material cleanly)
@@ -180,7 +182,8 @@ export function buildStyledPlatformMesh(
         (desertV2 && def.shape === 'organic' && def.kind !== 'glass' && def.kind !== 'disappearing') ||
         (iceV2 && def.shape === 'organic' && def.kind !== 'glass' && def.kind !== 'disappearing') ||
         (templeV2 && def.shape === 'organic' && def.kind !== 'glass' && def.kind !== 'disappearing') ||
-        (volcanicV2 && def.shape === 'organic' && def.kind !== 'glass' && def.kind !== 'disappearing')
+        (volcanicV2 && def.shape === 'organic' && def.kind !== 'glass' && def.kind !== 'disappearing') ||
+        (rapidsV2 && def.shape === 'organic' && def.kind !== 'glass' && def.kind !== 'disappearing')
       ? createOrganicIslandGeometry(w, h, d, seed)
       : createRoundedSlabGeometry(
           w,
@@ -2196,6 +2199,84 @@ export function buildStyledPlatformMesh(
               mesh.add(puffA, puffB, blossom);
             }
           }
+        }
+      } else if (rapidsV2) {
+        const timberMat = new THREE.MeshStandardMaterial({
+          map: textures.barkTexture,
+          bumpMap: textures.barkBump,
+          bumpScale: 0.14,
+          roughness: 0.88,
+        });
+        const stoneMat = new THREE.MeshStandardMaterial({
+          map: textures.jungleRuinStone,
+          bumpMap: textures.jungleRuinBump,
+          bumpScale: 0.14,
+          roughness: 0.86,
+        });
+        const ropeMat = new THREE.MeshStandardMaterial({ color: 0xb48a52, roughness: 0.85 });
+        const lanternMat = new THREE.MeshStandardMaterial({
+          color: 0xfef08a,
+          emissive: 0xf59e0b,
+          emissiveIntensity: 1.9,
+          roughness: 0.2,
+        });
+
+        if (style === 'river') {
+          // River timber pier pilings descending deep into riverbed + mooring bollards & warm lanterns
+          const pileRows = Math.max(2, Math.round(d / 6));
+          for (let rz = 0; rz < pileRows; rz++) {
+            const pz = -d * 0.44 + (rz / Math.max(1, pileRows - 1)) * d * 0.88;
+            for (const sx of [-1, 1]) {
+              const px = sx * (w * 0.45);
+              const pile = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.34, 4.8, 8), timberMat);
+              pile.position.set(px, -h * 0.5 - 1.6, pz);
+              pile.castShadow = !isSoftwareGl;
+              mesh.add(pile);
+
+              // Above-deck mooring bollards at ends and middle
+              if (rz === 0 || rz === pileRows - 1 || rz === Math.floor(pileRows / 2)) {
+                const bollard = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.22, 0.86, 8), timberMat);
+                bollard.position.set(px, h * 0.5 + 0.42, pz);
+                mesh.add(bollard);
+                if (rz === 0 || rz === pileRows - 1) {
+                  const lamp = new THREE.Mesh(new THREE.OctahedronGeometry(0.18, 0), lanternMat);
+                  lamp.position.set(px, h * 0.5 + 0.98, pz);
+                  mesh.add(lamp);
+                }
+              }
+            }
+          }
+          // Rope handrail cables along pier flanks
+          for (const sx of [-1, 1]) {
+            const px = sx * (w * 0.45);
+            const rope = new THREE.Mesh(
+              new THREE.CylinderGeometry(0.045, 0.045, d * 0.88, 6),
+              ropeMat
+            );
+            rope.rotation.x = Math.PI / 2;
+            rope.position.set(px, h * 0.5 + 0.72, 0);
+            mesh.add(rope);
+          }
+        } else if (def.shape === 'disc') {
+          // Rotating emerald stone lotus dais
+          const trimRing = new THREE.Mesh(
+            new THREE.TorusGeometry(Math.max(w, d) * 0.48, 0.14, 8, 24),
+            stoneMat
+          );
+          trimRing.rotation.x = Math.PI / 2;
+          trimRing.position.y = h * 0.44;
+          const underPedestal = new THREE.Mesh(new THREE.CylinderGeometry(w * 0.38, w * 0.22, 2.4, 10), stoneMat);
+          underPedestal.position.y = -h * 0.5 - 1.1;
+          mesh.add(trimRing, underPedestal);
+        } else {
+          // Tranquil sanctuary island rocky stone mound grounding into the lakebed
+          const mound = new THREE.Mesh(
+            new THREE.CylinderGeometry(Math.min(w, d) * 0.48, Math.min(w, d) * 0.62, 3.2, 12),
+            stoneMat
+          );
+          mound.scale.set(w / Math.min(w, d), 1, d / Math.min(w, d));
+          mound.position.y = -h * 0.45 - 1.4;
+          mesh.add(mound);
         }
       } else {
         const skirtH = Math.min(3.2, Math.max(1.2, h * 1.45));

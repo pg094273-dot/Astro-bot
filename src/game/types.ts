@@ -202,6 +202,71 @@ export function getRiverSlopeAngle(z: number): number {
   return Math.atan2(xAhead - xBehind, 3.0);
 }
 
+function riverSmoothstep(u: number): number {
+  const t = u <= 0 ? 0 : u >= 1 ? 1 : u;
+  return t * t * (3 - 2 * t);
+}
+
+/**
+ * 3D river surface altitude from the upstream gorge dock (y = 11.0 at z >= -14)
+ * descending down a continuous rapid grade + 2 navigable waterfall drops
+ * (z ≈ -92 and z ≈ -193) into the tranquil lake at y = 0.0 (z <= -270).
+ */
+export function getRiverWaterY(z: number): number {
+  if (z >= -14) return 11.0;
+  if (z <= -270) return 0.0;
+  const uAll = (-z - 14) / 256;
+  const baseDrop = uAll * 3.4;
+  const wf1 = riverSmoothstep((-z - 84) / 16) * 3.6;
+  const wf2 = riverSmoothstep((-z - 184) / 18) * 4.0;
+  return 11.0 - (baseDrop + wf1 + wf2);
+}
+
+/** Vertical river surface slope dz -> dy (negative when dropping downhill). */
+export function getRiverDropSlope(z: number): number {
+  return (getRiverWaterY(z - 1.2) - getRiverWaterY(z + 1.2)) / 2.4;
+}
+
+/** Varying river current speed factor: surging chutes, waterfall plunges, and calmer lake approach. */
+export function getRiverZoneSpeedFactor(z: number): number {
+  if (z <= -274) return 0.78;
+  // Waterfall plunge surges
+  const wf1Surge = Math.exp(-Math.pow((z + 92) / 11, 2)) * 0.4;
+  const wf2Surge = Math.exp(-Math.pow((z + 193) / 12, 2)) * 0.42;
+  // Whitewater fast navigation chutes
+  const chute1 = Math.exp(-Math.pow((z + 56) / 14, 2)) * 0.24;
+  const chute2 = Math.exp(-Math.pow((z + 138) / 16, 2)) * 0.22;
+  const chute3 = Math.exp(-Math.pow((z + 236) / 14, 2)) * 0.24;
+  return 1.0 + wf1Surge + wf2Surge + chute1 + chute2 + chute3;
+}
+
+/**
+ * Lateral river navigable offsets relative to getRiverCenterX(z).
+ * Widens outward cleanly on the left (z ∈ [-112, -158]) and right (z ∈ [-208, -248])
+ * to open secret island bifurcation routes without obstructing main-channel obstacles.
+ */
+export function getRiverChannelBounds(z: number, baseHalfWidth = 7.8): [number, number] {
+  let minOff = -baseHalfWidth;
+  let maxOff = baseHalfWidth;
+  // Narrow canyon passes (keeps >= 6.9 clearance so existing obstacles stay inside bounds)
+  const narrow1 = Math.exp(-Math.pow((z + 60) / 9, 2)) * 0.85;
+  const narrow2 = Math.exp(-Math.pow((z + 170) / 10, 2)) * 0.85;
+  minOff += narrow1 + narrow2;
+  maxOff -= narrow1 + narrow2;
+
+  // Secret left bifurcation around jungle island (z = -112..-158)
+  if (z <= -110 && z >= -160) {
+    const fork = Math.sin(((z + 110) / -50) * Math.PI);
+    minOff -= fork * 8.4;
+  }
+  // Secret right bifurcation around ruin island (z = -206..-252)
+  if (z <= -206 && z >= -252) {
+    const fork = Math.sin(((z + 206) / -46) * Math.PI);
+    maxOff += fork * 8.4;
+  }
+  return [minOff, maxOff];
+}
+
 export interface BoatSectionDef {
   dockPos: [number, number, number];
   lakePos: [number, number, number];
