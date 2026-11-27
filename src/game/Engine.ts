@@ -725,6 +725,10 @@ export class GameEngine {
   private frameId = 0;
   private lastTimestamp = 0;
   private disposed = false;
+  private lastCanvasWidth = 0;
+  private lastCanvasHeight = 0;
+  private resizeObserver: ResizeObserver | null = null;
+  private orientationResizeTimers: number[] = [];
 
   constructor(
     container: HTMLElement,
@@ -768,7 +772,11 @@ export class GameEngine {
     this.renderer.setPixelRatio(this.isSoftwareGl ? 1 : Math.min(window.devicePixelRatio, 2));
     this.renderer.shadowMap.enabled = !this.isSoftwareGl;
     this.renderer.shadowMap.type = THREE.PCFSoftShadowMap;
-    this.renderer.setSize(container.clientWidth || window.innerWidth, container.clientHeight || window.innerHeight);
+    const initW = Math.max(1, container.clientWidth || window.innerWidth);
+    const initH = Math.max(1, container.clientHeight || window.innerHeight);
+    this.renderer.setSize(initW, initH, false);
+    this.lastCanvasWidth = initW;
+    this.lastCanvasHeight = initH;
 
     this.renderer.domElement.style.display = 'block';
     this.renderer.domElement.style.width = '100%';
@@ -776,7 +784,7 @@ export class GameEngine {
     container.appendChild(this.renderer.domElement);
 
     this.scene = new THREE.Scene();
-    const aspect = (container.clientWidth || window.innerWidth) / Math.max(1, container.clientHeight || window.innerHeight);
+    const aspect = initW / initH;
     this.camera = new THREE.PerspectiveCamera(56, aspect, 0.1, 600);
 
     const pmrem = new THREE.PMREMGenerator(this.renderer);
@@ -867,6 +875,12 @@ export class GameEngine {
 
   private bindEvents() {
     window.addEventListener('resize', this.handleResize);
+    window.addEventListener('orientationchange', this.handleOrientationChange);
+    window.visualViewport?.addEventListener('resize', this.handleResize);
+    if (typeof ResizeObserver !== 'undefined') {
+      this.resizeObserver = new ResizeObserver(() => this.handleResize());
+      this.resizeObserver.observe(this.container);
+    }
     window.addEventListener('keydown', this.handleKeyDown);
     window.addEventListener('keyup', this.handleKeyUp);
     window.addEventListener('blur', this.handleBlur);
@@ -882,6 +896,12 @@ export class GameEngine {
 
   private unbindEvents() {
     window.removeEventListener('resize', this.handleResize);
+    window.removeEventListener('orientationchange', this.handleOrientationChange);
+    window.visualViewport?.removeEventListener('resize', this.handleResize);
+    this.resizeObserver?.disconnect();
+    this.resizeObserver = null;
+    for (const id of this.orientationResizeTimers) window.clearTimeout(id);
+    this.orientationResizeTimers = [];
     window.removeEventListener('keydown', this.handleKeyDown);
     window.removeEventListener('keyup', this.handleKeyUp);
     window.removeEventListener('blur', this.handleBlur);
@@ -904,14 +924,25 @@ export class GameEngine {
     this.onContextLostChange?.(false);
   };
 
+  private handleOrientationChange = () => {
+    this.handleResize();
+    for (const id of this.orientationResizeTimers) window.clearTimeout(id);
+    this.orientationResizeTimers = [
+      window.setTimeout(() => this.handleResize(), 120),
+      window.setTimeout(() => this.handleResize(), 350),
+    ];
+  };
+
   private handleResize = () => {
     if (this.disposed) return;
-    const w = this.container.clientWidth || window.innerWidth;
+    const w = Math.max(1, this.container.clientWidth || window.innerWidth);
     const h = Math.max(1, this.container.clientHeight || window.innerHeight);
+    this.lastCanvasWidth = w;
+    this.lastCanvasHeight = h;
     this.camera.aspect = w / h;
     this.camera.updateProjectionMatrix();
-    this.renderer.setSize(w, h);
     this.renderer.setPixelRatio(this.isSoftwareGl ? 1 : Math.min(window.devicePixelRatio, 2));
+    this.renderer.setSize(w, h, false);
   };
 
   private handleBlur = () => {
@@ -9378,6 +9409,12 @@ export class GameEngine {
 
   private tick = () => {
     if (this.disposed) return;
+    const cw = Math.max(1, this.container.clientWidth || window.innerWidth);
+    const ch = Math.max(1, this.container.clientHeight || window.innerHeight);
+    if (cw !== this.lastCanvasWidth || ch !== this.lastCanvasHeight) {
+      this.handleResize();
+    }
+
     const now = performance.now();
     const rawDt = (now - this.lastTimestamp) / 1000;
     this.lastTimestamp = now;
@@ -13572,7 +13609,9 @@ export class GameEngine {
                         : groundSpd > 6.5
                           ? 58
                           : 55;
-    this.camDynamicFov = THREE.MathUtils.damp(this.camDynamicFov, baseFov, 6, dt);
+    const isCompactLandscape = this.camera.aspect > 1.72 && this.lastCanvasHeight > 0 && this.lastCanvasHeight < 540;
+    const fovBoost = isCompactLandscape ? 6 : 0;
+    this.camDynamicFov = THREE.MathUtils.damp(this.camDynamicFov, baseFov + fovBoost, 6, dt);
     if (Math.abs(this.camera.fov - this.camDynamicFov) > 0.05) {
       this.camera.fov = this.camDynamicFov;
       this.camera.updateProjectionMatrix();
@@ -13580,14 +13619,14 @@ export class GameEngine {
 
     if (this.phase === 'title') {
       const angle = this.totalTime * 0.28;
-      const dist = this.hasHulkSuit ? 7.6 : 6.2;
+      const dist = (this.hasHulkSuit ? 7.6 : 6.2) * (isCompactLandscape ? 1.16 : 1.0);
       _vec3A.set(
         this.playerPos.x + Math.sin(angle) * dist,
         this.playerPos.y + (this.hasHulkSuit ? 3.1 : 2.6) + Math.sin(this.totalTime * 0.5) * 0.35,
         this.playerPos.z + Math.cos(angle) * dist
       );
       this.camera.position.lerp(_vec3A, 1 - Math.exp(-4 * dt));
-      _vec3B.set(this.playerPos.x, this.playerPos.y + (this.hasHulkSuit ? 1.55 : 1.0), this.playerPos.z);
+      _vec3B.set(this.playerPos.x, this.playerPos.y + (this.hasHulkSuit ? 1.45 : 0.9), this.playerPos.z);
       this.camera.lookAt(_vec3B);
       return;
     }
@@ -13682,7 +13721,7 @@ export class GameEngine {
       climbYawOverride =
         cFace === 'pz' ? 0 : cFace === 'nz' ? Math.PI : cFace === 'px' ? Math.PI / 2 : -Math.PI / 2;
     }
-    const dist = this.active2DZone
+    const baseDist = this.active2DZone
       ? 13.5
       : this.webActive
         ? 11.8
@@ -13695,6 +13734,7 @@ export class GameEngine {
             : this.hasHulkSuit
               ? dz?.dist ?? 11.4
               : dz?.dist ?? 9.6;
+    const dist = baseDist * (isCompactLandscape ? 1.12 : 1.0);
     const effPitch = this.active2DZone ? this.camPitch : isBossActive ? 0.46 : dz?.pitch ?? this.camPitch;
     const effYaw = climbYawOverride !== null ? climbYawOverride : this.camYaw + (dz?.yawOffset ?? 0);
     const horizDist = dist * Math.cos(effPitch);
@@ -13709,11 +13749,20 @@ export class GameEngine {
     if (isBossActive && this.bossRuntime) {
       _vec3B.set(
         THREE.MathUtils.lerp(this.playerPos.x, this.bossRuntime.pos.x, 0.25),
-        this.playerPos.y + (this.hasHulkSuit ? 1.85 : 1.3),
+        this.playerPos.y + (this.hasHulkSuit ? 1.65 : 1.15),
         THREE.MathUtils.lerp(this.playerPos.z, this.bossRuntime.pos.z, 0.25)
       );
     } else {
-      _vec3B.set(this.playerPos.x, this.playerPos.y + (this.hasHulkSuit ? 1.65 : dz ? 1.45 : 1.15), this.playerPos.z);
+      const lookY = isCompactLandscape
+        ? this.hasHulkSuit
+          ? 1.35
+          : 0.85
+        : this.hasHulkSuit
+          ? 1.65
+          : dz
+            ? 1.45
+            : 1.15;
+      _vec3B.set(this.playerPos.x, this.playerPos.y + lookY, this.playerPos.z);
     }
 
     // 3D wall/platform occlusion avoidance
