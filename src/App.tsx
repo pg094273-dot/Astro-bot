@@ -4,14 +4,15 @@
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { GameHUD } from './components/GameHUD';
-import { GameMenus } from './components/GameMenus';
+import { GameHUD, TouchControlsMode } from './components/GameHUD';
+import { GameMenus, TitleView } from './components/GameMenus';
 import { OfflineIndicator } from './components/PWAInstallButton';
 import { GameEngine } from './game/Engine';
 import { LEVELS } from './game/levels';
 import { HudSnapshot, LevelProgress } from './game/types';
 
 const STORAGE_KEY = 'astro-nova-progress-v1';
+const TOUCH_MODE_STORAGE_KEY = 'astro-nova-touch-mode-v1';
 
 const INITIAL_HUD: HudSnapshot = {
   phase: 'title',
@@ -61,13 +62,25 @@ function loadProgress(): Record<number, LevelProgress> {
   return {};
 }
 
+function loadTouchMode(): TouchControlsMode {
+  try {
+    const raw = localStorage.getItem(TOUCH_MODE_STORAGE_KEY);
+    if (raw === 'auto' || raw === 'always' || raw === 'off') return raw;
+  } catch {
+    // Ignore storage errors
+  }
+  return 'auto';
+}
+
 export default function App() {
   const mountRef = useRef<HTMLDivElement | null>(null);
   const engineRef = useRef<GameEngine | null>(null);
 
   const [hud, setHud] = useState<HudSnapshot>(INITIAL_HUD);
+  const [titleView, setTitleView] = useState<TitleView>('home');
   const [selectedLevel, setSelectedLevel] = useState(0);
   const [progress, setProgress] = useState<Record<number, LevelProgress>>(loadProgress);
+  const [touchControlsMode, setTouchControlsMode] = useState<TouchControlsMode>(loadTouchMode);
   const [contextLost, setContextLost] = useState(false);
   const [victoryStats, setVictoryStats] = useState<{
     levelIndex: number;
@@ -137,6 +150,20 @@ export default function App() {
     engineRef.current?.startLevel(idx);
   }, []);
 
+  const handleChangeTouchControlsMode = useCallback((mode: TouchControlsMode) => {
+    setTouchControlsMode(mode);
+    try {
+      localStorage.setItem(TOUCH_MODE_STORAGE_KEY, mode);
+    } catch {
+      // Ignore storage errors
+    }
+  }, []);
+
+  const handleChangeTitleView = useCallback((view: TitleView) => {
+    engineRef.current?.unlockAudio();
+    setTitleView(view);
+  }, []);
+
   // Keyboard / TV Remote / Gamepad menu navigation when not playing
   useEffect(() => {
     if (hud.phase === 'playing') return;
@@ -149,15 +176,28 @@ export default function App() {
         e.key === 'BrowserBack';
 
       if (hud.phase === 'title') {
+        if (isBack && titleView !== 'home') {
+          e.preventDefault();
+          setTitleView('home');
+          return;
+        }
         const activeTag = (document.activeElement as HTMLElement | null)?.tagName;
         if (e.code === 'Space' || (activeTag !== 'BUTTON' && (e.code === 'Enter' || isSelect))) {
           e.preventDefault();
-          handleStartGame(selectedLevel);
+          if (titleView === 'home') {
+            setTitleView('levels');
+          } else if (titleView === 'levels') {
+            handleStartGame(selectedLevel);
+          }
         }
       } else if (isBack) {
         e.preventDefault();
         if (hud.phase === 'paused') engineRef.current?.setPhase('playing');
-        else engineRef.current?.returnToTitle();
+        else {
+          setVictoryStats(null);
+          setTitleView('levels');
+          engineRef.current?.returnToTitle();
+        }
       }
     };
 
@@ -182,13 +222,30 @@ export default function App() {
           const rightNow = Boolean(gp.buttons[15]?.pressed || (gp.axes[0] ?? 0) > 0.55);
 
           if (hud.phase === 'title') {
-            if (leftNow && !prevLeft) {
-              handleSelectLevel((selectedLevel - 1 + LEVELS.length) % LEVELS.length);
-            } else if (rightNow && !prevRight) {
-              handleSelectLevel((selectedLevel + 1) % LEVELS.length);
-            }
-            if (aNow && !prevA) {
-              handleStartGame(selectedLevel);
+            if (titleView === 'levels') {
+              if (leftNow && !prevLeft) {
+                handleSelectLevel((selectedLevel - 1 + LEVELS.length) % LEVELS.length);
+              } else if (rightNow && !prevRight) {
+                handleSelectLevel((selectedLevel + 1) % LEVELS.length);
+              }
+              if (aNow && !prevA) {
+                handleStartGame(selectedLevel);
+              } else if (bNow && !prevB) {
+                setTitleView('home');
+              }
+            } else if (titleView === 'home') {
+              if (aNow && !prevA) {
+                const focused = document.activeElement as HTMLElement | null;
+                if (focused?.tagName === 'BUTTON') focused.click();
+                else setTitleView('levels');
+              }
+            } else {
+              if (aNow && !prevA) {
+                const focused = document.activeElement as HTMLElement | null;
+                if (focused?.tagName === 'BUTTON') focused.click();
+              } else if (bNow && !prevB) {
+                setTitleView('home');
+              }
             }
           } else {
             if (aNow && !prevA) {
@@ -208,6 +265,7 @@ export default function App() {
                   engineRef.current?.startLevel(nextIdx);
                 } else {
                   setVictoryStats(null);
+                  setTitleView('levels');
                   engineRef.current?.returnToTitle();
                 }
               }
@@ -215,6 +273,7 @@ export default function App() {
               if (hud.phase === 'paused') engineRef.current?.setPhase('playing');
               else {
                 setVictoryStats(null);
+                setTitleView('levels');
                 engineRef.current?.returnToTitle();
               }
             }
@@ -235,7 +294,7 @@ export default function App() {
       window.removeEventListener('keydown', onKey);
       window.cancelAnimationFrame(rafId);
     };
-  }, [hud.phase, hud.levelIndex, selectedLevel, handleSelectLevel, handleStartGame]);
+  }, [hud.phase, hud.levelIndex, titleView, selectedLevel, handleSelectLevel, handleStartGame]);
 
   // Native Android TV Back button bridge & gameplay canvas focus lock
   useEffect(() => {
@@ -244,6 +303,10 @@ export default function App() {
     }
     const win = window as unknown as { __handleAndroidBack?: () => 'handled' | 'exit' };
     win.__handleAndroidBack = () => {
+      if (hud.phase === 'title' && titleView !== 'home') {
+        setTitleView('home');
+        return 'handled';
+      }
       if (hud.phase === 'playing') {
         engineRef.current?.setPhase('paused');
         return 'handled';
@@ -254,6 +317,7 @@ export default function App() {
       }
       if (hud.phase === 'gameover' || hud.phase === 'victory') {
         setVictoryStats(null);
+        setTitleView('levels');
         engineRef.current?.returnToTitle();
         return 'handled';
       }
@@ -262,7 +326,7 @@ export default function App() {
     return () => {
       delete win.__handleAndroidBack;
     };
-  }, [hud.phase]);
+  }, [hud.phase, titleView]);
 
   const handleToggleMute = useCallback(() => {
     engineRef.current?.setMuted(!hud.muted);
@@ -294,6 +358,7 @@ export default function App() {
 
   const handleReturnTitle = useCallback(() => {
     setVictoryStats(null);
+    setTitleView('levels');
     engineRef.current?.returnToTitle();
   }, []);
 
@@ -334,7 +399,7 @@ export default function App() {
   }, []);
 
   return (
-    <main className="relative h-screen w-screen overflow-hidden bg-[#060b19]">
+    <main className="relative h-dvh w-screen overflow-hidden bg-[#060b19]">
       {/* Isolated WebGL Canvas Container */}
       <div ref={mountRef} tabIndex={-1} className="absolute inset-0 h-full w-full outline-none" />
 
@@ -351,6 +416,7 @@ export default function App() {
 
       <GameHUD
         hud={hud}
+        touchControlsMode={touchControlsMode}
         onToggleMute={handleToggleMute}
         onToggleMusic={handleToggleMusic}
         onPause={handlePause}
@@ -367,9 +433,15 @@ export default function App() {
 
       <GameMenus
         hud={hud}
+        titleView={titleView}
+        onChangeTitleView={handleChangeTitleView}
         selectedLevel={selectedLevel}
         onSelectLevel={handleSelectLevel}
         progress={progress}
+        touchControlsMode={touchControlsMode}
+        onChangeTouchControlsMode={handleChangeTouchControlsMode}
+        onToggleMute={handleToggleMute}
+        onToggleMusic={handleToggleMusic}
         victoryStats={victoryStats}
         onStartGame={handleStartGame}
         onResume={handleResume}
